@@ -38,6 +38,8 @@ jobs:
         run: ./Development/scripts/build.ps1 -Zip
       - name: Verify portable package
         run: ./Development/scripts/verify-package.ps1
+      - name: Check packaging safeguards
+        run: ./Development/scripts/test-packaging.ps1
       - name: Keep verification results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -53,7 +55,7 @@ jobs:
         with:
           name: SimpleVideoEditor-win-x64
           path: |
-            Releases/SimpleVideoEditor-win-x64.zip
-            Releases/SimpleVideoEditor-win-x64.zip.sha256
+            Releases/SimpleVideoEditor-*-win-x64.zip
+            Releases/SimpleVideoEditor-*-win-x64.zip.sha256
           retention-days: 7
           if-no-files-found: error

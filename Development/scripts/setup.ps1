@@ -2,6 +2,7 @@ param([string]$FfmpegDirectory, [string]$MediaBundlePath)
 $ErrorActionPreference = 'Stop'
 $editorRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'project-paths.ps1')
+. (Join-Path $PSScriptRoot 'portable-package.ps1')
 $editorDependencies = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'dependencies.json') -Raw | ConvertFrom-Json
 $editorTools = Join-Path $editorRoot '.tools'
 $editorVendor = Join-Path $editorRoot 'vendor'
@@ -52,9 +53,15 @@ function Restore-EditorMediaBundle([string]$BundlePath) {
 function Restore-EditorReleaseMirror([string]$DownloadError) {
     if (!$env:GH_REPO -or !(Get-Command gh -ErrorAction SilentlyContinue)) { throw "$DownloadError Restore the matching portable ZIP with -MediaBundlePath, or set GH_REPO and authenticate gh to use the private release mirror." }
     Write-Output "Upstream media unavailable; trying the pinned release mirror $($editorDependencies.MediaMirrorTag)."
-    & gh release download $editorDependencies.MediaMirrorTag --repo $env:GH_REPO --pattern 'SimpleVideoEditor-win-x64.zip' --dir $editorTools --clobber
+    $editorMirrorAssets = & gh release view $editorDependencies.MediaMirrorTag --repo $env:GH_REPO --json assets
+    if ($LASTEXITCODE -ne 0) { throw "$DownloadError The matching release mirror is unavailable." }
+    $editorMirrorNames = @(($editorMirrorAssets | ConvertFrom-Json).assets.name)
+    $editorMirrorName = Get-EditorPackageName ($editorDependencies.MediaMirrorTag.Substring(1))
+    if ($editorMirrorName -notin $editorMirrorNames) { $editorMirrorName = 'SimpleVideoEditor-win-x64.zip' }
+    if ($editorMirrorName -notin $editorMirrorNames) { throw "$DownloadError The matching release mirror has no portable ZIP." }
+    & gh release download $editorDependencies.MediaMirrorTag --repo $env:GH_REPO --pattern $editorMirrorName --dir $editorTools --clobber
     if ($LASTEXITCODE -ne 0) { throw "$DownloadError The matching release mirror is also unavailable." }
-    $editorMirrorZip = Join-Path $editorTools 'SimpleVideoEditor-win-x64.zip'
+    $editorMirrorZip = Join-Path $editorTools $editorMirrorName
     try { Restore-EditorMediaBundle $editorMirrorZip } finally { Remove-Item -LiteralPath $editorMirrorZip -Force }
 }
 $editorSdkArchive = Join-Path $editorTools 'dotnet-sdk.zip'

@@ -1,7 +1,9 @@
-param([switch]$Zip, [string]$OutputName = 'App')
+param([switch]$Zip, [string]$OutputName = 'App', [string]$PackageDirectory)
 $ErrorActionPreference = 'Stop'
 $editorRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'project-paths.ps1')
+. (Join-Path $PSScriptRoot 'portable-package.ps1')
+$editorVersion = ([xml](Get-Content (Join-Path $editorRoot 'src/SimpleVideoEditor/SimpleVideoEditor.csproj') -Raw)).Project.PropertyGroup.Version
 $editorDependencies = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'dependencies.json') -Raw | ConvertFrom-Json
 $editorSdk = Join-Path $editorRoot '.tools/dotnet/dotnet.exe'
 if (!(Test-Path -LiteralPath $editorSdk)) { throw 'Run Development/scripts/setup.ps1 first to restore the workspace build tools.' }
@@ -70,13 +72,23 @@ if (Test-Path -LiteralPath $editorDestination) { Remove-Item -LiteralPath $edito
 Move-Item -LiteralPath $editorOutput -Destination $editorDestination
 $editorOutput = $editorDestination
 if ($Zip) {
-    $editorReleases = Join-Path $editorWorkspace 'Releases'; New-Item -ItemType Directory -Path $editorReleases -Force | Out-Null
-    $editorZipPath = Join-Path $editorReleases 'SimpleVideoEditor-win-x64.zip'
-    Compress-Archive -Path (Join-Path $editorOutput '*') -DestinationPath $editorZipPath -Force
-    $editorZipHash = (Get-FileHash -LiteralPath $editorZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    "$editorZipHash  SimpleVideoEditor-win-x64.zip" | Set-Content -LiteralPath ($editorZipPath + '.sha256') -Encoding ascii
+    $editorReleases = if ($PackageDirectory) { [IO.Path]::GetFullPath($PackageDirectory) } else { Join-Path $editorWorkspace 'Releases' }
+    $editorPackageStage = Join-Path $editorRoot ('.tools/package-' + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $editorPackageStage -Force | Out-Null
+    $editorPackageName = Get-EditorPackageName $editorVersion
+    $editorZipPath = Join-Path $editorPackageStage $editorPackageName
+    try {
+        Compress-Archive -Path (Join-Path $editorOutput '*') -DestinationPath $editorZipPath
+        $editorZipHash = (Get-FileHash -LiteralPath $editorZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        "$editorZipHash  $editorPackageName" | Set-Content -LiteralPath ($editorZipPath + '.sha256') -Encoding ascii
+        Publish-EditorLocalPackage $editorZipPath $editorReleases $editorVersion
+        Assert-EditorCurrentPackage $editorReleases $editorVersion
+    } finally {
+        $editorCheckedStage = [IO.Path]::GetFullPath($editorPackageStage)
+        if (!$editorCheckedStage.StartsWith([IO.Path]::GetFullPath((Join-Path $editorRoot '.tools')) + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Package staging cleanup escapes build tools.' }
+        if (Test-Path -LiteralPath $editorCheckedStage) { Remove-Item -LiteralPath $editorCheckedStage -Recurse -Force }
+    }
 }
-$editorVersion = ([xml](Get-Content (Join-Path $editorRoot 'src/SimpleVideoEditor/SimpleVideoEditor.csproj') -Raw)).Project.PropertyGroup.Version
 $editorShell = New-Object -ComObject WScript.Shell
 $editorShortcut = $editorShell.CreateShortcut((Join-Path $editorWorkspace "Simple Video Editor $editorVersion.lnk"))
 $editorShortcut.TargetPath = Join-Path $editorOutput 'Simple Video Editor.exe'; $editorShortcut.WorkingDirectory = $editorOutput
