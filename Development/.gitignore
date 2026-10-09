@@ -1,0 +1,8 @@
+.tools/
+vendor/
+artifacts/
+history/
+**/bin/
+**/obj/
+*.user
+*.sveproject

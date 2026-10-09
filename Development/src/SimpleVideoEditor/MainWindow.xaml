@@ -1,0 +1,70 @@
+<Window x:Class="SimpleVideoEditor.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:controls="clr-namespace:SimpleVideoEditor.Controls" Style="{StaticResource {x:Type Window}}" Title="Simple Video Editor" Width="1320" Height="880" MinWidth="1000" MinHeight="740" WindowStartupLocation="CenterScreen" AllowDrop="True" Drop="Window_Drop" PreviewKeyDown="Window_KeyDown" Closing="Window_Closing">
+ <Window.Resources>
+  <ContextMenu x:Key="SectionMenu" x:Shared="False" Opened="SectionMenu_Opened">
+   <MenuItem Header="Split at playhead" Tag="split" InputGestureText="Ctrl+B" Click="SectionMenu_Click"/>
+   <MenuItem Header="Trim before playhead" Tag="before" InputGestureText="Q" Click="SectionMenu_Click"/>
+   <MenuItem Header="Trim after playhead" Tag="after" InputGestureText="W" Click="SectionMenu_Click"/>
+   <MenuItem Header="Reset trim" Tag="reset" Click="SectionMenu_Click"/>
+   <MenuItem Header="Duplicate clip" Tag="duplicate" Click="SectionMenu_Click"/>
+   <Separator/><MenuItem Header="Move earlier" Tag="earlier" Click="SectionMenu_Click"/><MenuItem Header="Move later" Tag="later" Click="SectionMenu_Click"/>
+   <Separator/><MenuItem Header="Delete clip" Tag="remove" InputGestureText="Delete" Click="SectionMenu_Click"/>
+  </ContextMenu>
+  <ContextMenu x:Key="SourceMenu" x:Shared="False" Opened="SourceMenu_Opened"><MenuItem Header="Add to timeline" Click="AddToTimeline_Click"/><MenuItem Header="Remove from project" Click="RemoveSource_Click"/></ContextMenu>
+ </Window.Resources>
+ <Grid Margin="20,16,20,12">
+  <Grid.RowDefinitions><RowDefinition Height="54"/><RowDefinition Height="*"/><RowDefinition Height="320"/><RowDefinition Height="24"/></Grid.RowDefinitions>
+  <Grid><TextBlock Text="Simple Video Editor" FontSize="23" FontWeight="SemiBold" VerticalAlignment="Top"/>
+   <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+    <Button x:Name="CacheButton" Content="Cache…" Click="Cache_Click" ToolTip="Manage cached thumbnails and waveforms" Margin="0,0,16,0"/>
+    <Button x:Name="NewButton" Content="New" Click="New_Click" ToolTip="New project (Ctrl+N)" Margin="0,0,6,0"/><Button x:Name="OpenButton" Content="Open" Click="Open_Click" ToolTip="Open project (Ctrl+O)" Margin="0,0,6,0"/>
+    <Button x:Name="SaveButton" Content="Save" Click="Save_Click" ToolTip="Save project (Ctrl+S)" Margin="0,0,16,0"/><Button x:Name="ExportButton" Content="Export video" Click="Export_Click" Style="{StaticResource PrimaryButton}" IsEnabled="False"/>
+   </StackPanel>
+  </Grid>
+  <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="250"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+   <Border Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="12">
+    <Grid><Grid.RowDefinitions><RowDefinition Height="26"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+     <Grid><TextBlock Text="Recordings" FontSize="17" FontWeight="SemiBold"/><TextBlock x:Name="ClipCountText" Text="0" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Right" VerticalAlignment="Center"/></Grid>
+     <Button x:Name="AddButton" Grid.Row="1" Content="Import clips" Click="Add_Click" Margin="0,10,0,12" ToolTip="Import recordings (Ctrl+I)"/>
+     <Grid Grid.Row="2" Margin="0,0,0,8" Height="30">
+      <TextBox x:Name="SearchInput" Padding="8,0,32,0" VerticalContentAlignment="Center" TextChanged="Search_Changed" AutomationProperties.Name="Search recordings" ToolTip="Search recording names (Ctrl+F). Escape clears the search."/>
+      <TextBlock Text="Search recordings" Foreground="{StaticResource MutedBrush}" Margin="9,0,32,0" VerticalAlignment="Center" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Text, ElementName=SearchInput}" Value=""><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
+      <Button x:Name="ClearSearchButton" Content="×" Click="ClearSearch_Click" FontSize="16" Width="26" MinHeight="26" Padding="2,0" HorizontalAlignment="Right" Margin="2" ToolTip="Clear search" AutomationProperties.Name="Clear search"><Button.Style><Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Style.Triggers><DataTrigger Binding="{Binding Text, ElementName=SearchInput}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Button.Style></Button>
+     </Grid>
+     <Grid Grid.Row="3">
+     <ListBox x:Name="SourceList" ItemsSource="{Binding RecordingView}" Background="Transparent" BorderThickness="0" SelectionChanged="Source_SelectionChanged" PreviewMouseLeftButtonDown="Source_MouseDown" PreviewMouseMove="Source_MouseMove" PreviewKeyDown="Source_KeyDown" RequestBringIntoView="Source_RequestBringIntoView" MouseDoubleClick="Source_DoubleClick" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.ScrollUnit="Pixel">
+      <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="ContextMenu" Value="{StaticResource SourceMenu}"/><Setter Property="Padding" Value="7"/><Setter Property="Margin" Value="0,0,0,8"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Foreground" Value="#F0F4F5"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><Border x:Name="Tile" Background="#20272D" BorderBrush="Transparent" BorderThickness="1" CornerRadius="5" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsSelected" Value="True"><Setter TargetName="Tile" Property="BorderBrush" Value="#A8E6C8"/><Setter TargetName="Tile" Property="Background" Value="#273B32"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Tile" Property="BorderBrush" Value="#66766F"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Tile" Property="BorderBrush" Value="White"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style></ListBox.ItemContainerStyle>
+      <ListBox.ItemTemplate><DataTemplate><StackPanel><Border Height="88" Background="#101619" CornerRadius="3" ClipToBounds="True"><Image Source="{Binding Thumbnail, Converter={StaticResource ThumbnailImage}}" Stretch="UniformToFill"/></Border><TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="0,7,0,3" ToolTip="{Binding Path}"/><TextBlock Text="{Binding DurationLabel}" FontSize="11" Foreground="{StaticResource MutedBrush}"/></StackPanel></DataTemplate></ListBox.ItemTemplate>
+     </ListBox>
+     <TextBlock x:Name="SearchEmpty" Text="No matches" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" IsHitTestVisible="False"/>
+     </Grid>
+     <Button x:Name="AddToTimelineButton" Grid.Row="4" Content="Add to timeline" Click="AddToTimeline_Click" Margin="0,8,0,0" IsEnabled="False" ToolTip="Add selected recording (double-click or drag to timeline)"/>
+    </Grid>
+   </Border>
+   <Grid Grid.Column="2"><Grid.RowDefinitions><RowDefinition Height="32"/><RowDefinition Height="*"/><RowDefinition Height="22"/><RowDefinition Height="48"/></Grid.RowDefinitions>
+    <Grid><TextBlock x:Name="SelectedName" Text="Preview" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="0,0,175,0"/><TextBlock x:Name="SelectedDetails" HorizontalAlignment="Right" Foreground="{StaticResource MutedBrush}" FontSize="11" VerticalAlignment="Center"/></Grid>
+    <Border Grid.Row="1" Background="#080B0C" CornerRadius="6" ClipToBounds="True"><Grid><controls:VideoHost x:Name="Video" Visibility="Collapsed"/><StackPanel x:Name="EmptyPreview" VerticalAlignment="Center" HorizontalAlignment="Center"><Button Content="Import clips" Click="Add_Click" IsEnabled="{Binding IsEnabled, ElementName=AddButton}" Style="{StaticResource PrimaryButton}"/></StackPanel></Grid></Border>
+    <Slider x:Name="PreviewSeek" Grid.Row="2" Minimum="0" Maximum="1" ValueChanged="PreviewSeek_Changed" VerticalAlignment="Center" Visibility="Collapsed" ToolTip="Scrub recording" AutomationProperties.Name="Recording playhead"/>
+    <Grid Grid.Row="3" Margin="0,5,0,0"><StackPanel Orientation="Horizontal"><Button x:Name="PlayButton" Click="Play_Click" Width="44" Padding="10,9" IsEnabled="False" ToolTip="Play (Space)" AutomationProperties.Name="Play" ContentTemplate="{x:Null}"><Grid Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center"><Path x:Name="PlayGlyph" Data="M3,1 L13,8 L3,15 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/><Path x:Name="PauseGlyph" Data="M3,2 L7,2 L7,14 L3,14 Z M9,2 L13,2 L13,14 L9,14 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Visibility="Collapsed"/></Grid></Button><Button x:Name="BackButton" Content="‹ Frame" Click="Back_Click" Margin="6,0,0,0" IsEnabled="False" ToolTip="Previous frame (Left arrow)"/><Button x:Name="ForwardButton" Content="Frame ›" Click="Forward_Click" Margin="6,0,0,0" IsEnabled="False" ToolTip="Next frame (Right arrow)"/><TextBlock x:Name="PositionText" Text="00:00:00.000" FontFamily="Consolas" Margin="14,0,0,0" VerticalAlignment="Center" Foreground="#D0D8DD"/></StackPanel><Slider x:Name="VolumeSlider" Width="80" Minimum="0" Maximum="100" Value="75" HorizontalAlignment="Right" VerticalAlignment="Center" ValueChanged="Volume_Changed" ToolTip="Preview volume" AutomationProperties.Name="Preview volume"/></Grid>
+   </Grid>
+  </Grid>
+  <Border Grid.Row="2" Background="{StaticResource PanelBrush}" CornerRadius="8" Margin="0,14,0,0" Padding="12,10">
+   <Grid><Grid.RowDefinitions><RowDefinition Height="32"/><RowDefinition Height="*"/><RowDefinition Height="43"/></Grid.RowDefinitions>
+    <Grid><StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="Timeline" FontSize="17" FontWeight="SemiBold"/><TextBlock x:Name="TotalText" Foreground="{StaticResource MutedBrush}" Margin="12,3,0,0"/></StackPanel>
+     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"><Button x:Name="UndoButton" Content="Undo" Click="Undo_Click" Padding="10,4" MinHeight="28" Margin="0,0,5,0" IsEnabled="False" ToolTip="Undo (Ctrl+Z)"/><Button x:Name="RedoButton" Content="Redo" Click="Redo_Click" Padding="10,4" MinHeight="28" Margin="0,0,14,0" IsEnabled="False" ToolTip="Redo (Ctrl+Y)"/><Button x:Name="SplitButton" Content="Split" Click="Split_Click" Padding="12,4" MinHeight="28" Margin="0,0,5,0" IsEnabled="False" ToolTip="Split at playhead (Ctrl+B)"/><Button x:Name="RemoveButton" Content="Delete" Click="Remove_Click" Padding="12,4" MinHeight="28" Margin="0,0,16,0" IsEnabled="False" ToolTip="Delete selected clip (Delete)"/><Button Content="−" Click="ZoomOut_Click" Padding="10,4" MinHeight="28" Margin="0,0,5,0" ToolTip="Zoom out"/><Button Content="+" Click="ZoomIn_Click" Padding="10,4" MinHeight="28" Margin="0,0,5,0" ToolTip="Zoom in (Ctrl+mouse wheel)"/><Button Content="Fit" Click="Fit_Click" Padding="10,4" MinHeight="28" ToolTip="Fit timeline to window"/></StackPanel>
+    </Grid>
+    <controls:EditorTimeline x:Name="Timeline" Grid.Row="1" Margin="0,7,0,4" AutomationProperties.Name="Video and linked audio timeline"/>
+    <Grid Grid.Row="2" x:Name="TrimControls" IsEnabled="False" Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="120"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="120"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+     <Button Content="Set in" Click="SetStart_Click" Padding="10,5" MinHeight="30" ToolTip="Trim start to playhead (I)"/><TextBox x:Name="StartInput" Grid.Column="1" Margin="6,0,12,0" Padding="6,0" VerticalContentAlignment="Center" TextAlignment="Center" TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType" FontFamily="Consolas" Text="00:00:00.000" LostKeyboardFocus="TrimInput_Commit" KeyDown="TrimInput_KeyDown" AutomationProperties.Name="Clip source in point"/>
+     <Button Grid.Column="2" Content="Set out" Click="SetEnd_Click" Padding="10,5" MinHeight="30" ToolTip="Trim end to playhead (O)"/><TextBox x:Name="EndInput" Grid.Column="3" Margin="6,0,0,0" Padding="6,0" VerticalContentAlignment="Center" TextAlignment="Center" TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType" FontFamily="Consolas" Text="00:00:00.000" LostKeyboardFocus="TrimInput_Commit" KeyDown="TrimInput_KeyDown" AutomationProperties.Name="Clip source out point"/>
+     <Grid Grid.Column="4"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <Button x:Name="TrimBeforeButton" Content="Trim before" Click="TrimBefore_Click" Margin="12,0,5,0" Padding="10,5" MinHeight="30" ToolTip="Remove everything before the current frame (Q)" IsEnabled="False"/>
+      <Button x:Name="TrimAfterButton" Grid.Column="1" Content="Trim after" Click="TrimAfter_Click" Margin="0,0,12,0" Padding="10,5" MinHeight="30" ToolTip="Remove everything after the current frame; keep this frame (W)" IsEnabled="False"/>
+      <TextBlock x:Name="TrimHint" Grid.Column="2" Foreground="LightSalmon" FontSize="11" Margin="0,0,8,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Visibility="Collapsed" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+     </Grid>
+     <Button Grid.Column="5" Content="Reset trim" Click="ResetTrim_Click" Padding="10,5" MinHeight="30"/>
+    </Grid>
+   </Grid>
+  </Border>
+  <TextBlock x:Name="StatusText" Grid.Row="3" Margin="0,7,0,0" Foreground="{StaticResource MutedBrush}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+ </Grid>
+</Window>
