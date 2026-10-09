@@ -184,6 +184,30 @@ try
     var cancelProgress = new InlineProgress(p => { if (p.Fraction > 0) cancellation.Cancel(); });
     await ExpectFailure(() => export.ExportAsync([a, b], protectedOutput, settings, cancelProgress, cancellation.Token), "Cancellation interrupts an active export");
     Assert(await File.ReadAllTextAsync(protectedOutput) == "keep-existing-output" && !Directory.GetDirectories(root, ".sve-export-*").Any(), "Canceled export preserves existing output and removes temporary files");
+    using var lockedCancellation = new CancellationTokenSource();
+    FileStream? exportLock = null;
+    Task? releaseExportLock = null;
+    var lockedProgress = new InlineProgress(p =>
+    {
+        if (p.Fraction <= 0 || lockedCancellation.IsCancellationRequested) return;
+        var work = Directory.GetDirectories(root, ".sve-export-*").Single();
+        // Model a Windows scanner holding a temporary file after export stops.
+        exportLock = new FileStream(Path.Combine(work, "cleanup-lock.tmp"), FileMode.Create, FileAccess.Write, FileShare.Read);
+        releaseExportLock = Task.Run(async () => { await Task.Delay(300); exportLock.Dispose(); });
+        lockedCancellation.Cancel();
+    });
+    try
+    {
+        await ExpectFailure(() => export.ExportAsync([a, b], protectedOutput, settings, lockedProgress, lockedCancellation.Token), "Cancellation still interrupts export while a temporary file is locked");
+        if (releaseExportLock == null) throw new Exception("The export cleanup lock was not exercised");
+        await releaseExportLock;
+        Assert(await File.ReadAllTextAsync(protectedOutput) == "keep-existing-output" && !Directory.GetDirectories(root, ".sve-export-*").Any(), "Export cleanup removes temporary files after a brief Windows file lock without replacing existing output");
+    }
+    finally
+    {
+        if (releaseExportLock != null) await releaseExportLock;
+        exportLock?.Dispose();
+    }
     var h264 = Path.Combine(root, "cpu-h264.mp4");
     await export.ExportAsync([a], h264, settings with { Codec = ExportCodec.H264, UseGpu = false }, null, CancellationToken.None);
     Assert((await MediaTools.ProbeAsync(h264)).Codec == "h264", "CPU H.264 fallback exports successfully");

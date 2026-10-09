@@ -5,6 +5,7 @@
 ### Fixed
 
 - The white playhead stays steady while freely dragging a clip instead of jumping between two positions.
+- Export cleanup retries briefly when Windows keeps a temporary file locked.
 
 ## 1.0.0 — 2026-10-09
 

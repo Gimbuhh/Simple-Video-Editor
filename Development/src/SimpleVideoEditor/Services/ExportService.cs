@@ -76,7 +76,17 @@ public sealed class ExportService
         finally
         {
             // This directory is a freshly created, unique child of the output folder.
-            try { Directory.Delete(work, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            // Windows scanners can briefly retain a handle after FFmpeg exits.
+            // Cleanup also runs after cancellation, so its delays use no export token.
+            for (var attempt = 0; ; attempt++)
+            {
+                try { Directory.Delete(work, true); break; }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    if (attempt == 4) break;
+                    await Task.Delay(100 * (attempt + 1));
+                }
+            }
         }
     }
 
