@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using SimpleVideoEditor.Services;
@@ -302,6 +303,7 @@ public partial class MainWindow : Window
             player?.Command("stop"); Video.Clear(); Video.Visibility = Visibility.Collapsed; EmptyPreview.Visibility = Visibility.Visible;
             SelectedName.Text = "Preview"; SelectedDetails.Text = ""; Timeline.Position = 0;
             PreviewViewport.AspectRatio = 16d / 9;
+            Video.LayoutTransform = Transform.Identity;
             PreviewSeek.Visibility = Visibility.Collapsed;
             StartInput.Text = EndInput.Text = PositionText.Text = "00:00:00.000";
         }
@@ -309,6 +311,7 @@ public partial class MainWindow : Window
         {
             SelectedName.Text = clip.Name; SelectedDetails.Text = $"{(TimelineSelected ? "Timeline" : "Recording")} · {clip.Height}p · {clip.FrameRate:0.##} fps";
             PreviewViewport.AspectRatio = clip.Width > 0 && clip.Height > 0 ? (double)clip.Width / clip.Height : 16d / 9;
+            Video.LayoutTransform = Transform.Identity;
             pendingSeek = clip.Start;
             if (TimelineSelected) Timeline.Position = Timeline.ClipOffset(clip);
             updatingSeek = true; PreviewSeek.Maximum = clip.Duration; PreviewSeek.Value = clip.Start; updatingSeek = false;
@@ -332,9 +335,15 @@ public partial class MainWindow : Window
     {
         if (player == null || !double.TryParse(player.Get("video-out-params/aspect"), System.Globalization.NumberStyles.Float,
             System.Globalization.CultureInfo.InvariantCulture, out var ratio) || !double.IsFinite(ratio) || ratio <= 0) return;
-        // Display rotation is applied by the renderer after its output parameters.
-        if (int.TryParse(player.Get("video-out-params/rotate"), out var rotation) && rotation % 180 != 0) ratio = 1 / ratio;
-        PreviewViewport.AspectRatio = ratio;
+        // The software render backend supplies unrotated pixels. WPF rotates the
+        // fitted bitmap so both the render buffer and displayed frame keep their aspect.
+        int.TryParse(player.Get("video-out-params/rotate"), out var rotation);
+        rotation = (rotation % 360 + 360) % 360;
+        Video.LayoutTransform = rotation == 0 ? Transform.Identity : new RotateTransform(rotation);
+        var radians = rotation * Math.PI / 180;
+        var cosine = Math.Abs(Math.Cos(radians)); var sine = Math.Abs(Math.Sin(radians));
+        var displayRatio = (ratio * cosine + sine) / (ratio * sine + cosine);
+        if (double.IsFinite(displayRatio) && displayRatio > 0) PreviewViewport.AspectRatio = displayRatio;
     }
     private void Source_SelectionChanged(object sender, SelectionChangedEventArgs e) { if (!syncing) Select(SourceList.SelectedItem as MediaClip); }
     private void Search_Changed(object sender, TextChangedEventArgs e)

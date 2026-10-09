@@ -780,8 +780,11 @@ public static class UiVerification
                         await (Task)Invoke("ImportAsync", (object)new[] { path })!;
                         Invoke("Select", window.Sources.Single(source => source.Path == path), false); await Ready(); window.UpdateLayout();
                         var video = Control<VideoHost>("Video"); var viewport = Control<AspectRatioFrame>("PreviewViewport");
-                        for (var i = 0; i < 50 && (video.PreviewBitmap == null || Math.Abs((double)video.PreviewBitmap.PixelWidth / video.PreviewBitmap.PixelHeight - ratio) > .02); i++) await Task.Delay(20);
-                        Assert(Math.Abs(viewport.AspectRatio - ratio) < .001 && Math.Abs(video.ActualWidth - video.ActualHeight * ratio) <= (1 + ratio) / 2 && !DarkAt(video, new Point(3, video.ActualHeight / 2)),
+                        var bufferRatio = name.StartsWith("rotated") ? 1 / ratio : ratio;
+                        for (var i = 0; i < 50 && (video.PreviewBitmap == null || Math.Abs((double)video.PreviewBitmap.PixelWidth / video.PreviewBitmap.PixelHeight - bufferRatio) > .02); i++) await Task.Delay(20);
+                        var displayBounds = video.TransformToAncestor(viewport).TransformBounds(new Rect(video.RenderSize));
+                        Assert(Math.Abs(viewport.AspectRatio - ratio) < .001 && Math.Abs(displayBounds.Width - displayBounds.Height * ratio) <= (1 + ratio) / 2
+                            && !DarkAt(video, new Point(3, video.ActualHeight / 2)) && !DarkAt(video, new Point(video.ActualWidth / 2, 3)),
                             $"Preview respects display aspect and rotation without added side bars: {name} (ratio {viewport.AspectRatio}, surface {video.ActualWidth} × {video.ActualHeight}, bitmap {video.PreviewBitmap?.PixelWidth} × {video.PreviewBitmap?.PixelHeight})");
                         SaveRender(window, Path.Combine(root, name + ".png"));
                     }
