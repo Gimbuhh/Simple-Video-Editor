@@ -21,7 +21,7 @@ The bundle uses BtbN's `n8.1.3-14-g330caae0c1-win64-gpl-shared-8.1` build from `
 - FFmpeg source revision: https://github.com/FFmpeg/FFmpeg/tree/330caae0c1
 - License information: https://ffmpeg.org/legal.html
 
-The archive hash, installed executable/DLL hashes, and origins are recorded in `licenses/dependencies.json`. Keep the complete `tools` folder together; the shared executables require its DLLs.
+The archive hash, installed executable/DLL hashes, and origins are recorded in `licenses/dependencies.json` beside this document. Keep the complete `bin` folder together; the shared executables require its DLLs.
 
 ## .NET / WPF
 

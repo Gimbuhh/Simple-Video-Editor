@@ -11,8 +11,8 @@ public static class MediaTools
 {
     public static string Find(string name)
     {
-        var support = System.IO.Path.Combine(AppContext.BaseDirectory, "Support", "tools", name + ".exe");
-        if (File.Exists(support)) return support;
+        var binary = System.IO.Path.Combine(AppContext.BaseDirectory, "bin", name + ".exe");
+        if (File.Exists(binary)) return binary;
         var bundled = System.IO.Path.Combine(AppContext.BaseDirectory, "tools", name + ".exe");
         if (File.Exists(bundled)) return bundled;
         var current = new DirectoryInfo(AppContext.BaseDirectory);
@@ -22,7 +22,7 @@ public static class MediaTools
             if (File.Exists(local)) return local;
             var app = System.IO.Path.Combine(current.FullName, "App", "tools", name + ".exe");
             if (File.Exists(app)) return app;
-            var portable = System.IO.Path.Combine(current.FullName, "App", "Support", "tools", name + ".exe");
+            var portable = System.IO.Path.Combine(current.FullName, "App", "bin", name + ".exe");
             if (File.Exists(portable)) return portable;
             current = current.Parent;
         }

@@ -226,15 +226,25 @@ public static class UiVerification
                     Assert(window.Clips[0].Start == 0 && window.Clips[0].End == 4, "Clicking a trim edge without movement does not create an undo step");
                     Click("RedoButton");
                     // Run the same pointer handlers used by the native WPF events, on both linked lanes.
+                    await Ready(); Invoke("SeekTimeline", window.Clips[0], 1.65); await Ready();
+                    var beforeEdgeDrag = seekingPlayer.Position;
                     var edgeX = window.Clips[0].KeptDuration * timeline.PixelsPerSecond - 2;
                     Pointer("BeginPointer", new Point(edgeX, 65)); Pointer("MovePointer", new Point(edgeX + timeline.PixelsPerSecond * 5 / 60, 65), true);
                     surface.ReleaseMouseCapture(); Pointer("FinishEdit");
                     Assert(Math.Abs(window.Clips[0].End - (2.15 + 5d / 60)) < .000001, "Video edge pointer drag trims in whole-frame increments from the original timestamp");
-                    Click("UndoButton");
+                    await Ready();
+                    Assert(Math.Abs(seekingPlayer.Position - beforeEdgeDrag) < .001 && Math.Abs(timeline.Position - (beforeEdgeDrag - window.Clips[0].Start)) < .001,
+                        "Extending the right edge preserves the preview frame and playhead on release");
+                    Click("UndoButton"); await Ready(); Invoke("SeekTimeline", window.Clips[0], beforeEdgeDrag); await Ready();
                     Pointer("BeginPointer", new Point(2, 140)); Pointer("MovePointer", new Point(2 - timeline.PixelsPerSecond * 5 / 60, 140), true);
+                    Assert(Math.Abs(timeline.Position - (timeline.ClipOffset(window.Clips[0]) + beforeEdgeDrag - window.Clips[0].Start)) < .001,
+                        "Extending the linked audio edge keeps the playhead on the same source frame during the gesture");
                     surface.ReleaseMouseCapture(); Pointer("FinishEdit");
                     Assert(Math.Abs(window.Clips[0].Start - (1.15 - 5d / 60)) < .000001, "Audio edge pointer drag edits the same linked video clip");
-                    Click("UndoButton");
+                    await Ready();
+                    Assert(Math.Abs(seekingPlayer.Position - beforeEdgeDrag) < .001 && Math.Abs(timeline.Position - (beforeEdgeDrag - window.Clips[0].Start)) < .001,
+                        "Extending the left edge preserves the preview frame after joined clips close their gap");
+                    Click("UndoButton"); await Ready(); Invoke("SeekTimeline", window.Clips[0], beforeEdgeDrag); await Ready();
                     var anchoredRight = timeline.ClipOffset(window.Clips[0]) + window.Clips[0].KeptDuration;
                     Pointer("BeginPointer", new Point(2, 65)); Pointer("MovePointer", new Point(2 + timeline.PixelsPerSecond * 5 / 60, 65), true);
                     Assert(Math.Abs(timeline.ClipOffset(window.Clips[0]) - 5d / 60) < .000001 && Math.Abs(timeline.ClipOffset(window.Clips[0]) + window.Clips[0].KeptDuration - anchoredRight) < .000001 && Math.Abs(timeline.ClipOffset(window.Clips[1]) - anchoredRight) < .000001,
@@ -244,7 +254,27 @@ public static class UiVerification
                     surface.ReleaseMouseCapture(); Pointer("FinishEdit");
                     Assert(timeline.ClipOffset(window.Clips[0]) == 0 && Math.Abs(timeline.ClipOffset(window.Clips[1]) - (anchoredRight - 5d / 60)) < .000001,
                         "Joined clips close the temporary left-trim gap when the gesture finishes");
-                    Click("UndoButton");
+                    await Ready();
+                    Assert(Math.Abs(seekingPlayer.Position - beforeEdgeDrag) < .001 && Math.Abs(timeline.Position - (beforeEdgeDrag - window.Clips[0].Start)) < .001,
+                        "Shortening the left edge retains an interior preview frame instead of jumping to the trim start");
+                    Click("UndoButton"); await Ready(); Invoke("SeekTimeline", window.Clips[0], 2.05); await Ready();
+                    edgeX = window.Clips[0].KeptDuration * timeline.PixelsPerSecond - 2;
+                    Pointer("BeginPointer", new Point(edgeX, 65)); Pointer("MovePointer", new Point(edgeX - timeline.PixelsPerSecond * 10 / 60, 65), true);
+                    var lastRetainedFrame = window.Clips[0].End - 1 / window.Clips[0].FrameRate;
+                    Assert(Math.Abs(timeline.Position - (lastRetainedFrame - window.Clips[0].Start)) < .001,
+                        "A right trim that removes the preview frame clamps the playhead to the last retained frame during dragging");
+                    surface.ReleaseMouseCapture(); Pointer("FinishEdit"); await Ready();
+                    Assert(Math.Abs(seekingPlayer.Position - lastRetainedFrame) < .001,
+                        "A right trim that removes the preview frame seeks to the last retained frame instead of the clip start");
+                    Click("UndoButton"); await Ready(); Invoke("SeekTimeline", window.Clips[0], 1.2); await Ready();
+                    Pointer("BeginPointer", new Point(2, 140)); Pointer("MovePointer", new Point(2 + timeline.PixelsPerSecond * 6 / 60, 140), true);
+                    surface.ReleaseMouseCapture(); Pointer("FinishEdit"); await Ready();
+                    Assert(Math.Abs(window.Clips[0].Start - 1.25) < .001 && Math.Abs(seekingPlayer.Position - 1.25) < .001 && Math.Abs(timeline.Position) < .001,
+                        "A left trim that removes the preview frame clamps to the first retained frame");
+                    Click("UndoButton"); await Ready(); Invoke("SeekTimeline", window.Clips[0], beforeEdgeDrag); await Ready();
+                    Pointer("BeginPointer", new Point(2, 65)); Pointer("MovePointer", new Point(2 + timeline.PixelsPerSecond * 5 / 60, 65), true); Press(Key.Escape); await Ready();
+                    Assert(Math.Abs(window.Clips[0].Start - 1.15) < .001 && Math.Abs(seekingPlayer.Position - beforeEdgeDrag) < .001 && Math.Abs(timeline.Position - (beforeEdgeDrag - 1.15)) < .001,
+                        "Canceling an edge trim restores both its boundaries and the original preview frame");
                     Pointer("BeginPointer", new Point(window.Clips[0].KeptDuration * timeline.PixelsPerSecond / 2, 20));
                     surface.ReleaseMouseCapture(); Pointer("FinishEdit"); await Task.Delay(80);
                     for (var wait = 0; wait < 50 && Math.Abs(timeline.Position - .5) >= .001; wait++) await Task.Delay(10);

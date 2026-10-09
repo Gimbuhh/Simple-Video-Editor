@@ -226,7 +226,10 @@ public partial class MainWindow : Window
         if (selected == null || busy || pendingTrimEdit == null) return;
         SetTrim(start, end, pendingTrimEdit, final: false, constrain: true);
         UpdateTrimFields();
+        Timeline.Position = Timeline.ClipOffset(selected) + EditPreviewPosition(selected) - selected.Start;
+        PositionText.Text = Timecode.Format(Timeline.Position);
     }
+    private double EditPreviewPosition(MediaClip clip) => Math.Clamp(pendingEditSeek, clip.Start, Math.Max(clip.Start, clip.End - 1 / clip.FrameRate));
     private void CompleteTrimEdit()
     {
         if (pendingTrimEdit == null) return;
@@ -241,7 +244,7 @@ public partial class MainWindow : Window
             Checkpoint(original);
             MarkDirty();
         }
-        if (selected != null) SeekTimeline(selected, previous != null && selected.Start == previous.Start && selected.End == previous.End ? pendingEditSeek : selected.Start);
+        if (selected != null) SeekTimeline(selected, EditPreviewPosition(selected));
         if (dirty) { recoveryTimer.Stop(); recoveryTimer.Start(); }
     }
     private void CancelTrimEdit()

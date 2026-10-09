@@ -4,14 +4,14 @@ A portable Windows editor for trimming and combining gameplay recordings. Versio
 
 ## Run
 
-Extract the entire portable ZIP, then double-click **Simple Video Editor.exe** at the top of the extracted folder. Keep **Support** beside it; it contains the video tools and documentation. No installer or separate runtime/video-tool setup is needed. In the project folder, use the **Simple Video Editor** shortcut or `App/Simple Video Editor.exe`.
+Extract the entire portable ZIP, then double-click **Simple Video Editor.exe** at the top of the extracted folder. Keep **bin** beside it; it contains the video tools and libraries. Guides and licenses are in **docs**. No installer or separate runtime/video-tool setup is needed. In the project folder, use the **Simple Video Editor** shortcut or `App/Simple Video Editor.exe`.
 
 ## Editing
 
 1. Click **Import clips** or drop recordings into the window. The **Recordings** library keeps the original files separate from timeline edits.
 2. Drag a recording onto the **Video** or **Audio** track. Double-click a library recording or use **Add to timeline** to append it. Dropping video files directly onto the timeline imports and inserts them. Moving a timeline clip carries its current preview frame along with it; a simple click seeks when you release the mouse.
 3. Click the ruler or a clip to move the shared playhead. Scrubbing preserves the current playing or paused state, including across recordings. One **play/pause icon button**, or **Space**, toggles playback through all timeline cuts. **Left / Right** moves a frame while paused. Library recordings have a separate preview scrubber that also preserves playback state.
-4. Drag either edge of a clip to trim it. Video and audio stay linked. **Trim before (Q)** removes everything before the current frame; **Trim after (W)** removes everything after it. Both keep the current frame. You can also enter source in/out timestamps or press **I / O** at the playhead.
+4. Drag either edge of a clip to trim it. Video and audio stay linked, and the preview keeps the current frame. If the new trim excludes that frame, the playhead clamps to the nearest retained frame. **Trim before (Q)** removes everything before the current frame; **Trim after (W)** removes everything after it. Both keep the current frame. You can also enter source in/out timestamps or press **I / O** at the playhead.
 5. Press **Ctrl+B** or click **Split** to cut at the playhead. Split at both ends of an unwanted middle portion, select that middle clip, and press **Delete**. Joined following clips close the gap; clips across an existing gap stay in place.
 6. Drag clips freely. Their edges automatically snap together when close, and moving a clip away detaches it. Trimming and deleting keep joined neighbors together without moving separate groups. Library drags show a thumbnail; existing timeline clips show their moving block. Cyan markers show drop destinations. Placement avoids overwriting other clips on this single linked track. Right-click for quick trims, split, duplicate, reset trim, move, and delete actions.
 7. Use **Fit**, **+ / −**, or **Ctrl+mouse wheel** to zoom. The mouse wheel scrolls horizontally. Click **Export video** when ready.
