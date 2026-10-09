@@ -1,0 +1,9 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+
+# Update the SDK and native media dependencies manually: their versions,
+# download URLs, checksums, and license notices must stay consistent.
