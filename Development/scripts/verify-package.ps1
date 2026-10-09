@@ -34,22 +34,13 @@ try {
     }
     $editorProject = Join-Path $editorDevelopment 'artifacts/verification/roundtrip.sveproject'
     if (!(Test-Path -LiteralPath $editorProject)) { throw 'Run the core/media checks first to generate the portable startup fixture.' }
-    $editorProcess = Start-Process -FilePath (Join-Path $editorRelocated 'Simple Video Editor.exe') -ArgumentList ('"' + $editorProject + '"') -WorkingDirectory $editorRelocated -WindowStyle Hidden -PassThru
-    $editorLoadedMpv = $false
-    for ($editorAttempt = 0; $editorAttempt -lt 75; $editorAttempt++) {
-        Start-Sleep -Milliseconds 200
-        $editorProcess.Refresh()
-        if ($editorProcess.HasExited) { throw 'The relocated editor exited during startup.' }
-        $editorLoadedMpv = @($editorProcess.Modules | Where-Object { $_.FileName -eq (Join-Path $editorSupport 'libmpv-2.dll') }).Count -eq 1
-        if ($editorLoadedMpv -and $editorProcess.MainWindowHandle -ne 0) { break }
-    }
-    if (!$editorLoadedMpv -or $editorProcess.MainWindowHandle -eq 0) { throw 'The relocated editor did not open its project and load bundled playback.' }
-    # Loading playback can precede the final asynchronous project/recovery work.
-    Start-Sleep -Milliseconds 750
-    $editorCloseSent = $editorProcess.CloseMainWindow()
-    if (!$editorCloseSent -or !$editorProcess.WaitForExit(10000)) { throw "The packaged editor did not close its saved project cleanly (close sent: $editorCloseSent)." }
+    $editorReadyFile = Join-Path $editorRelocated 'verification.json'
+    $editorProcess = Start-Process -FilePath (Join-Path $editorRelocated 'Simple Video Editor.exe') -ArgumentList ('--verify-package "' + $editorProject + '" "' + $editorReadyFile + '"') -WorkingDirectory $editorRelocated -WindowStyle Hidden -PassThru
+    if (!$editorProcess.WaitForExit(25000) -or $editorProcess.ExitCode -ne 0 -or !(Test-Path -LiteralPath $editorReadyFile)) { throw 'The relocated editor did not render its saved project and close cleanly.' }
+    $editorReady = Get-Content -LiteralPath $editorReadyFile -Raw | ConvertFrom-Json
+    if ($editorReady.PreviewWidth -le 0 -or $editorReady.PreviewHeight -le 0 -or $editorReady.PlaybackLibrary -ne (Join-Path $editorSupport 'libmpv-2.dll') -or $editorReady.ProbeTool -ne (Join-Path $editorSupport 'tools/ffprobe.exe')) { throw 'The relocated preview did not use its own bundled video tools.' }
     @{version=$editorVersion; rootEntries=$editorActual; zipSha256=$editorHash; nativePins=$true; relocation=$true; savedProjectStartup=$true; bundledPlayback=$true; cleanClose=$true} | ConvertTo-Json | Set-Content (Join-Path $editorArtifacts 'results.json')
-    Write-Output 'Portable layout, checksum, native pins, Unicode/space relocation, saved-project startup, bundled playback, and clean close passed.'
+    Write-Output 'Portable layout, checksum, native pins, Unicode/space relocation, saved-project preview rendering, bundled playback, and clean close passed.'
 } finally {
     if ($editorProcess -and !$editorProcess.HasExited) { Stop-Process -Id $editorProcess.Id }
     $editorCleanup = [IO.Path]::GetFullPath($editorRelocated)

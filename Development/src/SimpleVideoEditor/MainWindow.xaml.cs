@@ -134,6 +134,25 @@ public partial class MainWindow : Window
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
         var args = Environment.GetCommandLineArgs().Skip(1).ToArray();
+        if (args.Length == 3 && args[0] == "--verify-package")
+        {
+            // Internal portable-package check: wait for real project/preview readiness
+            // and use the normal asynchronous close path instead of timing WM_CLOSE.
+            try
+            {
+                if (!await OpenProjectAsync(args[1])) throw new InvalidOperationException("The verification project did not open.");
+                for (var attempt = 0; attempt < 150 && (!playerReady || Video.PreviewBitmap == null); attempt++) await Task.Delay(100);
+                if (!playerReady || Video.PreviewBitmap == null) throw new InvalidOperationException("The packaged preview did not render.");
+                using var process = System.Diagnostics.Process.GetCurrentProcess();
+                var playbackLibrary = process.Modules.Cast<System.Diagnostics.ProcessModule>().Single(m => m.ModuleName.Equals("libmpv-2.dll", StringComparison.OrdinalIgnoreCase)).FileName;
+                var result = new { PreviewWidth = Video.PreviewBitmap.PixelWidth, PreviewHeight = Video.PreviewBitmap.PixelHeight, PlaybackLibrary = playbackLibrary, ProbeTool = MediaTools.Find("ffprobe") };
+                if (File.Exists(args[2])) throw new IOException("The verification result already exists.");
+                await File.WriteAllTextAsync(args[2], System.Text.Json.JsonSerializer.Serialize(result));
+                Close();
+            }
+            catch { Application.Current.Shutdown(1); }
+            return;
+        }
         if (args.Length > 0)
         {
             if (args.Length == 1 && args[0].EndsWith(".sveproject", StringComparison.OrdinalIgnoreCase)) await OpenProjectAsync(args[0]);
