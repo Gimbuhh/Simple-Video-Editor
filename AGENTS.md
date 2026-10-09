@@ -7,6 +7,7 @@ This folder is the canonical Git checkout for the private repository:
 
 - Use this repository for all future work. Inspect status and remotes before editing; preserve unrelated user changes.
 - Work on a feature branch and create a pull request before changes enter `main`. Never push directly to `main`, including as an administrator. Wait for the PR checks before merging within the user's authorization.
+- Leave PRs open for the user's testing. Merge only after the user confirms testing is complete and approves the merge.
 - Enable the tracked push guard with `git config --local core.hooksPath .githooks`. This local guard complements the PR policy; GitHub currently requires a paid plan to enforce protection on this private repository.
 - Use meaningful commits for completed requested changes. Push or publish within the user's authorization for that task; do not force-push, rewrite published tags, or replace release assets silently.
 - Use Git history instead of new source-backup ZIPs or version-folder copies. Existing ignored local backups can remain.
