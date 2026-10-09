@@ -38,6 +38,8 @@ jobs:
         run: ./Development/scripts/build.ps1 -Zip
       - name: Verify portable package
         run: ./Development/scripts/verify-package.ps1
+      - name: Check packaging safeguards
+        run: ./Development/scripts/test-packaging.ps1
       - name: Prepare draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -49,5 +51,6 @@ jobs:
             Write-Output 'The release already exists; its assets and description remain unchanged.'
             exit 0
           }
-          gh release create $env:GITHUB_REF_NAME --verify-tag --draft --title "Simple Video Editor $editorVersion" --notes-file "release-notes/$editorVersion.md" Releases/SimpleVideoEditor-win-x64.zip Releases/SimpleVideoEditor-win-x64.zip.sha256
+          $editorPackage = "Releases/SimpleVideoEditor-$editorVersion-win-x64.zip"
+          gh release create $env:GITHUB_REF_NAME --verify-tag --draft --title "Simple Video Editor $editorVersion" --notes-file "release-notes/$editorVersion.md" $editorPackage ($editorPackage + '.sha256')
           if ($LASTEXITCODE -ne 0) { throw 'Draft release creation failed.' }

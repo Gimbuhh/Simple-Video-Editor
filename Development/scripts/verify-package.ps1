@@ -1,6 +1,7 @@
-param([string]$OutputName = 'App')
+param([string]$OutputName = 'App', [string]$PackageDirectory)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'project-paths.ps1')
+. (Join-Path $PSScriptRoot 'portable-package.ps1')
 if ($OutputName -notmatch '^App(?:-[A-Za-z0-9_-]+)?$') { throw 'Invalid app output name.' }
 $editorBundle = Join-Path $editorWorkspace $OutputName
 $editorExpected = @('bin','docs','README.txt','Simple Video Editor.exe')
@@ -8,15 +9,11 @@ $editorActual = @(Get-ChildItem -LiteralPath $editorBundle | Sort-Object Name | 
 if (@(Compare-Object $editorExpected $editorActual).Count) { throw 'The portable folder must expose only the executable, README.txt, bin, and docs.' }
 $editorVersion = ([xml](Get-Content (Join-Path $editorDevelopment 'src/SimpleVideoEditor/SimpleVideoEditor.csproj') -Raw)).Project.PropertyGroup.Version
 if ([Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $editorBundle 'Simple Video Editor.exe')).FileVersion -ne "$editorVersion.0") { throw 'Packaged executable version mismatch.' }
-$editorZip = Join-Path $editorWorkspace 'Releases/SimpleVideoEditor-win-x64.zip'
+$editorReleases = if ($PackageDirectory) { [IO.Path]::GetFullPath($PackageDirectory) } else { Join-Path $editorWorkspace 'Releases' }
+Assert-EditorCurrentPackage $editorReleases $editorVersion
+$editorZip = Join-Path $editorReleases (Get-EditorPackageName $editorVersion)
+Assert-EditorPackage $editorZip $editorVersion
 $editorHash = (Get-FileHash -LiteralPath $editorZip -Algorithm SHA256).Hash.ToLowerInvariant()
-if ((Get-Content -LiteralPath ($editorZip + '.sha256') -Raw).Trim() -ne "$editorHash  SimpleVideoEditor-win-x64.zip") { throw 'Portable checksum mismatch.' }
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-$editorArchive = [IO.Compression.ZipFile]::OpenRead($editorZip)
-try {
-    $editorZipRoot = @($editorArchive.Entries | ForEach-Object { ($_.FullName.Replace('\','/') -split '/')[0] } | Sort-Object -Unique)
-    if (@(Compare-Object $editorExpected $editorZipRoot).Count) { throw 'The release ZIP has unexpected top-level entries.' }
-} finally { $editorArchive.Dispose() }
 $editorArtifacts = Join-Path $editorDevelopment 'artifacts/package-verification'
 $editorRelocated = Join-Path $editorArtifacts ("relocated café's editor " + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $editorRelocated -Force | Out-Null

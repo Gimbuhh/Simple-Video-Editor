@@ -8,7 +8,7 @@ A portable Windows editor for trimming and combining gameplay recordings. Record
 
 ## Run
 
-[Download the Windows ZIP](https://github.com/Gimbuhh/simple-video-editor/releases/latest/download/SimpleVideoEditor-win-x64.zip), extract it, and double-click **Simple Video Editor.exe** at the top of the folder. Keep **bin** beside it; that folder holds the video tools and libraries. Guides and license notices are in **docs**. The desktop runtime is included in the executable. No installer, app account, or separate media-tool setup is required. Downloads require access to this private GitHub repository.
+[Download the Windows ZIP from the latest release](https://github.com/Gimbuhh/simple-video-editor/releases/latest), extract it, and double-click **Simple Video Editor.exe** at the top of the folder. Keep **bin** beside it; that folder holds the video tools and libraries. Guides and license notices are in **docs**. The desktop runtime is included in the executable. No installer, app account, or separate media-tool setup is required. Downloads require access to this private GitHub repository.
 
 In this local project folder, use the **Simple Video Editor** shortcut or `App/Simple Video Editor.exe`. A fresh source checkout needs the build commands below first.
 

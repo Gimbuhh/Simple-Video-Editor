@@ -25,6 +25,8 @@ This folder is the canonical Git checkout for the private repository:
 ## Releases
 
 - Follow `docs/releasing.md`; keep native dependency pins and license notices together.
+- Generate ZIP names from the authoritative app version: `SimpleVideoEditor-<version>-win-x64.zip` and its checksum. Local `Releases/` must retain only the current package pair; remove older generated packages only after the replacement passes version, layout, and checksum checks. Never infer app version from a filename alone.
+- Run `Development/scripts/test-packaging.ps1` and portable-package verification before a release. Preserve previously published GitHub releases and their assets.
 - Keep the release named by `MediaMirrorTag` available: its portable ZIP restores the exact native dependencies if upstream rolling downloads disappear.
 - Future tag workflows prepare draft releases. Publish only with user authorization and after verification.
 - Create release tags from the merged `main` commit, after the pull request checks pass.
