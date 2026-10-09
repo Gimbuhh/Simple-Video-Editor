@@ -16,6 +16,7 @@ public sealed class NativePlayer : IDisposable
     public long RequestedEntryId { get; private set; } = -1;
     public event Action<string>? PlaybackError;
     public event Action<long>? FileLoaded;
+    public event Action<long>? VideoReconfigured;
     public event Action<long, string?>? PlaybackEnded;
     public event Action? PreviewFrameAvailable;
 
@@ -85,6 +86,7 @@ public sealed class NativePlayer : IDisposable
                 activeEntryId = ev.Data == IntPtr.Zero ? -1 : Marshal.ReadInt64(ev.Data);
             }
             if (ev.Id == 8) FileLoaded?.Invoke(activeEntryId);
+            if (ev.Id == 17) VideoReconfigured?.Invoke(activeEntryId);
             if (ev.Id == 7 && ev.Data != IntPtr.Zero)
             {
                 var reason = Marshal.ReadInt32(ev.Data);

@@ -96,6 +96,30 @@ public static class UiVerification
                     SaveRender(window, Path.Combine(root, "recordings-compact-small.png"));
                     window.Width = 1320; window.Height = 880; window.UpdateLayout();
                     Assert(Control<ListBox>("SourceList").ActualHeight >= compactItem.ActualHeight * 4, "Normal window has space for at least four compact recording rows");
+                    var recordingName = Descendants(compactItem).OfType<TextBlock>().Single(text => text.Text == window.Sources[0].Name);
+                    Assert(recordingName.ActualWidth >= 230, "Normal Recordings panel leaves room for substantially longer filenames");
+                    foreach (var size in new[] { new Size(1000, 740), new Size(1320, 880), new Size(1800, 740), new Size(1100, 1000) })
+                    {
+                        window.Width = size.Width; window.Height = size.Height; window.UpdateLayout(); await Task.Delay(40);
+                        var viewport = Control<AspectRatioFrame>("PreviewViewport"); var frame = Control<Border>("PreviewFrame");
+                        var bounds = frame.TransformToAncestor(viewport).TransformBounds(new Rect(frame.RenderSize));
+                        Assert(Math.Abs(frame.ActualWidth - frame.ActualHeight * (16d / 9)) <= 1 && bounds.Left >= -.1 && bounds.Top >= -.1 && bounds.Right <= viewport.ActualWidth + .1 && bounds.Bottom <= viewport.ActualHeight + .1
+                            && Math.Abs(bounds.Left - (viewport.ActualWidth - bounds.Right)) < 1 && Math.Abs(bounds.Top - (viewport.ActualHeight - bounds.Bottom)) < 1
+                            && (Math.Abs(frame.ActualWidth - viewport.ActualWidth) < 1 || Math.Abs(frame.ActualHeight - viewport.ActualHeight) < 1),
+                            $"Preview stays centered, uncropped and maximally fitted at {size.Width} × {size.Height} (frame {frame.ActualWidth} × {frame.ActualHeight}, bounds {bounds}, viewport {viewport.ActualWidth} × {viewport.ActualHeight}, ratio {viewport.AspectRatio})");
+                        Assert(Control<ColumnDefinition>("RecordingsColumn").ActualWidth is >= 300 and <= 460, "Recordings width stays within readable limits while resizing");
+                        SaveRender(window, Path.Combine(root, $"preview-layout-{size.Width}-{size.Height}.png"));
+                    }
+                    window.Width = 1320; window.Height = 880; window.UpdateLayout(); await Task.Delay(60);
+                    var recordingsColumn = Control<ColumnDefinition>("RecordingsColumn"); var previewColumn = Control<Grid>("MediaLayout").ColumnDefinitions[2];
+                    var libraryWidth = recordingsColumn.Width; var previewWidth = previewColumn.Width; var initialWidth = recordingsColumn.ActualWidth;
+                    var splitter = Control<GridSplitter>("RecordingsSplitter"); splitter.Focus();
+                    var resizeKey = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window)!, Environment.TickCount, Key.Right) { RoutedEvent = Keyboard.KeyDownEvent };
+                    Invoke("Window_KeyDown", window, resizeKey);
+                    Assert(!resizeKey.Handled, "Recording divider keeps its arrow keys instead of stepping the video");
+                    splitter.RaiseEvent(resizeKey); window.UpdateLayout();
+                    Assert(recordingsColumn.ActualWidth > initialWidth, "Focused recording divider can widen the library with the keyboard");
+                    recordingsColumn.Width = libraryWidth; previewColumn.Width = previewWidth; Control<ListBox>("SourceList").Focus(); window.UpdateLayout();
                     foreach (var extreme in new[] { 1e20, 1e300 })
                     {
                         var renderClip = window.Sources[0].Clone(true); renderClip.Start = 0; renderClip.End = 1; renderClip.TimelineStart = extreme;
@@ -146,7 +170,7 @@ public static class UiVerification
                     var bluePixel = new byte[4];
                     blueBitmap.CopyPixels(new Int32Rect(blueBitmap.PixelWidth / 2, blueBitmap.PixelHeight / 2, 1, 1), bluePixel, 4, 0);
                     Assert(bluePixel[0] > 220 && bluePixel[1] < 25 && bluePixel[2] < 25, "BGR software presentation preserves the blue fixture's color channels");
-                    Assert(DarkAt(Control<VideoHost>("Video"), new Point(3, 3)), "Software preview preserves black letterboxing");
+                    Assert(!DarkAt(Control<VideoHost>("Video"), new Point(3, Control<VideoHost>("Video").ActualHeight / 2)), "Fitted software preview avoids window-size black side bars");
                     Invoke("Select", window.Sources[0], false); await Ready();
                     await (Task)Invoke("ImportAsync", (object)new[] { window.Sources[0].Path })!;
                     Assert(window.Sources.Count == 2, "Duplicate imports keep one library recording");
@@ -317,9 +341,11 @@ public static class UiVerification
                     Assert(Math.Abs(window.Clips[0].Start - 1.25) < .001 && Math.Abs(seekingPlayer.Position - 1.25) < .001 && Math.Abs(timeline.Position) < .001,
                         "A left trim that removes the preview frame clamps to the first retained frame");
                     Click("UndoButton"); await Ready(); Invoke("SeekTimeline", window.Clips[0], beforeEdgeDrag); await Ready();
+                    for (var wait = 0; wait < 100 && (Math.Abs(seekingPlayer.Position - beforeEdgeDrag) >= .001 || Math.Abs(timeline.Position - (beforeEdgeDrag - 1.15)) >= .001); wait++) await Task.Delay(10);
                     Pointer("BeginPointer", new Point(2, 65)); Pointer("MovePointer", new Point(2 + timeline.PixelsPerSecond * 5 / 60, 65), true); Press(Key.Escape); await Ready();
+                    for (var wait = 0; wait < 100 && (Math.Abs(seekingPlayer.Position - beforeEdgeDrag) >= .001 || Math.Abs(timeline.Position - (beforeEdgeDrag - 1.15)) >= .001); wait++) await Task.Delay(10);
                     Assert(Math.Abs(window.Clips[0].Start - 1.15) < .001 && Math.Abs(seekingPlayer.Position - beforeEdgeDrag) < .001 && Math.Abs(timeline.Position - (beforeEdgeDrag - 1.15)) < .001,
-                        "Canceling an edge trim restores both its boundaries and the original preview frame");
+                        $"Canceling an edge trim restores both its boundaries and the original preview frame (start {window.Clips[0].Start}, preview {seekingPlayer.Position}, expected {beforeEdgeDrag}, timeline {timeline.Position}, paused {seekingPlayer.Paused})");
                     Pointer("BeginPointer", new Point(window.Clips[0].KeptDuration * timeline.PixelsPerSecond / 2, 20));
                     surface.ReleaseMouseCapture(); Pointer("FinishEdit"); await Task.Delay(80);
                     for (var wait = 0; wait < 50 && Math.Abs(timeline.Position - .5) >= .001; wait++) await Task.Delay(10);
@@ -744,6 +770,21 @@ public static class UiVerification
                     }
                     Assert(window.Sources.Count == 0 && Control<Button>("SaveButton").IsEnabled && await (Task<bool>)Invoke("SaveProjectAsync", false)! && (await ProjectStore.ReadAsync(modePath)).Clips.Count == 0,
                         "Clearing the last recording keeps Save available and persists the intentionally empty project");
+                    foreach (var (name, ratio) in new[] { ("portrait-preview.mp4", 9d / 16), ("anamorphic-preview.mp4", 32d / 9), ("rotated-preview.mp4", 9d / 16) })
+                    {
+                        var path = Path.Combine(root, name);
+                        if (name.StartsWith("rotated"))
+                            await MediaTools.RunAsync("ffmpeg", ["-v", "error", "-y", "-display_rotation", "90", "-i", Path.Combine(root, "source B.mp4"), "-c", "copy", path]);
+                        else
+                            await MediaTools.RunAsync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", $"color=blue:size={(name.StartsWith("portrait") ? "180x320" : "320x180")}:rate=30:duration=1", "-vf", name.StartsWith("anamorphic") ? "setsar=2" : "setsar=1", "-c:v", "libx264", "-preset", "ultrafast", path]);
+                        await (Task)Invoke("ImportAsync", (object)new[] { path })!;
+                        Invoke("Select", window.Sources.Single(source => source.Path == path), false); await Ready(); window.UpdateLayout();
+                        var video = Control<VideoHost>("Video"); var viewport = Control<AspectRatioFrame>("PreviewViewport");
+                        for (var i = 0; i < 50 && (video.PreviewBitmap == null || Math.Abs((double)video.PreviewBitmap.PixelWidth / video.PreviewBitmap.PixelHeight - ratio) > .02); i++) await Task.Delay(20);
+                        Assert(Math.Abs(viewport.AspectRatio - ratio) < .001 && Math.Abs(video.ActualWidth - video.ActualHeight * ratio) <= (1 + ratio) / 2 && !DarkAt(video, new Point(3, video.ActualHeight / 2)),
+                            $"Preview respects display aspect and rotation without added side bars: {name} (ratio {viewport.AspectRatio}, surface {video.ActualWidth} × {video.ActualHeight}, bitmap {video.PreviewBitmap?.PixelWidth} × {video.PreviewBitmap?.PixelHeight})");
+                        SaveRender(window, Path.Combine(root, name + ".png"));
+                    }
                     await (Task<bool>)Invoke("SaveProjectAsync", false)!;
                     var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); window.Closed += (_, _) => closed.TrySetResult(); window.Close(); await closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
                     Assert(!window.IsVisible && dispatcherErrors.Count == 0, "Editing and normal close finish without dispatcher errors");

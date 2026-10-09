@@ -26,6 +26,8 @@ Selecting a recording already visible in the library preserves the scroll positi
 
 Recording cards show the original duration once; exact source in/out points remain in the trim fields and timeline tooltips. New, Open, and Save disable while importing or opening a project. Save stays available for edited or existing projects, including a project intentionally cleared of all recordings.
 
+The Recordings panel grows with the window to show more of each filename. Drag the divider beside it to adjust its width, or focus the divider with Tab and use the arrow keys. Hover over a recording name to see its full path. The preview fits the whole video at its display aspect ratio and stays centered when the window resizes; the surrounding space uses the app background. Black bars already present in a recording remain part of the video.
+
 Search the **Recordings** library by name with the search field or **Ctrl+F**. Search ignores letter case, shows the matching count, and filters only the library; the active preview and timeline edits stay intact. Use the clear button or **Escape** in the search field to show every recording again.
 
 Playback moves a retained playhead drawing instead of reconstructing the timeline on every tick. Tracks redraw when clips, selection, zoom, the visible scroll region, or waveform data change. Timeline duration is calculated with clip offsets when edits occur, rather than rescanning all clips during every playhead update. Thumbnail images are released when the timeline is cleared.

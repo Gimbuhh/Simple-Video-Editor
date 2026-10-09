@@ -5,6 +5,8 @@
 ### Changed
 
 - Timeline actions sit side by side, and compact recording rows leave more clips visible in small windows.
+- The wider Recordings panel scales with the window and has a draggable divider for longer filenames.
+- Preview frames fit the video's display aspect ratio, including portrait and rotated clips, without oversized black padding caused by window shape.
 - Local build shortcuts include the app version and work for alternate app output folders.
 
 ### Fixed

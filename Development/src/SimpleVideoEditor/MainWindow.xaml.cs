@@ -75,6 +75,11 @@ public partial class MainWindow : Window
                     if (!busy) StatusText.Text = "";
                     RefreshSummary();
                 });
+                player.VideoReconfigured += entryId => Dispatcher.BeginInvoke(() =>
+                {
+                    if (closing || selected == null || player == null || entryId != player.RequestedEntryId || !string.Equals(player.Get("path"), selected.Path, StringComparison.OrdinalIgnoreCase)) return;
+                    UpdatePreviewAspectRatio();
+                });
                 player.PlaybackError += message => Dispatcher.BeginInvoke(() =>
                 {
                     if (closing) return;
@@ -296,12 +301,14 @@ public partial class MainWindow : Window
             playerReady = false;
             player?.Command("stop"); Video.Clear(); Video.Visibility = Visibility.Collapsed; EmptyPreview.Visibility = Visibility.Visible;
             SelectedName.Text = "Preview"; SelectedDetails.Text = ""; Timeline.Position = 0;
+            PreviewViewport.AspectRatio = 16d / 9;
             PreviewSeek.Visibility = Visibility.Collapsed;
             StartInput.Text = EndInput.Text = PositionText.Text = "00:00:00.000";
         }
         else
         {
             SelectedName.Text = clip.Name; SelectedDetails.Text = $"{(TimelineSelected ? "Timeline" : "Recording")} · {clip.Height}p · {clip.FrameRate:0.##} fps";
+            PreviewViewport.AspectRatio = clip.Width > 0 && clip.Height > 0 ? (double)clip.Width / clip.Height : 16d / 9;
             pendingSeek = clip.Start;
             if (TimelineSelected) Timeline.Position = Timeline.ClipOffset(clip);
             updatingSeek = true; PreviewSeek.Maximum = clip.Duration; PreviewSeek.Value = clip.Start; updatingSeek = false;
@@ -315,10 +322,19 @@ public partial class MainWindow : Window
         if (selected == null || player == null) return;
         if (playerReady && string.Equals(player.Get("path"), selected.Path, StringComparison.OrdinalIgnoreCase))
         {
+            UpdatePreviewAspectRatio();
             player.Seek(pendingSeek); player.Set("pause", resumeAfterLoad ? "no" : "yes"); return;
         }
         playerReady = false; RefreshSummary(); StatusText.Text = "Loading preview…";
         try { player.Load(selected.Path); } catch (Exception ex) { StatusText.Text = ex.Message; }
+    }
+    private void UpdatePreviewAspectRatio()
+    {
+        if (player == null || !double.TryParse(player.Get("video-out-params/aspect"), System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var ratio) || !double.IsFinite(ratio) || ratio <= 0) return;
+        // Display rotation is applied by the renderer after its output parameters.
+        if (int.TryParse(player.Get("video-out-params/rotate"), out var rotation) && rotation % 180 != 0) ratio = 1 / ratio;
+        PreviewViewport.AspectRatio = ratio;
     }
     private void Source_SelectionChanged(object sender, SelectionChangedEventArgs e) { if (!syncing) Select(SourceList.SelectedItem as MediaClip); }
     private void Search_Changed(object sender, TextChangedEventArgs e)
@@ -925,7 +941,7 @@ public partial class MainWindow : Window
             e.Handled = true; return;
         }
         if (key == Key.Escape && SearchInput.IsKeyboardFocusWithin) { SearchInput.Clear(); e.Handled = true; return; }
-        if (Keyboard.FocusedElement is TextBox) return;
+        if (Keyboard.FocusedElement is TextBox || RecordingsSplitter.IsKeyboardFocusWithin && (key is Key.Left or Key.Right)) return;
         if (key == Key.Escape && pendingTrimEdit != null) { Timeline.CancelGesture(); e.Handled = true; return; }
         if (key == Key.Apps || key == Key.F10 && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
         { if (TimelineSelected) OpenTimelineMenu(selected!); e.Handled = true; return; }
