@@ -1,6 +1,6 @@
 # User guide
 
-A portable Windows editor for trimming and combining gameplay recordings. Version 1.0.2.
+A portable Windows editor for trimming and combining gameplay recordings. Version 1.0.3.
 
 ## Run
 
@@ -19,6 +19,8 @@ Extract the entire portable ZIP, then double-click **Simple Video Editor.exe** a
 The timeline has one video lane and one linked audio lane, with proportional durations and a global playhead. Both lanes edit the same clip; dragging or trimming either keeps video and audio together. Positions and gaps are preserved in projects, preview, and export; gaps show black video and silence. Snapping uses a small screen-distance threshold at every zoom level. While dragging a left trim edge, the opposite edge stays anchored where space permits; joined clips close the temporary gap when the gesture finishes. Isolated clips retain their positions when neighboring groups are edited. The audio lane shows a real waveform from the recording's first audio track, aligned to each clip's trim range. Peaks load in the background and are cached for reopening; the line is dotted while loading. Silence and video-only recordings show a flat line. The display makes quieter peaks easier to see; it does not change playback volume. A recording can be added repeatedly and split into as many separately editable parts as needed. Source files remain untouched.
 
 Selecting a recording already visible in the library preserves the scroll position. Keyboard navigation reveals the selected item with pixel scrolling, and selecting an entirely offscreen recording from the timeline brings it into view.
+
+**Add to timeline** appends the selected recording. When the library contains more than one recording, **Add all to timeline** appears below it and appends every recording in library order, including recordings hidden by search. Each addition creates separately editable timeline clips, and a single undo removes the entire batch. Existing timeline edits and gaps stay intact.
 
 Recording cards show the original duration once; exact source in/out points remain in the trim fields and timeline tooltips. New, Open, and Save disable while importing or opening a project. Save stays available for edited or existing projects, including a project intentionally cleared of all recordings.
 

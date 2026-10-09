@@ -37,7 +37,10 @@
      </ListBox>
      <TextBlock x:Name="SearchEmpty" Text="No matches" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" IsHitTestVisible="False"/>
      </Grid>
-     <Button x:Name="AddToTimelineButton" Grid.Row="4" Content="Add to timeline" Click="AddToTimeline_Click" Margin="0,8,0,0" IsEnabled="False" ToolTip="Add selected recording (double-click or drag to timeline)"/>
+     <StackPanel Grid.Row="4">
+      <Button x:Name="AddToTimelineButton" Content="Add to timeline" Click="AddToTimeline_Click" Margin="0,8,0,0" IsEnabled="False" ToolTip="Add selected recording (double-click or drag to timeline)"/>
+      <Button x:Name="AddAllToTimelineButton" Content="Add all to timeline" Click="AddAllToTimeline_Click" Margin="0,8,0,0" Visibility="Collapsed" IsEnabled="False" ToolTip="Append every recording in library order, including recordings hidden by search"/>
+     </StackPanel>
     </Grid>
    </Border>
    <Grid Grid.Column="2"><Grid.RowDefinitions><RowDefinition Height="32"/><RowDefinition Height="*"/><RowDefinition Height="22"/><RowDefinition Height="48"/></Grid.RowDefinitions>

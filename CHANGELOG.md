@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.3 — 2026-10-09
+
+### Added
+
+- The Recordings section shows **Add all to timeline** alongside **Add to timeline** when the library contains multiple recordings. It appends all recordings in library order, including search-hidden recordings, as one undoable action.
+
 ## 1.0.2 — 2026-10-09
 
 ### Changed

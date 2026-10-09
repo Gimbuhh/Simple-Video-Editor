@@ -185,6 +185,8 @@ public partial class MainWindow : Window
         TotalText.Text = $"{Timecode.Format(Timeline.Duration)} total";
         ExportButton.IsEnabled = Clips.Count > 0 && !busy;
         AddToTimelineButton.IsEnabled = SourceList.SelectedItem != null && !busy;
+        AddAllToTimelineButton.Visibility = Sources.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+        AddAllToTimelineButton.IsEnabled = Sources.Count > 1 && !busy;
         UndoButton.IsEnabled = undo.Count > 0 && !busy; RedoButton.IsEnabled = redo.Count > 0 && !busy;
         RemoveButton.IsEnabled = TimelineSelected && !busy;
         SplitButton.IsEnabled = TimelineSelected && !gapPreview && !busy && selected!.KeptDuration >= 2 / selected.FrameRate - .0001;
@@ -705,6 +707,7 @@ public partial class MainWindow : Window
         var source = SourceList.SelectedItem as MediaClip;
         if (source != null) AppendSources([source]);
     }
+    private void AddAllToTimeline_Click(object sender, RoutedEventArgs e) => AppendSources(Sources);
     private void Source_DoubleClick(object sender, MouseButtonEventArgs e)
     {
         if ((ItemsControl.ContainerFromElement(SourceList, e.OriginalSource as DependencyObject) as ListBoxItem)?.DataContext is MediaClip source) AppendSources([source]);
