@@ -32,6 +32,8 @@ Search the **Recordings** library by name with the search field or **Ctrl+F**. S
 
 Playback moves a retained playhead drawing instead of reconstructing the timeline on every tick. Tracks redraw when clips, selection, zoom, the visible scroll region, or waveform data change. Timeline duration is calculated with clip offsets when edits occur, rather than rescanning all clips during every playhead update. Thumbnail images are released when the timeline is cleared.
 
+Drag the recording scrubber or timeline ruler to seek. The white playhead follows the pointer while the preview decodes the latest requested position. Playback pauses during the drag; releasing lands on the final frame and restores the previous play/pause state. Escape or losing mouse capture ends the scrub at its current position.
+
 The out point is the first excluded frame. Splitting requires at least one frame on each side. Trim handles move in frame-sized increments while preserving the original timestamp precision. Import, insert, split, delete, trim, reorder, and removal from the library support undo/redo. Removing a library recording from the project also removes its timeline clips, without deleting the file.
 
 | Shortcut | Action |

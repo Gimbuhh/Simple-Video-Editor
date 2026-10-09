@@ -136,6 +136,33 @@ public static class UiVerification
                     Assert(!Control<Button>("AddToTimelineButton").IsEnabled && !Control<Button>("AddAllToTimelineButton").IsEnabled && window.Clips.Count == 0, "Busy state disables both timeline actions and blocks batch insertion");
                     Invoke("SetBusy", false);
                     Assert(Control<Slider>("PreviewSeek").IsVisible && !Control<Button>("SplitButton").IsEnabled, "Recording preview has its own scrubber and cannot alter timeline clips");
+                    var recordingSeek = Control<Slider>("PreviewSeek");
+                    var recordingThumb = Descendants(recordingSeek).OfType<System.Windows.Controls.Primitives.Thumb>().Single();
+                    var recordingPlayer = (NativePlayer)Field("player")!;
+                    recordingThumb.RaiseEvent(new System.Windows.Controls.Primitives.DragStartedEventArgs(0, 0) { RoutedEvent = System.Windows.Controls.Primitives.Thumb.DragStartedEvent });
+                    recordingSeek.Value = 1.5031;
+                    // A late native position must not take the thumb away from the pointer.
+                    recordingPlayer.Seek(.2); await Task.Delay(100); Invoke("PlaybackTick");
+                    Assert(Math.Abs(recordingSeek.Value - 1.5031) < .00001, "Recording scrubber ignores late decoded positions while the thumb is held");
+                    recordingSeek.Value = .5031; Invoke("PlaybackTick");
+                    recordingPlayer.Seek(2.5); await Task.Delay(100); Invoke("PlaybackTick");
+                    Assert(Math.Abs(recordingSeek.Value - .5031) < .00001, "Backward recording scrubbing stays at the pointer despite a later decoded frame");
+                    recordingThumb.RaiseEvent(new System.Windows.Controls.Primitives.DragCompletedEventArgs(0, 0, false) { RoutedEvent = System.Windows.Controls.Primitives.Thumb.DragCompletedEvent });
+                    for (var wait = 0; wait < 100 && (bool)Field("settlingScrub")!; wait++) await Task.Delay(10);
+                    Assert(recordingPlayer.Paused && Math.Abs(recordingPlayer.Position - .5) < .001 && !(bool)Field("settlingScrub")!, "Recording release seeks the final frame and preserves pause");
+                    Click("PlayButton");
+                    recordingThumb.RaiseEvent(new System.Windows.Controls.Primitives.DragStartedEventArgs(0, 0) { RoutedEvent = System.Windows.Controls.Primitives.Thumb.DragStartedEvent });
+                    recordingSeek.Value = 1.8031; await Task.Delay(120); Invoke("PlaybackTick");
+                    Assert(Math.Abs(recordingSeek.Value - 1.8031) < .00001 && recordingPlayer.Paused, "Playing recording scrub holds its pointer position while preview decoding is paused");
+                    recordingThumb.RaiseEvent(new System.Windows.Controls.Primitives.DragCompletedEventArgs(0, 0, true) { RoutedEvent = System.Windows.Controls.Primitives.Thumb.DragCompletedEvent });
+                    for (var wait = 0; wait < 100 && (bool)Field("settlingScrub")!; wait++) await Task.Delay(10);
+                    Assert(!recordingPlayer.Paused && recordingPlayer.Position >= 1.79, "Canceled thumb capture completes at the final recording frame and restores playback");
+                    Click("PlayButton");
+                    recordingThumb.RaiseEvent(new System.Windows.Controls.Primitives.DragStartedEventArgs(0, 0) { RoutedEvent = System.Windows.Controls.Primitives.Thumb.DragStartedEvent });
+                    recordingSeek.Value = recordingSeek.Maximum;
+                    recordingThumb.RaiseEvent(new System.Windows.Controls.Primitives.DragCompletedEventArgs(0, 0, false) { RoutedEvent = System.Windows.Controls.Primitives.Thumb.DragCompletedEvent });
+                    for (var wait = 0; wait < 100 && (bool)Field("settlingScrub")!; wait++) await Task.Delay(10);
+                    Assert(!(bool)Field("settlingScrub")! && recordingPlayer.Paused && Math.Abs(recordingPlayer.Position - (window.Sources[0].End - 1 / window.Sources[0].FrameRate)) < .001, "Recording scrub at its end lands on the last decodable frame");
                     var sourceList = Control<ListBox>("SourceList");
                     var sourceScroll = Descendants(sourceList).OfType<ScrollViewer>().Single();
                     // Constrain just the list to test partial-item selection independently of card size.
@@ -353,6 +380,39 @@ public static class UiVerification
                     Pointer("BeginPointer", new Point(timeline.PixelsPerSecond / 2, 20));
                     Pointer("MovePointer", new Point(timeline.PixelsPerSecond * 1.5, 20), true); surface.ReleaseMouseCapture(); Pointer("FinishEdit"); await Ready();
                     Assert(timeline.SelectedClip == window.Clips[1] && Math.Abs(timeline.Position - 1.5) < .001 && window.Clips.Count == 2, "Dragging the ruler scrubs across recordings without moving clips");
+                    Invoke("Select", window.Clips[0], false); await Ready();
+                    var scrubUndoCount = ((System.Collections.ICollection)Field("undo")!).Count;
+                    var scrubRanges = window.Clips.Select(c => (c.SectionId, c.Start, c.End, c.TimelineStart)).ToArray();
+                    Pointer("BeginPointer", new Point(.5031 * timeline.PixelsPerSecond, 20));
+                    foreach (var pointerTime in new[] { .6231, .2031, .8031 })
+                    {
+                        Pointer("MovePointer", new Point(pointerTime * timeline.PixelsPerSecond, 20), true); Invoke("PlaybackTick");
+                        Assert(Math.Abs(timeline.Position - pointerTime) < .000001, $"Timeline ruler follows the continuous pointer across playback ticks at {pointerTime}");
+                    }
+                    seekingPlayer.Seek(window.Clips[0].Start + .1); await Task.Delay(80); Invoke("PlaybackTick");
+                    Assert(Math.Abs(timeline.Position - .8031) < .000001, "A late native frame cannot pull the held timeline playhead backward");
+                    surface.ReleaseMouseCapture(); Pointer("FinishEdit");
+                    var finalScrubPosition = timeline.Position; Invoke("PlaybackTick");
+                    Assert(Math.Abs(timeline.Position - finalScrubPosition) < .000001, "Release retains the final requested playhead while the asynchronous seek settles");
+                    for (var wait = 0; wait < 100 && (bool)Field("settlingScrub")!; wait++) await Task.Delay(10);
+                    Assert(seekingPlayer.Paused && Math.Abs(seekingPlayer.Position - (window.Clips[0].Start + .8)) < .001, "Timeline release lands on the requested frame and stays paused");
+                    Click("PlayButton");
+                    Pointer("BeginPointer", new Point(.3031 * timeline.PixelsPerSecond, 20));
+                    Pointer("MovePointer", new Point(1.6031 * timeline.PixelsPerSecond, 20), true); await Ready(); Invoke("PlaybackTick");
+                    Assert(Math.Abs(timeline.Position - 1.6031) < .000001 && timeline.SelectedClip == window.Clips[1] && seekingPlayer.Paused, "Held scrubbing across recordings preserves pointer position through file loading");
+                    surface.ReleaseMouseCapture(); Pointer("FinishEdit");
+                    for (var wait = 0; wait < 100 && (bool)Field("settlingScrub")!; wait++) await Task.Delay(10);
+                    Assert(!seekingPlayer.Paused && timeline.SelectedClip == window.Clips[1] && seekingPlayer.Position >= .59, "Cross-recording ruler release restores the original playing state");
+                    Click("PlayButton");
+                    Pointer("BeginPointer", new Point(1.7231 * timeline.PixelsPerSecond, 20)); Press(Key.Escape);
+                    for (var wait = 0; wait < 100 && (bool)Field("settlingScrub")!; wait++) await Task.Delay(10);
+                    Assert(!(bool)Field("scrubbing")! && !surface.IsMouseCaptured && seekingPlayer.Paused, "Escape ends ruler capture and leaves the final frame paused");
+                    Pointer("BeginPointer", new Point((timeline.Duration + 2) * timeline.PixelsPerSecond, 20));
+                    Assert(Math.Abs(timeline.Position - timeline.Duration) < .000001, "Held timeline scrubbing clamps an outside pointer to the sequence end");
+                    surface.ReleaseMouseCapture(); Pointer("FinishEdit");
+                    for (var wait = 0; wait < 100 && (bool)Field("settlingScrub")!; wait++) await Task.Delay(10);
+                    Assert(!(bool)Field("settlingScrub")! && Math.Abs(seekingPlayer.Position - (window.Clips[^1].End - 1 / window.Clips[^1].FrameRate)) < .001, "Timeline end scrub completes on the last retained frame");
+                    Assert(window.Clips.Select(c => (c.SectionId, c.Start, c.End, c.TimelineStart)).SequenceEqual(scrubRanges) && ((System.Collections.ICollection)Field("undo")!).Count == scrubUndoCount, "Scrubbing never changes trim boundaries, timeline placement or undo history");
                     Invoke("Select", window.Clips[0], false); await Ready();
                     Invoke("SplitAt", double.NaN); Invoke("SplitAt", 1.15);
                     Assert(window.Clips.Count == 2 && Control<TextBlock>("TrimHint").IsVisible, "Invalid splits do not change the timeline and show an error");
@@ -678,6 +738,21 @@ public static class UiVerification
                     Pointer("BeginPointer", new Point(2.5 * timeline.PixelsPerSecond, 20)); surface.ReleaseMouseCapture(); Pointer("FinishEdit"); await Task.Delay(80);
                     Assert((bool)Field("gapPreview")! && !(bool)Field("gapPlaying")! && Control<VideoHost>("Video").ShowBlank && ((NativePlayer)Field("player")!).Paused,
                         "Paused scrubbing into a free gap displays black and silences audio");
+                    Invoke("SeekGap", 2.5, true);
+                    Pointer("BeginPointer", new Point(2.5031 * timeline.PixelsPerSecond, 20));
+                    Pointer("MovePointer", new Point(2.6031 * timeline.PixelsPerSecond, 20), true);
+                    await Task.Delay(120); Invoke("PlaybackTick");
+                    Assert(Math.Abs(timeline.Position - 2.6031) < .000001 && !(bool)Field("gapPlaying")!, "A playing gap cannot advance the playhead away from a held scrub pointer");
+                    surface.ReleaseMouseCapture(); Pointer("FinishEdit"); await Task.Delay(60); Invoke("PlaybackTick");
+                    Assert((bool)Field("gapPlaying")! && timeline.Position > 2.6031, "Releasing in a gap restores its playing clock at the final pointer position");
+                    Click("PlayButton");
+                    Pointer("BeginPointer", new Point(2.5 * timeline.PixelsPerSecond, 20));
+                    Pointer("MovePointer", new Point(3.6031 * timeline.PixelsPerSecond, 20), true); await Ready(); Invoke("PlaybackTick");
+                    Assert(!(bool)Field("gapPreview")! && Math.Abs(timeline.Position - 3.6031) < .000001, "Dragging out of a gap into a recording keeps the pointer in control");
+                    surface.ReleaseMouseCapture(); Pointer("FinishEdit");
+                    for (var wait = 0; wait < 100 && (bool)Field("settlingScrub")!; wait++) await Task.Delay(10);
+                    Assert(((NativePlayer)Field("player")!).Paused && Math.Abs(((NativePlayer)Field("player")!).Position - .35) < .001, "Release from a gap lands on the matching source frame without changing pause");
+                    Invoke("SeekGap", 2.5, false);
                     Click("SplitButton"); Assert(window.Clips.Count == countBeforeFreeDrop && !Control<Button>("SplitButton").IsEnabled,
                         "A playhead in an empty gap cannot split an unrelated selected recording");
                     Click("PlayButton"); await Task.Delay(100); Invoke("PlaybackTick");

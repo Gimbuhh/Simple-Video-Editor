@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.4 — 2026-10-09
+
+### Changed
+
+- Portable ZIP names include the app version. Local packaging verifies the new bundle before removing older generated ZIPs and checksums.
+
+### Fixed
+
+- Recording and timeline scrubbers follow the pointer smoothly without jumping to older decoded frames. Release seeks the final frame and restores the previous play/pause state.
+
 ## 1.0.3 — 2026-10-09
 
 ### Changed
