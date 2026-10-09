@@ -67,7 +67,7 @@ public sealed class ExportService
             {
                 if (line.StartsWith("out_time_us=") && long.TryParse(line[12..], out var microseconds)) progress?.Report(new(.93 + Math.Clamp(microseconds / 1e6 / total, 0, 1) * .06, "Combining sections and finishing audio…"));
             });
-            var result = await MediaTools.ProbeAsync(temporary, token);
+            var result = await MediaTools.ProbeOutputAsync(temporary, token);
             if (Math.Abs(result.Duration - total) > Math.Max(.2, clips.Count * .04)) throw new InvalidOperationException("The output duration did not match the edited sequence. The export was not saved.");
             token.ThrowIfCancellationRequested();
             File.Move(temporary, destination, true);

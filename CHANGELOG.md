@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.3 — 2026-10-09
+
+### Changed
+
+- Timeline actions sit side by side, and compact recording rows leave more clips visible in small windows.
+- The wider Recordings panel scales with the window and has a draggable divider for longer filenames.
+- Preview frames fit the video's display aspect ratio, including portrait and rotated clips, without oversized black padding caused by window shape.
+- Local build shortcuts include the app version and work for alternate app output folders.
+
+### Fixed
+
+- Project recording references are authorized before filesystem access. Network paths and unsupported linked locations are rejected; local symbolic links and junctions resolve to validated local targets.
+- Extreme project timestamps are rejected, and timeline ruler rendering and zoom remain bounded at very small display scales.
+
+### Added
+
+- The Recordings section shows **Add all to timeline** alongside **Add to timeline** when the library contains multiple recordings. It appends all recordings in library order, including search-hidden recordings, as one undoable action.
+
 ## 1.0.2 — 2026-10-09
 
 ### Changed

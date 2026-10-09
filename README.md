@@ -14,7 +14,7 @@ In this local project folder, use the **Simple Video Editor** shortcut or `App/S
 
 ## Editing
 
-1. Import recordings, then drag them onto the timeline.
+1. Import recordings, then drag them onto the timeline. Use **Add to timeline** for the selected recording or **Add all to timeline** when the library contains multiple recordings.
 2. Drag clip edges to trim. Move clips freely; nearby edges snap together automatically.
 3. Use **Split** to keep multiple moments from one recording. **Trim before** and **Trim after** remove either side of the playhead in one step.
 4. Export the combined timeline as an AV1 or H.264 MP4.
@@ -36,7 +36,7 @@ See the [user guide](docs/user-guide.md) for all shortcuts, editing behavior, ex
 
 ## Requirements and scope
 
-- Windows x64. Version 1.0.2.
+- Windows x64. Version 1.0.3.
 - SDR video; verified with 1440p/60 fps AV1 Shadowplay recordings. HDR is currently unsupported.
 - One video track with linked audio, straight cuts, and the first audio stream. Separate audio editing, effects, titles, and transitions are outside the current scope.
 - NVIDIA export is optional; CPU encoding is available. Preview uses software rendering.

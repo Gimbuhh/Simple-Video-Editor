@@ -5,17 +5,23 @@ namespace SimpleVideoEditor.Services;
 
 public static class ProjectStore
 {
+    public static readonly double MaximumTimelineDuration = TimeSpan.MaxValue.TotalSeconds;
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
     public static string DataDirectory { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SimpleVideoEditor");
     public static ProjectDocument Capture(IEnumerable<MediaClip> clips, IEnumerable<MediaClip>? sources = null) => new(1, clips.Select(c => new ProjectEntry(c.Path, c.Start, c.End, c.TimelineStart)).ToList(), sources?.Select(c => c.Path).Distinct(StringComparer.OrdinalIgnoreCase).ToList());
-    public static IEnumerable<string> SourcePaths(ProjectDocument document) => (document.Sources ?? []).Concat(document.Clips.Select(c => c.Path)).Distinct(StringComparer.OrdinalIgnoreCase);
+    public static IEnumerable<string> SourcePaths(ProjectDocument document)
+    {
+        var paths = (document.Sources ?? []).Concat(document.Clips.Select(c => c.Path)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        foreach (var path in paths) LocalRecordingPath.Validate(path);
+        return paths;
+    }
     public static ProjectDocument Relink(ProjectDocument document, IReadOnlyDictionary<string, string> replacements)
     {
         var paths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var original in SourcePaths(document))
         {
-            var resolved = replacements.TryGetValue(original, out var replacement) ? Path.GetFullPath(replacement) : original;
-            if (!File.Exists(resolved)) throw new FileNotFoundException("Locate all missing recordings before opening the project.", resolved);
+            var resolved = LocalRecordingPath.Validate(replacements.TryGetValue(original, out var replacement) ? replacement : original);
+            if (!LocalRecordingPath.Exists(resolved)) throw new FileNotFoundException("Locate all missing recordings before opening the project.", resolved);
             paths.Add(original, resolved);
         }
         return document with { Clips = document.Clips.Select(c => c with { Path = paths[c.Path] }).ToList(), Sources = SourcePaths(document).Select(p => paths[p]).Distinct(StringComparer.OrdinalIgnoreCase).ToList() };
@@ -40,8 +46,11 @@ public static class ProjectStore
         {
             var position = clip.TimelineStart ?? previousEnd;
             if (!double.IsFinite(position) || position < previousEnd - .00001) throw new InvalidDataException("The project contains overlapping or invalid timeline positions.");
-            previousEnd = position + clip.End - clip.Start;
+            previousEnd = position + (clip.End - clip.Start);
+            if (!double.IsFinite(previousEnd) || previousEnd > MaximumTimelineDuration)
+                throw new InvalidDataException("The project timeline exceeds the supported time range.");
         }
+        SourcePaths(document);
         return document;
     }
     public static void ValidateTrim(MediaClip clip)

@@ -1,10 +1,12 @@
 # User guide
 
-A portable Windows editor for trimming and combining gameplay recordings. Version 1.0.2.
+A portable Windows editor for trimming and combining gameplay recordings. Version 1.0.3.
 
 ## Run
 
-Extract the entire portable ZIP, then double-click **Simple Video Editor.exe** at the top of the extracted folder. Keep **bin** beside it; it contains the video tools and libraries. Guides and licenses are in **docs**. No installer or separate runtime/video-tool setup is needed. In the project folder, use the **Simple Video Editor** shortcut or `App/Simple Video Editor.exe`.
+Extract the entire portable ZIP, then double-click **Simple Video Editor.exe** at the top of the extracted folder. Keep **bin** beside it; it contains the video tools and libraries. Guides and licenses are in **docs**. No installer or separate runtime/video-tool setup is needed. Local builds create a **Simple Video Editor 1.0.3** shortcut pointing to the chosen app output folder.
+
+Recordings must be on a local drive. Network shares, mapped network drives, device paths and unsupported linked/cloud locations are rejected before media access. Local symbolic links and junctions work when their targets are local. Copy unsupported recordings into an ordinary local folder first. Projects reject timelines outside the supported time range.
 
 ## Editing
 
@@ -20,7 +22,11 @@ The timeline has one video lane and one linked audio lane, with proportional dur
 
 Selecting a recording already visible in the library preserves the scroll position. Keyboard navigation reveals the selected item with pixel scrolling, and selecting an entirely offscreen recording from the timeline brings it into view.
 
+**Add to timeline** appends the selected recording. When the library contains more than one recording, **Add all to timeline** appears beside it and appends every recording in library order, including recordings hidden by search. Each addition creates separately editable timeline clips, and a single undo removes the entire batch. Existing timeline edits and gaps stay intact.
+
 Recording cards show the original duration once; exact source in/out points remain in the trim fields and timeline tooltips. New, Open, and Save disable while importing or opening a project. Save stays available for edited or existing projects, including a project intentionally cleared of all recordings.
+
+The Recordings panel grows with the window to show more of each filename. Drag the divider beside it to adjust its width, or focus the divider with Tab and use the arrow keys. Hover over a recording name to see its full path. The preview fits the whole video at its display aspect ratio and stays centered when the window resizes; the surrounding space uses the app background. Black bars already present in a recording remain part of the video.
 
 Search the **Recordings** library by name with the search field or **Ctrl+F**. Search ignores letter case, shows the matching count, and filters only the library; the active preview and timeline edits stay intact. Use the clear button or **Escape** in the search field to show every recording again.
 

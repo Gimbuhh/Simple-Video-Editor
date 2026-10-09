@@ -15,20 +15,20 @@ public partial class RelinkWindow : Window
     public RelinkWindow(ProjectDocument document)
     {
         this.document = document;
-        foreach (var path in ProjectStore.SourcePaths(document).Where(p => !File.Exists(p))) Missing.Add(new(path));
+        foreach (var path in ProjectStore.SourcePaths(document).Where(p => !LocalRecordingPath.Exists(p))) Missing.Add(new(path));
         InitializeComponent(); DataContext = this; MissingList.SelectedIndex = 0; RefreshState();
     }
     public void LocateRecording(string original, string replacement)
     {
-        replacement = Path.GetFullPath(replacement);
-        if (!File.Exists(replacement)) throw new FileNotFoundException("The replacement recording is missing.", replacement);
+        replacement = LocalRecordingPath.Validate(replacement);
+        if (!LocalRecordingPath.Exists(replacement)) throw new FileNotFoundException("The replacement recording is missing.", replacement);
         var row = Missing.First(r => string.Equals(r.Original, original, StringComparison.OrdinalIgnoreCase));
         row.Replacement = replacement;
         var folder = Path.GetDirectoryName(replacement)!;
         foreach (var other in Missing.Where(r => r.Replacement == null && string.Equals(Path.GetDirectoryName(r.Original), Path.GetDirectoryName(row.Original), StringComparison.OrdinalIgnoreCase)))
         {
             var sibling = Path.Combine(folder, Path.GetFileName(other.Original));
-            if (File.Exists(sibling)) other.Replacement = sibling;
+            if (LocalRecordingPath.Exists(sibling)) other.Replacement = LocalRecordingPath.Validate(sibling);
         }
         MissingList.SelectedItem = Missing.FirstOrDefault(r => r.Replacement == null) ?? row;
         RefreshState();
@@ -43,7 +43,11 @@ public partial class RelinkWindow : Window
     {
         if (MissingList.SelectedItem is not MissingRecording row) return;
         var picker = new OpenFileDialog { Title = "Locate " + row.Name, FileName = row.Name, CheckFileExists = true, Filter = "Video files|*.mp4;*.mkv;*.mov;*.avi;*.webm;*.m4v|All files|*.*" };
-        if (picker.ShowDialog(this) == true) LocateRecording(row.Original, picker.FileName);
+        if (picker.ShowDialog(this) == true)
+        {
+            try { LocateRecording(row.Original, picker.FileName); }
+            catch (Exception ex) { MessageBox.Show(this, ex.Message, "Could not locate recording", MessageBoxButton.OK, MessageBoxImage.Error); }
+        }
     }
     private void Open_Click(object sender, RoutedEventArgs e)
     {

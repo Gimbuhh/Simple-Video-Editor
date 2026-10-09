@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using SimpleVideoEditor.Services;
@@ -74,6 +75,11 @@ public partial class MainWindow : Window
                     player.Set("pause", !gapPreview && resumeAfterLoad ? "no" : "yes");
                     if (!busy) StatusText.Text = "";
                     RefreshSummary();
+                });
+                player.VideoReconfigured += entryId => Dispatcher.BeginInvoke(() =>
+                {
+                    if (closing || selected == null || player == null || entryId != player.RequestedEntryId || !string.Equals(player.Get("path"), selected.Path, StringComparison.OrdinalIgnoreCase)) return;
+                    UpdatePreviewAspectRatio();
                 });
                 player.PlaybackError += message => Dispatcher.BeginInvoke(() =>
                 {
@@ -185,6 +191,9 @@ public partial class MainWindow : Window
         TotalText.Text = $"{Timecode.Format(Timeline.Duration)} total";
         ExportButton.IsEnabled = Clips.Count > 0 && !busy;
         AddToTimelineButton.IsEnabled = SourceList.SelectedItem != null && !busy;
+        AddAllToTimelineButton.Visibility = Sources.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+        AddAllToTimelineButton.IsEnabled = Sources.Count > 1 && !busy;
+        Grid.SetColumnSpan(AddToTimelineButton, Sources.Count > 1 ? 1 : 2);
         UndoButton.IsEnabled = undo.Count > 0 && !busy; RedoButton.IsEnabled = redo.Count > 0 && !busy;
         RemoveButton.IsEnabled = TimelineSelected && !busy;
         SplitButton.IsEnabled = TimelineSelected && !gapPreview && !busy && selected!.KeptDuration >= 2 / selected.FrameRate - .0001;
@@ -293,12 +302,16 @@ public partial class MainWindow : Window
             playerReady = false;
             player?.Command("stop"); Video.Clear(); Video.Visibility = Visibility.Collapsed; EmptyPreview.Visibility = Visibility.Visible;
             SelectedName.Text = "Preview"; SelectedDetails.Text = ""; Timeline.Position = 0;
+            PreviewViewport.AspectRatio = 16d / 9;
+            Video.LayoutTransform = Transform.Identity;
             PreviewSeek.Visibility = Visibility.Collapsed;
             StartInput.Text = EndInput.Text = PositionText.Text = "00:00:00.000";
         }
         else
         {
             SelectedName.Text = clip.Name; SelectedDetails.Text = $"{(TimelineSelected ? "Timeline" : "Recording")} · {clip.Height}p · {clip.FrameRate:0.##} fps";
+            PreviewViewport.AspectRatio = clip.Width > 0 && clip.Height > 0 ? (double)clip.Width / clip.Height : 16d / 9;
+            Video.LayoutTransform = Transform.Identity;
             pendingSeek = clip.Start;
             if (TimelineSelected) Timeline.Position = Timeline.ClipOffset(clip);
             updatingSeek = true; PreviewSeek.Maximum = clip.Duration; PreviewSeek.Value = clip.Start; updatingSeek = false;
@@ -312,10 +325,25 @@ public partial class MainWindow : Window
         if (selected == null || player == null) return;
         if (playerReady && string.Equals(player.Get("path"), selected.Path, StringComparison.OrdinalIgnoreCase))
         {
+            UpdatePreviewAspectRatio();
             player.Seek(pendingSeek); player.Set("pause", resumeAfterLoad ? "no" : "yes"); return;
         }
         playerReady = false; RefreshSummary(); StatusText.Text = "Loading preview…";
         try { player.Load(selected.Path); } catch (Exception ex) { StatusText.Text = ex.Message; }
+    }
+    private void UpdatePreviewAspectRatio()
+    {
+        if (player == null || !double.TryParse(player.Get("video-out-params/aspect"), System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var ratio) || !double.IsFinite(ratio) || ratio <= 0) return;
+        // The software render backend supplies unrotated pixels. WPF rotates the
+        // fitted bitmap so both the render buffer and displayed frame keep their aspect.
+        int.TryParse(player.Get("video-out-params/rotate"), out var rotation);
+        rotation = (rotation % 360 + 360) % 360;
+        Video.LayoutTransform = rotation == 0 ? Transform.Identity : new RotateTransform(rotation);
+        var radians = rotation * Math.PI / 180;
+        var cosine = Math.Abs(Math.Cos(radians)); var sine = Math.Abs(Math.Sin(radians));
+        var displayRatio = (ratio * cosine + sine) / (ratio * sine + cosine);
+        if (double.IsFinite(displayRatio) && displayRatio > 0) PreviewViewport.AspectRatio = displayRatio;
     }
     private void Source_SelectionChanged(object sender, SelectionChangedEventArgs e) { if (!syncing) Select(SourceList.SelectedItem as MediaClip); }
     private void Search_Changed(object sender, TextChangedEventArgs e)
@@ -705,6 +733,7 @@ public partial class MainWindow : Window
         var source = SourceList.SelectedItem as MediaClip;
         if (source != null) AppendSources([source]);
     }
+    private void AddAllToTimeline_Click(object sender, RoutedEventArgs e) => AppendSources(Sources);
     private void Source_DoubleClick(object sender, MouseButtonEventArgs e)
     {
         if ((ItemsControl.ContainerFromElement(SourceList, e.OriginalSource as DependencyObject) as ListBoxItem)?.DataContext is MediaClip source) AppendSources([source]);
@@ -819,7 +848,7 @@ public partial class MainWindow : Window
         {
             var document = await ProjectStore.ReadAsync(path); var restored = new List<MediaClip>();
             var relinked = false;
-            if (ProjectStore.SourcePaths(document).Any(p => !File.Exists(p)))
+            if (ProjectStore.SourcePaths(document).Any(p => !LocalRecordingPath.Exists(p)))
             {
                 var locate = new RelinkWindow(document) { Owner = this };
                 if (locate.ShowDialog() != true) { StatusText.Text = "Opening canceled"; return false; }
@@ -921,7 +950,7 @@ public partial class MainWindow : Window
             e.Handled = true; return;
         }
         if (key == Key.Escape && SearchInput.IsKeyboardFocusWithin) { SearchInput.Clear(); e.Handled = true; return; }
-        if (Keyboard.FocusedElement is TextBox) return;
+        if (Keyboard.FocusedElement is TextBox || RecordingsSplitter.IsKeyboardFocusWithin && (key is Key.Left or Key.Right)) return;
         if (key == Key.Escape && pendingTrimEdit != null) { Timeline.CancelGesture(); e.Handled = true; return; }
         if (key == Key.Apps || key == Key.F10 && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
         { if (TimelineSelected) OpenTimelineMenu(selected!); e.Handled = true; return; }

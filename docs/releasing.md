@@ -1,6 +1,6 @@
 # Releasing
 
-Version 1.0.0 is the initial release, dated 2026-10-09. The private repository is [Gimbuhh/simple-video-editor](https://github.com/Gimbuhh/simple-video-editor). Source versioning uses the `<Version>` in `Development/src/SimpleVideoEditor/SimpleVideoEditor.csproj`; version 1.0.2 corresponds to tag `v1.0.2`.
+Version 1.0.0 is the initial release, dated 2026-10-09. The private repository is [Gimbuhh/simple-video-editor](https://github.com/Gimbuhh/simple-video-editor). Source versioning uses the `<Version>` in `Development/src/SimpleVideoEditor/SimpleVideoEditor.csproj`; version 1.0.3 corresponds to tag `v1.0.3`.
 
 ## Initial repository upload
 

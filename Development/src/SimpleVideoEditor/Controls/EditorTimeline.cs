@@ -78,7 +78,8 @@ public sealed class EditorTimeline : Grid
     public void Zoom(double factor)
     {
         var anchor = position * pixelsPerSecond - scroll.HorizontalOffset;
-        pixelsPerSecond = Math.Clamp(pixelsPerSecond * factor, .0001, Math.Min(2000, 900000 / Math.Max(1, Duration)));
+        var maximum = Math.Min(2000, 900000 / Math.Max(1, Duration));
+        pixelsPerSecond = Math.Clamp(pixelsPerSecond * factor, Math.Min(.0001, maximum), maximum);
         Refresh(); scroll.ScrollToHorizontalOffset(position * pixelsPerSecond - anchor);
     }
     public void RevealPlayhead()
@@ -160,12 +161,23 @@ public sealed class EditorTimeline : Grid
             var visibleStart = Math.Max(0, owner.scroll.HorizontalOffset - 100);
             var visibleEnd = visibleStart + Math.Max(500, owner.scroll.ViewportWidth) + 200;
             var steps = new double[] { .1, .25, .5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600 };
-            var step = steps.FirstOrDefault(s => s * owner.pixelsPerSecond >= 85, 7200);
-            for (double t = Math.Floor(visibleStart / owner.pixelsPerSecond / step) * step; t * owner.pixelsPerSecond < Math.Min(ActualWidth, visibleEnd); t += step)
+            if (!double.IsFinite(owner.pixelsPerSecond) || owner.pixelsPerSecond <= 0) return;
+            var minimumStep = 85 / owner.pixelsPerSecond;
+            var step = steps.FirstOrDefault(s => s >= minimumStep);
+            if (step == 0)
             {
+                var magnitude = Math.Pow(10, Math.Floor(Math.Log10(minimumStep)));
+                step = new double[] { 1, 2, 5, 10 }.Select(m => m * magnitude).FirstOrDefault(s => s >= minimumStep);
+            }
+            if (!double.IsFinite(step) || step <= 0) return;
+            var firstTick = Math.Floor(visibleStart / owner.pixelsPerSecond / step);
+            for (var tick = 0; tick < 256; tick++)
+            {
+                var t = (firstTick + tick) * step;
                 var x = t * owner.pixelsPerSecond;
+                if (!double.IsFinite(x) || x >= Math.Min(ActualWidth, visibleEnd)) break;
                 dc.DrawLine(new Pen(Brush("#39444C"), 1), new(x + .5, 24), new(x + .5, 168));
-                Text(dc, t < 60 ? $"{t:0.##}s" : $"{(int)t / 60}:{(int)t % 60:00}", x + 5, 4, 80, Brush("#9BA6AF"), 11);
+                Text(dc, t < 60 ? $"{t:0.##}s" : $"{Math.Floor(t / 60):0}:{t % 60:00}", x + 5, 4, 80, Brush("#9BA6AF"), 11);
             }
             foreach (var clip in owner.Clips ?? [])
             {

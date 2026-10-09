@@ -56,8 +56,12 @@ public static class MediaTools
     }
 
     public static async Task<MediaClip> ProbeAsync(string path, CancellationToken token = default)
+        => await ProbeCoreAsync(LocalRecordingPath.Validate(path), token);
+    // The output is generated beneath a destination explicitly chosen by the user.
+    // Recording-reference restrictions must not reject authorized network exports.
+    internal static Task<MediaClip> ProbeOutputAsync(string path, CancellationToken token) => ProbeCoreAsync(System.IO.Path.GetFullPath(path), token);
+    private static async Task<MediaClip> ProbeCoreAsync(string path, CancellationToken token)
     {
-        path = System.IO.Path.GetFullPath(path);
         if (!File.Exists(path)) throw new FileNotFoundException("The source recording could not be found.", path);
         using var json = JsonDocument.Parse(await RunAsync("ffprobe", ["-v", "error", "-show_streams", "-show_format", "-of", "json", path], token));
         var root = json.RootElement;

@@ -76,10 +76,9 @@ if ($Zip) {
     $editorZipHash = (Get-FileHash -LiteralPath $editorZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
     "$editorZipHash  SimpleVideoEditor-win-x64.zip" | Set-Content -LiteralPath ($editorZipPath + '.sha256') -Encoding ascii
 }
-if ($OutputName -eq 'App') {
-    $editorShell = New-Object -ComObject WScript.Shell
-    $editorShortcut = $editorShell.CreateShortcut((Join-Path $editorWorkspace 'Simple Video Editor.lnk'))
-    $editorShortcut.TargetPath = Join-Path $editorOutput 'Simple Video Editor.exe'; $editorShortcut.WorkingDirectory = $editorOutput
-    $editorShortcut.IconLocation = $editorShortcut.TargetPath + ',0'; $editorShortcut.Description = 'Open Simple Video Editor'; $editorShortcut.Save()
-}
+$editorVersion = ([xml](Get-Content (Join-Path $editorRoot 'src/SimpleVideoEditor/SimpleVideoEditor.csproj') -Raw)).Project.PropertyGroup.Version
+$editorShell = New-Object -ComObject WScript.Shell
+$editorShortcut = $editorShell.CreateShortcut((Join-Path $editorWorkspace "Simple Video Editor $editorVersion.lnk"))
+$editorShortcut.TargetPath = Join-Path $editorOutput 'Simple Video Editor.exe'; $editorShortcut.WorkingDirectory = $editorOutput
+$editorShortcut.IconLocation = $editorShortcut.TargetPath + ',0'; $editorShortcut.Description = "Open Simple Video Editor $editorVersion"; $editorShortcut.Save()
 Write-Output "Portable app: $editorOutput/Simple Video Editor.exe"

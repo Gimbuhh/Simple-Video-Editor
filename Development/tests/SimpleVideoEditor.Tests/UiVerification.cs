@@ -69,19 +69,80 @@ public static class UiVerification
                 {
                     await Task.Delay(150); window.UpdateLayout();
                     Assert(!Control<Button>("ExportButton").IsEnabled && window.Clips.Count == 0, "Empty timeline disables export");
+                    Assert(Control<Button>("AddAllToTimelineButton").Visibility == Visibility.Collapsed && !Control<Button>("AddToTimelineButton").IsEnabled, "Empty library hides Add all and disables Add to timeline");
                     Assert(!Control<Button>("SaveButton").IsEnabled && Control<Button>("NewButton").IsEnabled && Control<Button>("OpenButton").IsEnabled, "Empty projects disable Save while keeping New and Open available");
                     Assert(Control<VideoHost>("Video").Visibility == Visibility.Collapsed && RenderOptions.ProcessRenderMode == System.Windows.Interop.RenderMode.SoftwareOnly, "Empty preview is hidden and the interface uses software rendering");
                     SaveRender(window, Path.Combine(root, "timeline-empty.png"));
-                    var import = (Task)Invoke("ImportAsync", (object)new[] { Path.Combine(root, "source A's clip.mp4"), Path.Combine(root, "source B.mp4") })!;
+                    var import = (Task)Invoke("ImportAsync", (object)new[] { Path.Combine(root, "source A's clip.mp4") })!;
                     window.UpdateLayout();
                     Assert(!timeline.IsEnabled && !Control<ListBox>("SourceList").IsEnabled && DarkAt(timeline, new Point(100, 60)) && DarkAt(Control<ListBox>("SourceList"), new Point(100, 60)), "Import keeps the disabled library and tracks dark");
                     Assert(new[] { "NewButton", "OpenButton", "SaveButton" }.All(name => !Control<Button>(name).IsEnabled), "Project actions visibly disable during import");
                     SaveRender(window, Path.Combine(root, "timeline-importing.png")); await import; await Ready();
+                    Assert(Control<Button>("AddAllToTimelineButton").Visibility == Visibility.Collapsed && Control<Button>("AddToTimelineButton").IsEnabled, "One recording keeps only Add to timeline visible");
+                    await (Task)Invoke("ImportAsync", (object)new[] { Path.Combine(root, "source B.mp4") })!; await Ready();
                     Assert(window.Sources.Count == 2 && window.Clips.Count == 0 && !Control<Button>("ExportButton").IsEnabled, "Import fills the library without adding unwanted clips to the timeline");
+                    Assert(Control<Button>("AddAllToTimelineButton").IsVisible && Control<Button>("AddAllToTimelineButton").IsEnabled && Control<Button>("AddToTimelineButton").IsVisible, "Multiple recordings show both timeline buttons");
+                    window.Width = window.MinWidth; window.Height = window.MinHeight; window.UpdateLayout();
+                    var addOne = Control<Button>("AddToTimelineButton"); var addAll = Control<Button>("AddAllToTimelineButton");
+                    var oneBounds = addOne.TransformToAncestor(window).TransformBounds(new Rect(addOne.RenderSize));
+                    var allBounds = addAll.TransformToAncestor(window).TransformBounds(new Rect(addAll.RenderSize));
+                    Assert(Math.Abs(oneBounds.Top - allBounds.Top) < 1 && oneBounds.Right <= allBounds.Left && Math.Abs(oneBounds.Height - allBounds.Height) < 1,
+                        "Minimum window keeps timeline actions side by side in one row");
+                    Assert(new[] { addOne, addAll }.All(button => Descendants(button).OfType<ButtonLabel>().Single().DesiredSize.Width <= button.ActualWidth - button.Padding.Left - button.Padding.Right),
+                        "Both complete timeline button labels fit at minimum window size");
+                    var compactItem = (ListBoxItem)Control<ListBox>("SourceList").ItemContainerGenerator.ContainerFromItem(window.Sources[0]);
+                    Assert(compactItem.ActualHeight <= 60 && Control<ListBox>("SourceList").ActualHeight >= compactItem.ActualHeight * 2,
+                        $"Compact rows leave room for at least two complete recordings at minimum window size (row {compactItem.ActualHeight}, list {Control<ListBox>("SourceList").ActualHeight})");
+                    SaveRender(window, Path.Combine(root, "recordings-compact-small.png"));
+                    window.Width = 1320; window.Height = 880; window.UpdateLayout();
+                    Assert(Control<ListBox>("SourceList").ActualHeight >= compactItem.ActualHeight * 4, "Normal window has space for at least four compact recording rows");
+                    var recordingName = Descendants(compactItem).OfType<TextBlock>().Single(text => text.Text == window.Sources[0].Name);
+                    Assert(recordingName.ActualWidth >= 230, "Normal Recordings panel leaves room for substantially longer filenames");
+                    foreach (var size in new[] { new Size(1000, 740), new Size(1320, 880), new Size(1800, 740), new Size(1100, 1000) })
+                    {
+                        window.Width = size.Width; window.Height = size.Height; window.UpdateLayout(); await Task.Delay(40);
+                        var viewport = Control<AspectRatioFrame>("PreviewViewport"); var frame = Control<Border>("PreviewFrame");
+                        var bounds = frame.TransformToAncestor(viewport).TransformBounds(new Rect(frame.RenderSize));
+                        Assert(Math.Abs(frame.ActualWidth - frame.ActualHeight * (16d / 9)) <= 1 && bounds.Left >= -.1 && bounds.Top >= -.1 && bounds.Right <= viewport.ActualWidth + .1 && bounds.Bottom <= viewport.ActualHeight + .1
+                            && Math.Abs(bounds.Left - (viewport.ActualWidth - bounds.Right)) < 1 && Math.Abs(bounds.Top - (viewport.ActualHeight - bounds.Bottom)) < 1
+                            && (Math.Abs(frame.ActualWidth - viewport.ActualWidth) < 1 || Math.Abs(frame.ActualHeight - viewport.ActualHeight) < 1),
+                            $"Preview stays centered, uncropped and maximally fitted at {size.Width} × {size.Height} (frame {frame.ActualWidth} × {frame.ActualHeight}, bounds {bounds}, viewport {viewport.ActualWidth} × {viewport.ActualHeight}, ratio {viewport.AspectRatio})");
+                        Assert(Control<ColumnDefinition>("RecordingsColumn").ActualWidth is >= 300 and <= 460, "Recordings width stays within readable limits while resizing");
+                        SaveRender(window, Path.Combine(root, $"preview-layout-{size.Width}-{size.Height}.png"));
+                    }
+                    window.Width = 1320; window.Height = 880; window.UpdateLayout(); await Task.Delay(60);
+                    var recordingsColumn = Control<ColumnDefinition>("RecordingsColumn"); var previewColumn = Control<Grid>("MediaLayout").ColumnDefinitions[2];
+                    var libraryWidth = recordingsColumn.Width; var previewWidth = previewColumn.Width; var initialWidth = recordingsColumn.ActualWidth;
+                    var splitter = Control<GridSplitter>("RecordingsSplitter"); splitter.Focus();
+                    var resizeKey = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window)!, Environment.TickCount, Key.Right) { RoutedEvent = Keyboard.KeyDownEvent };
+                    Invoke("Window_KeyDown", window, resizeKey);
+                    Assert(!resizeKey.Handled, "Recording divider keeps its arrow keys instead of stepping the video");
+                    splitter.RaiseEvent(resizeKey); window.UpdateLayout();
+                    Assert(recordingsColumn.ActualWidth > initialWidth, "Focused recording divider can widen the library with the keyboard");
+                    recordingsColumn.Width = libraryWidth; previewColumn.Width = previewWidth; Control<ListBox>("SourceList").Focus(); window.UpdateLayout();
+                    foreach (var extreme in new[] { 1e20, 1e300 })
+                    {
+                        var renderClip = window.Sources[0].Clone(true); renderClip.Start = 0; renderClip.End = 1; renderClip.TimelineStart = extreme;
+                        var isolatedTimeline = new EditorTimeline { Clips = new([renderClip]), Width = 700, Height = 220 };
+                        var extremeRenderWatch = System.Diagnostics.Stopwatch.StartNew();
+                        isolatedTimeline.Measure(new Size(700, 220)); isolatedTimeline.Arrange(new Rect(0, 0, 700, 220)); isolatedTimeline.Fit(); isolatedTimeline.Zoom(.5); isolatedTimeline.UpdateLayout();
+                        SaveElement(isolatedTimeline, Path.Combine(root, $"extreme-ruler-{extreme:0E0}.png"));
+                        Assert(extremeRenderWatch.Elapsed < TimeSpan.FromSeconds(2) && double.IsFinite(isolatedTimeline.PixelsPerSecond) && isolatedTimeline.PixelsPerSecond > 0,
+                            $"Extreme finite timeline renders and zooms promptly with bounded ruler work: {extreme}");
+                        isolatedTimeline.Clips = null;
+                    }
+                    Invoke("SetBusy", true);
+                    Click("AddAllToTimelineButton");
+                    Assert(!Control<Button>("AddToTimelineButton").IsEnabled && !Control<Button>("AddAllToTimelineButton").IsEnabled && window.Clips.Count == 0, "Busy state disables both timeline actions and blocks batch insertion");
+                    Invoke("SetBusy", false);
                     Assert(Control<Slider>("PreviewSeek").IsVisible && !Control<Button>("SplitButton").IsEnabled, "Recording preview has its own scrubber and cannot alter timeline clips");
                     var sourceList = Control<ListBox>("SourceList");
                     var sourceScroll = Descendants(sourceList).OfType<ScrollViewer>().Single();
-                    window.Height = 820; window.UpdateLayout(); sourceScroll.ScrollToTop(); await Task.Delay(30);
+                    // Constrain just the list to test partial-item selection independently of card size.
+                    window.UpdateLayout();
+                    var firstSourceItem = (ListBoxItem)sourceList.ItemContainerGenerator.ContainerFromItem(window.Sources[0]);
+                    sourceList.MaxHeight = firstSourceItem.ActualHeight * 1.5;
+                    window.UpdateLayout(); sourceScroll.ScrollToTop(); await Task.Delay(30);
                     Invoke("Select", window.Sources[1], false); await Ready();
                     Assert(sourceScroll.VerticalOffset == 0 && sourceScroll.ExtentHeight > sourceScroll.ViewportHeight,
                         $"Selecting a partially visible recording preserves the list position instead of hiding the first thumbnail (offset {sourceScroll.VerticalOffset}, extent {sourceScroll.ExtentHeight}, viewport {sourceScroll.ViewportHeight})");
@@ -91,7 +152,7 @@ public static class UiVerification
                     Invoke("Source_KeyDown", sourceList, sourceKey); secondSourceItem.BringIntoView(); await Task.Delay(30);
                     Assert(sourceScroll.VerticalOffset > 0 && sourceScroll.VerticalOffset < secondSourceItem.ActualHeight,
                         "Keyboard reveal scrolls only the necessary pixels and keeps both recording thumbnails in view");
-                    sourceScroll.ScrollToTop(); window.Height = 880; window.UpdateLayout(); await Task.Delay(30);
+                    sourceList.MaxHeight = double.PositiveInfinity; sourceScroll.ScrollToTop(); window.Height = 880; window.UpdateLayout(); await Task.Delay(30);
                     var dragRoot = (FrameworkElement)window.Content;
                     var dragLayer = System.Windows.Documents.AdornerLayer.GetAdornerLayer(dragRoot);
                     var sourceGhost = ClipDragPreview.Attach(sourceList, window.Sources[0])!;
@@ -109,10 +170,18 @@ public static class UiVerification
                     var bluePixel = new byte[4];
                     blueBitmap.CopyPixels(new Int32Rect(blueBitmap.PixelWidth / 2, blueBitmap.PixelHeight / 2, 1, 1), bluePixel, 4, 0);
                     Assert(bluePixel[0] > 220 && bluePixel[1] < 25 && bluePixel[2] < 25, "BGR software presentation preserves the blue fixture's color channels");
-                    Assert(DarkAt(Control<VideoHost>("Video"), new Point(3, 3)), "Software preview preserves black letterboxing");
+                    Assert(!DarkAt(Control<VideoHost>("Video"), new Point(3, Control<VideoHost>("Video").ActualHeight / 2)), "Fitted software preview avoids window-size black side bars");
                     Invoke("Select", window.Sources[0], false); await Ready();
                     await (Task)Invoke("ImportAsync", (object)new[] { window.Sources[0].Path })!;
                     Assert(window.Sources.Count == 2, "Duplicate imports keep one library recording");
+                    Control<TextBox>("SearchInput").Text = "no-such-recording";
+                    Assert(!Control<Button>("AddToTimelineButton").IsEnabled && Control<Button>("AddAllToTimelineButton").IsEnabled, "Add all remains available without a selection or search matches");
+                    Click("AddAllToTimelineButton"); await Ready();
+                    Assert(window.Clips.Select(c => c.Path).SequenceEqual(window.Sources.Select(c => c.Path)) && window.Clips.Zip(window.Sources).All(pair => pair.First.SectionId != pair.Second.SectionId && pair.First.Start == pair.Second.Start && pair.First.End == pair.Second.End) && window.Clips[0].TimelineStart == 0 && window.Clips[1].TimelineStart == window.Clips[0].KeptDuration && timeline.SelectedClip == window.Clips[0],
+                        "Add all includes search-hidden recordings in library order as separate linked clips on an empty timeline");
+                    Click("UndoButton");
+                    Assert(window.Clips.Count == 0 && window.Sources.Count == 2, "One undo removes the entire batch and preserves the recording library");
+                    Click("ClearSearchButton"); Invoke("Select", window.Sources[0], false); await Ready();
                     Click("AddToTimelineButton"); await Ready();
                     var first = window.Clips[0];
                     Assert(window.Clips.Count == 1 && first != window.Sources[0] && first.SectionId != window.Sources[0].SectionId && timeline.SelectedClip == first, "Add to timeline creates a separate selected clip identity");
@@ -272,9 +341,11 @@ public static class UiVerification
                     Assert(Math.Abs(window.Clips[0].Start - 1.25) < .001 && Math.Abs(seekingPlayer.Position - 1.25) < .001 && Math.Abs(timeline.Position) < .001,
                         "A left trim that removes the preview frame clamps to the first retained frame");
                     Click("UndoButton"); await Ready(); Invoke("SeekTimeline", window.Clips[0], beforeEdgeDrag); await Ready();
+                    for (var wait = 0; wait < 100 && (Math.Abs(seekingPlayer.Position - beforeEdgeDrag) >= .001 || Math.Abs(timeline.Position - (beforeEdgeDrag - 1.15)) >= .001); wait++) await Task.Delay(10);
                     Pointer("BeginPointer", new Point(2, 65)); Pointer("MovePointer", new Point(2 + timeline.PixelsPerSecond * 5 / 60, 65), true); Press(Key.Escape); await Ready();
+                    for (var wait = 0; wait < 100 && (Math.Abs(seekingPlayer.Position - beforeEdgeDrag) >= .001 || Math.Abs(timeline.Position - (beforeEdgeDrag - 1.15)) >= .001); wait++) await Task.Delay(10);
                     Assert(Math.Abs(window.Clips[0].Start - 1.15) < .001 && Math.Abs(seekingPlayer.Position - beforeEdgeDrag) < .001 && Math.Abs(timeline.Position - (beforeEdgeDrag - 1.15)) < .001,
-                        "Canceling an edge trim restores both its boundaries and the original preview frame");
+                        $"Canceling an edge trim restores both its boundaries and the original preview frame (start {window.Clips[0].Start}, preview {seekingPlayer.Position}, expected {beforeEdgeDrag}, timeline {timeline.Position}, paused {seekingPlayer.Paused})");
                     Pointer("BeginPointer", new Point(window.Clips[0].KeptDuration * timeline.PixelsPerSecond / 2, 20));
                     surface.ReleaseMouseCapture(); Pointer("FinishEdit"); await Task.Delay(80);
                     for (var wait = 0; wait < 50 && Math.Abs(timeline.Position - .5) >= .001; wait++) await Task.Delay(10);
@@ -435,7 +506,7 @@ public static class UiVerification
                     }
                     SaveRender(window, Path.Combine(root, "timeline-populated.png"));
                     window.Width = 1000; window.Height = 740; window.UpdateLayout(); timeline.Fit(); window.UpdateLayout();
-                    foreach (var name in new[] { "SourceList", "SearchInput", "CacheButton", "Timeline", "StartInput", "EndInput", "PlayButton", "SplitButton", "TrimBeforeButton", "TrimAfterButton", "ExportButton", "VolumeSlider" })
+                    foreach (var name in new[] { "SourceList", "SearchInput", "AddToTimelineButton", "AddAllToTimelineButton", "CacheButton", "Timeline", "StartInput", "EndInput", "PlayButton", "SplitButton", "TrimBeforeButton", "TrimAfterButton", "ExportButton", "VolumeSlider" })
                     {
                         var element = Control<FrameworkElement>(name); var point = element.TransformToAncestor(window).Transform(new Point());
                         Assert(element.IsVisible && element.ActualWidth > 0 && point.X >= 0 && point.Y >= 0 && point.X + element.ActualWidth <= window.ActualWidth + 1 && point.Y + element.ActualHeight <= window.ActualHeight + 1, "Minimum window contains " + name);
@@ -680,9 +751,43 @@ public static class UiVerification
                     Assert(window.Clips[1].TimelineStart == 3.25 && window.Clips[0].End == 1, "Undo restores the previous gap and trim without changing a mode");
                     var positionsBeforeM = window.Clips.Select(c => c.TimelineStart).ToArray(); Press(Key.M);
                     Assert(window.Clips.Select(c => c.TimelineStart).SequenceEqual(positionsBeforeM), "M no longer toggles or repacks the timeline");
-                    foreach (var recording in window.Sources.ToArray()) { Control<ListBox>("SourceList").SelectedItem = recording; Invoke("RemoveSource_Click", window, new RoutedEventArgs()); }
+                    var beforeBatch = ProjectStore.Capture(window.Clips, window.Sources);
+                    var beforeBatchCount = window.Clips.Count;
+                    var beforeBatchDuration = timeline.Duration;
+                    Click("AddAllToTimelineButton"); await Ready();
+                    var afterBatch = ProjectStore.Capture(window.Clips, window.Sources);
+                    Assert(afterBatch.Clips.Take(beforeBatchCount).SequenceEqual(beforeBatch.Clips) && afterBatch.Sources!.SequenceEqual(beforeBatch.Sources!) && window.Clips.Skip(beforeBatchCount).Select(c => c.Path).SequenceEqual(window.Sources.Select(c => c.Path)) && window.Clips[beforeBatchCount].TimelineStart == beforeBatchDuration,
+                        "Add all appends after existing edits and gaps without changing the recording library");
+                    Click("UndoButton"); await Ready();
+                    Assert(ProjectStore.Capture(window.Clips, window.Sources).Clips.SequenceEqual(beforeBatch.Clips), "One undo restores the complete timeline before adding all recordings");
+                    Click("RedoButton"); await Ready();
+                    Assert(ProjectStore.Capture(window.Clips, window.Sources).Clips.SequenceEqual(afterBatch.Clips), "One redo restores the complete batch with its clip identities and positions");
+                    Click("UndoButton"); await Ready();
+                    foreach (var recording in window.Sources.ToArray())
+                    {
+                        Control<ListBox>("SourceList").SelectedItem = recording; Invoke("RemoveSource_Click", window, new RoutedEventArgs());
+                        Assert(Control<Button>("AddAllToTimelineButton").Visibility == (window.Sources.Count > 1 ? Visibility.Visible : Visibility.Collapsed), "Removing recordings updates Add all visibility");
+                    }
                     Assert(window.Sources.Count == 0 && Control<Button>("SaveButton").IsEnabled && await (Task<bool>)Invoke("SaveProjectAsync", false)! && (await ProjectStore.ReadAsync(modePath)).Clips.Count == 0,
                         "Clearing the last recording keeps Save available and persists the intentionally empty project");
+                    foreach (var (name, ratio) in new[] { ("portrait-preview.mp4", 9d / 16), ("anamorphic-preview.mp4", 32d / 9), ("rotated-preview.mp4", 9d / 16) })
+                    {
+                        var path = Path.Combine(root, name);
+                        if (name.StartsWith("rotated"))
+                            await MediaTools.RunAsync("ffmpeg", ["-v", "error", "-y", "-display_rotation", "90", "-i", Path.Combine(root, "source B.mp4"), "-c", "copy", path]);
+                        else
+                            await MediaTools.RunAsync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", $"color=blue:size={(name.StartsWith("portrait") ? "180x320" : "320x180")}:rate=30:duration=1", "-vf", name.StartsWith("anamorphic") ? "setsar=2" : "setsar=1", "-c:v", "libx264", "-preset", "ultrafast", path]);
+                        await (Task)Invoke("ImportAsync", (object)new[] { path })!;
+                        Invoke("Select", window.Sources.Single(source => source.Path == path), false); await Ready(); window.UpdateLayout();
+                        var video = Control<VideoHost>("Video"); var viewport = Control<AspectRatioFrame>("PreviewViewport");
+                        var bufferRatio = name.StartsWith("rotated") ? 1 / ratio : ratio;
+                        for (var i = 0; i < 50 && (video.PreviewBitmap == null || Math.Abs((double)video.PreviewBitmap.PixelWidth / video.PreviewBitmap.PixelHeight - bufferRatio) > .02); i++) await Task.Delay(20);
+                        var displayBounds = video.TransformToAncestor(viewport).TransformBounds(new Rect(video.RenderSize));
+                        Assert(Math.Abs(viewport.AspectRatio - ratio) < .001 && Math.Abs(displayBounds.Width - displayBounds.Height * ratio) <= (1 + ratio) / 2
+                            && !DarkAt(video, new Point(3, video.ActualHeight / 2)) && !DarkAt(video, new Point(video.ActualWidth / 2, 3)),
+                            $"Preview respects display aspect and rotation without added side bars: {name} (ratio {viewport.AspectRatio}, surface {video.ActualWidth} × {video.ActualHeight}, bitmap {video.PreviewBitmap?.PixelWidth} × {video.PreviewBitmap?.PixelHeight})");
+                        SaveRender(window, Path.Combine(root, name + ".png"));
+                    }
                     await (Task<bool>)Invoke("SaveProjectAsync", false)!;
                     var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); window.Closed += (_, _) => closed.TrySetResult(); window.Close(); await closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
                     Assert(!window.IsVisible && dispatcherErrors.Count == 0, "Editing and normal close finish without dispatcher errors");
