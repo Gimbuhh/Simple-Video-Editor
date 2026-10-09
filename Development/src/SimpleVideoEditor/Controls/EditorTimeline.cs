@@ -144,7 +144,6 @@ public sealed class EditorTimeline : Grid
         private bool scrubbing;
         private double originalStart, originalEnd;
         private double originalOffset;
-        private ClipDragPreview? freeDrag;
         private double? freeInsertion;
         private static readonly Brush Cyan = Brush("#25D9E9");
         private void Text(DrawingContext dc, string text, double x, double y, double width, Brush brush, double size = 12)
@@ -306,9 +305,7 @@ public sealed class EditorTimeline : Grid
             }
             else
             {
-                if (!editing) { editing = true; owner.EditStarted?.Invoke(); freeDrag = ClipDragPreview.Attach(this, pressed); }
-                var root = (FrameworkElement)Window.GetWindow(this).Content;
-                freeDrag?.MoveTo(TranslatePoint(point, root));
+                if (!editing) { editing = true; owner.EditStarted?.Invoke(); }
                 var requested = originalOffset + (point.X - down.X) / owner.pixelsPerSecond;
                 freeInsertion = owner.PlaceClip(pressed, requested);
                 owner.PositionChanged?.Invoke(requested);
@@ -328,7 +325,7 @@ public sealed class EditorTimeline : Grid
         private void FinishEdit()
         {
             if (pressed != null && edge == 0 && !editing && !scrubbing) SeekAt(down.X);
-            freeDrag?.Dispose(); freeDrag = null; freeInsertion = null;
+            freeInsertion = null;
             pressed = null; edge = 0; scrubbing = false;
             if (editing) { editing = false; owner.EditCompleted?.Invoke(); }
             owner.Refresh();

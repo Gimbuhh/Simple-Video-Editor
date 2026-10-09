@@ -5,6 +5,7 @@
 ### Changed
 
 - Portable downloads show one clearly named executable, short instructions, and a Support folder instead of loose runtime files.
+- Moving an existing timeline clip shows the moving block without a floating thumbnail. Recordings dragged from the library retain their thumbnail preview.
 
 ### Fixed
 

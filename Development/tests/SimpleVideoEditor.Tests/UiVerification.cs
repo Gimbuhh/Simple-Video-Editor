@@ -117,11 +117,6 @@ public static class UiVerification
                     var first = window.Clips[0];
                     Assert(window.Clips.Count == 1 && first != window.Sources[0] && first.SectionId != window.Sources[0].SectionId && timeline.SelectedClip == first, "Add to timeline creates a separate selected clip identity");
                     Assert(Control<Button>("ExportButton").IsEnabled && !Control<Slider>("PreviewSeek").IsVisible && Control<Grid>("TrimControls").IsEnabled, "Timeline selection enables editing and uses the shared playhead");
-                    using (var timelineGhost = ClipDragPreview.Attach(timeline, first)!)
-                    {
-                        timelineGhost.MoveTo(new Point(400, 420));
-                        Assert(timelineGhost.Preview.HasThumbnail && timelineGhost.Preview.Visibility == Visibility.Visible, "Reordering a timeline clip uses the same visible thumbnail preview");
-                    }
                     var source = window.Sources[1];
                     Invoke("InsertSourceClip", source, 4d); await Ready();
                     Assert(window.Clips[0].SectionId == first.SectionId && window.Clips[1].Path == source.Path, "Library drop joins a recording at the requested boundary");
@@ -516,7 +511,7 @@ public static class UiVerification
                         Assert(host.PreviewBitmap!.PixelWidth <= 1280 && host.PreviewBitmap.PixelHeight <= 720 && player.Get("hwdec-current") == "no", "Preview resolution is bounded while source and export remain full resolution");
                         await File.WriteAllTextAsync(Path.Combine(root, "software-preview-performance.json"), JsonSerializer.Serialize(new { averageFps, frames, seconds = benchmark.Elapsed.TotalSeconds, cpuPercent, maxUiDelayMilliseconds = delays.Max(), dropped, previewWidth = host.PreviewBitmap.PixelWidth, previewHeight = host.PreviewBitmap.PixelHeight, decoder = player.Get("video-codec"), graphicsBackend = player.Get("current-vo") }, new JsonSerializerOptions { WriteIndented = true }));
                         Invoke("Select", window.Clips[1], false); await Ready();
-                        using (var realGhost = ClipDragPreview.Attach(timeline, window.Clips[1])!)
+                        using (var realGhost = ClipDragPreview.Attach(sourceList, window.Clips[1])!)
                         {
                             realGhost.MoveTo(new Point(550, 390)); await Task.Delay(30);
                             SaveRender(window, Path.Combine(root, "gameplay-drag-preview.png"));
@@ -541,8 +536,10 @@ public static class UiVerification
                     Assert(Math.Abs(((NativePlayer)Field("player")!).Position - sourceBeforeDrag) < .001 && Math.Abs(timeline.Position - sourceBeforeDrag) < .001,
                         "Pressing a clip body leaves the existing preview frame and playhead unchanged until click or drag is resolved");
                     Pointer("MovePointer", new Point(3.75 * freeScale, 65), true);
-                    Assert(Math.Abs(window.Clips[0].TimelineStart!.Value - 3.25) < .000001 && surface.GetType().GetField("freeDrag", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(surface) != null,
-                        "Free dragging moves the linked clip continuously from its grab point and shows its thumbnail");
+                    Assert(Math.Abs(window.Clips[0].TimelineStart!.Value - 3.25) < .000001,
+                        "Free dragging moves the linked clip continuously from its grab point");
+                    Assert(!(dragLayer.GetAdorners(dragRoot) ?? []).OfType<ClipDragAdorner>().Any(),
+                        "Moving an existing timeline clip uses the moving block without a floating thumbnail");
                     foreach (var pointerTime in new[] { 4.25, 3.5, 3.75 })
                     {
                         Pointer("MovePointer", new Point(pointerTime * freeScale, 65), true);
