@@ -36,6 +36,8 @@ jobs:
         run: ./Development/scripts/test.ps1
       - name: Build portable app
         run: ./Development/scripts/build.ps1 -Zip
+      - name: Verify portable package
+        run: ./Development/scripts/verify-package.ps1
       - name: Prepare draft release
         env:
           GH_TOKEN: ${{ github.token }}

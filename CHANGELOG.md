@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.2 — 2026-10-09
+
+### Changed
+
+- Portable downloads show one clearly named executable, short instructions, and a Support folder instead of loose runtime files.
+
+### Fixed
+
+- Moving a timeline clip preserves its preview frame and carries the playhead with it. Ordinary clicks seek on release.
+
 ## 1.0.1 — 2026-10-09
 
 ### Fixed

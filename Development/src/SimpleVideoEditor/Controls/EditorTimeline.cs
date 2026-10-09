@@ -269,7 +269,9 @@ public sealed class EditorTimeline : Grid
             if (pressed != null) owner.SelectionRequested?.Invoke(pressed);
             if (pressed != null) { originalStart = pressed.Start; originalEnd = pressed.End; originalOffset = owner.ClipOffset(pressed); }
             if (pressed != null) CaptureMouse();
-            if (edge == 0) SeekAt(down.X);
+            // A clip-body press may become a drag. Seek only after a simple click
+            // completes so moving a clip does not replace its current preview frame.
+            if (edge == 0 && (pressed == null || scrubbing)) SeekAt(down.X);
             if (scrubbing) CaptureMouse();
         }
         protected override void OnMouseMove(MouseEventArgs e)
@@ -325,6 +327,7 @@ public sealed class EditorTimeline : Grid
         }
         private void FinishEdit()
         {
+            if (pressed != null && edge == 0 && !editing && !scrubbing) SeekAt(down.X);
             freeDrag?.Dispose(); freeDrag = null; freeInsertion = null;
             pressed = null; edge = 0; scrubbing = false;
             if (editing) { editing = false; owner.EditCompleted?.Invoke(); }
@@ -333,7 +336,7 @@ public sealed class EditorTimeline : Grid
         public void CancelEdit()
         {
             if (!editing) return;
-            editing = false;
+            editing = false; pressed = null;
             ReleaseMouseCapture(); FinishEdit(); owner.EditCanceled?.Invoke();
         }
         protected override void OnMouseRightButtonDown(MouseButtonEventArgs e)

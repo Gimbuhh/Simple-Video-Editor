@@ -41,6 +41,7 @@ public partial class MainWindow : Window
     private bool playerReady;
     private bool closing;
     private EditorSnapshot? pendingTrimEdit;
+    private double pendingEditSeek;
     private bool pendingEditWasDirty;
     private string displayedStart = "";
     private string displayedEnd = "";
@@ -103,7 +104,7 @@ public partial class MainWindow : Window
         {
             if (selected == null || pendingTrimEdit == null) return;
             selected.TimelineStart = Timeline.PlaceClip(selected, position);
-            Timeline.Position = selected.TimelineStart.Value;
+            Timeline.Position = selected.TimelineStart.Value + pendingEditSeek - selected.Start;
             PositionText.Text = Timecode.Format(Timeline.Position);
             RefreshSummary();
         };
@@ -193,6 +194,7 @@ public partial class MainWindow : Window
     private void BeginTrimEdit()
     {
         if (!TimelineSelected || busy) return;
+        pendingEditSeek = Math.Clamp(selected!.Start + Timeline.Position - Timeline.ClipOffset(selected), selected.Start, selected.End);
         gapPreview = gapPlaying = false; gapClock.Reset(); Video.ShowBlank = false;
         sequencePlayback = resumeAfterLoad = false;
         player?.Set("pause", "yes");
@@ -220,7 +222,7 @@ public partial class MainWindow : Window
             Checkpoint(original);
             MarkDirty();
         }
-        if (selected != null) SeekTimeline(selected, selected.Start);
+        if (selected != null) SeekTimeline(selected, previous != null && selected.Start == previous.Start && selected.End == previous.End ? pendingEditSeek : selected.Start);
         if (dirty) { recoveryTimer.Stop(); recoveryTimer.Start(); }
     }
     private void CancelTrimEdit()
@@ -228,6 +230,7 @@ public partial class MainWindow : Window
         if (pendingTrimEdit == null) return;
         var original = pendingTrimEdit; pendingTrimEdit = null;
         Restore(original); dirty = pendingEditWasDirty;
+        if (TimelineSelected) SeekTimeline(selected!, pendingEditSeek);
         if (!dirty) recoveryTimer.Stop();
         RefreshSummary();
     }

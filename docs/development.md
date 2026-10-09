@@ -9,6 +9,7 @@ The canonical repository is [Gimbuhh/simple-video-editor](https://github.com/Gim
 ```powershell
 git clone https://github.com/Gimbuhh/simple-video-editor.git
 cd simple-video-editor
+git config --local core.hooksPath .githooks
 ```
 
 ```powershell
@@ -16,11 +17,12 @@ cd simple-video-editor
 ./Development/scripts/check-repository.ps1
 ./Development/scripts/test.ps1
 ./Development/scripts/build.ps1 -Zip
+./Development/scripts/verify-package.ps1
 ```
 
 `global.json` and `Development/scripts/dependencies.json` pin the same SDK version. Setup downloads it into `Development/.tools/`, verifies the archive, and removes the download afterward. On a fresh checkout, setup downloads verified libmpv and FFmpeg binaries into `Development/vendor/`. When an existing `App/` has those exact files, setup reuses them.
 
-Build produces the self-contained app under `App/`, a local shortcut, and optionally `Releases/SimpleVideoEditor-win-x64.zip` plus its SHA-256 checksum. The portable ZIP contains the executable directly, its media tools, runtime, documentation, and license notices. Keep the entire extracted folder together.
+Build produces the self-contained app under `App/`, a local shortcut, and optionally `Releases/SimpleVideoEditor-win-x64.zip` plus its SHA-256 checksum. The portable ZIP has three top-level entries: `Simple Video Editor.exe`, `README.txt`, and `Support/`. The executable bundles the .NET runtime; support files include libmpv, FFmpeg, FFprobe, documentation, and licenses. Keep the extracted folder together. Builds stage a complete bundle before replacing a generated output and refuse to overwrite a running editor.
 
 Upstream rolling media releases can remove old assets. Setup never silently changes versions: if a pinned download fails, CI tries the portable ZIP on this repository's pinned `MediaMirrorTag` release and verifies every native binary before restoring it. Locally, supply the matching ZIP with `./Development/scripts/setup.ps1 -MediaBundlePath ./Releases/SimpleVideoEditor-win-x64.zip`. To use a private mirror automatically, authenticate GitHub CLI and set `GH_REPO` to the repository's `owner/name`. The first repository upload should preserve the verified portable ZIP in a draft release; see the release guide.
 
