@@ -2,7 +2,7 @@ name: Windows checks
 
 on:
   push:
-    branches: ['**']
+    branches: ['main']
   pull_request:
   workflow_dispatch:
 
@@ -36,12 +36,16 @@ jobs:
         run: ./Development/scripts/test.ps1
       - name: Build portable app
         run: ./Development/scripts/build.ps1 -Zip
+      - name: Verify portable package
+        run: ./Development/scripts/verify-package.ps1
       - name: Keep verification results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: core-results
-          path: Development/artifacts/verification/results.json
+          path: |
+            Development/artifacts/verification/results.json
+            Development/artifacts/package-verification/results.json
           retention-days: 7
           if-no-files-found: warn
       - name: Keep portable package

@@ -41,6 +41,7 @@ public partial class MainWindow : Window
     private bool playerReady;
     private bool closing;
     private EditorSnapshot? pendingTrimEdit;
+    private double pendingEditSeek;
     private bool pendingEditWasDirty;
     private string displayedStart = "";
     private string displayedEnd = "";
@@ -103,7 +104,7 @@ public partial class MainWindow : Window
         {
             if (selected == null || pendingTrimEdit == null) return;
             selected.TimelineStart = Timeline.PlaceClip(selected, position);
-            Timeline.Position = selected.TimelineStart.Value;
+            Timeline.Position = selected.TimelineStart.Value + pendingEditSeek - selected.Start;
             PositionText.Text = Timecode.Format(Timeline.Position);
             RefreshSummary();
         };
@@ -133,6 +134,25 @@ public partial class MainWindow : Window
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
         var args = Environment.GetCommandLineArgs().Skip(1).ToArray();
+        if (args.Length == 3 && args[0] == "--verify-package")
+        {
+            // Internal portable-package check: wait for real project/preview readiness
+            // and use the normal asynchronous close path instead of timing WM_CLOSE.
+            try
+            {
+                if (!await OpenProjectAsync(args[1])) throw new InvalidOperationException("The verification project did not open.");
+                for (var attempt = 0; attempt < 150 && (!playerReady || Video.PreviewBitmap == null); attempt++) await Task.Delay(100);
+                if (!playerReady || Video.PreviewBitmap == null) throw new InvalidOperationException("The packaged preview did not render.");
+                using var process = System.Diagnostics.Process.GetCurrentProcess();
+                var playbackLibrary = process.Modules.Cast<System.Diagnostics.ProcessModule>().Single(m => m.ModuleName.Equals("libmpv-2.dll", StringComparison.OrdinalIgnoreCase)).FileName;
+                var result = new { PreviewWidth = Video.PreviewBitmap.PixelWidth, PreviewHeight = Video.PreviewBitmap.PixelHeight, PlaybackLibrary = playbackLibrary, ProbeTool = MediaTools.Find("ffprobe") };
+                if (File.Exists(args[2])) throw new IOException("The verification result already exists.");
+                await File.WriteAllTextAsync(args[2], System.Text.Json.JsonSerializer.Serialize(result));
+                Close();
+            }
+            catch { Application.Current.Shutdown(1); }
+            return;
+        }
         if (args.Length > 0)
         {
             if (args.Length == 1 && args[0].EndsWith(".sveproject", StringComparison.OrdinalIgnoreCase)) await OpenProjectAsync(args[0]);
@@ -193,6 +213,7 @@ public partial class MainWindow : Window
     private void BeginTrimEdit()
     {
         if (!TimelineSelected || busy) return;
+        pendingEditSeek = Math.Clamp(selected!.Start + Timeline.Position - Timeline.ClipOffset(selected), selected.Start, selected.End);
         gapPreview = gapPlaying = false; gapClock.Reset(); Video.ShowBlank = false;
         sequencePlayback = resumeAfterLoad = false;
         player?.Set("pause", "yes");
@@ -205,7 +226,10 @@ public partial class MainWindow : Window
         if (selected == null || busy || pendingTrimEdit == null) return;
         SetTrim(start, end, pendingTrimEdit, final: false, constrain: true);
         UpdateTrimFields();
+        Timeline.Position = Timeline.ClipOffset(selected) + EditPreviewPosition(selected) - selected.Start;
+        PositionText.Text = Timecode.Format(Timeline.Position);
     }
+    private double EditPreviewPosition(MediaClip clip) => Math.Clamp(pendingEditSeek, clip.Start, Math.Max(clip.Start, clip.End - 1 / clip.FrameRate));
     private void CompleteTrimEdit()
     {
         if (pendingTrimEdit == null) return;
@@ -220,7 +244,7 @@ public partial class MainWindow : Window
             Checkpoint(original);
             MarkDirty();
         }
-        if (selected != null) SeekTimeline(selected, selected.Start);
+        if (selected != null) SeekTimeline(selected, EditPreviewPosition(selected));
         if (dirty) { recoveryTimer.Stop(); recoveryTimer.Start(); }
     }
     private void CancelTrimEdit()
@@ -228,6 +252,7 @@ public partial class MainWindow : Window
         if (pendingTrimEdit == null) return;
         var original = pendingTrimEdit; pendingTrimEdit = null;
         Restore(original); dirty = pendingEditWasDirty;
+        if (TimelineSelected) SeekTimeline(selected!, pendingEditSeek);
         if (!dirty) recoveryTimer.Stop();
         RefreshSummary();
     }

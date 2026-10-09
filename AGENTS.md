@@ -6,6 +6,9 @@ This folder is the canonical Git checkout for the private repository:
 ## Git workflow
 
 - Use this repository for all future work. Inspect status and remotes before editing; preserve unrelated user changes.
+- Work on a feature branch and create a pull request before changes enter `main`. Never push directly to `main`, including as an administrator. Wait for the PR checks before merging within the user's authorization.
+- Leave PRs open for the user's testing. Merge only after the user confirms testing is complete and approves the merge.
+- Enable the tracked push guard with `git config --local core.hooksPath .githooks`. This local guard complements the PR policy; GitHub currently requires a paid plan to enforce protection on this private repository.
 - Use meaningful commits for completed requested changes. Push or publish within the user's authorization for that task; do not force-push, rewrite published tags, or replace release assets silently.
 - Use Git history instead of new source-backup ZIPs or version-folder copies. Existing ignored local backups can remain.
 - Commit source, tests, scripts, authored assets, and documentation. Keep App bundles, release ZIPs, SDK/native downloads, bin/obj, personal recordings, project/recovery files, shortcuts, and verification output ignored.
@@ -24,3 +27,4 @@ This folder is the canonical Git checkout for the private repository:
 - Follow `docs/releasing.md`; keep native dependency pins and license notices together.
 - Keep the release named by `MediaMirrorTag` available: its portable ZIP restores the exact native dependencies if upstream rolling downloads disappear.
 - Future tag workflows prepare draft releases. Publish only with user authorization and after verification.
+- Create release tags from the merged `main` commit, after the pull request checks pass.

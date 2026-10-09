@@ -25,6 +25,8 @@ function Restore-EditorMediaBundle([string]$BundlePath) {
         $editorBundle = [IO.Compression.ZipFile]::OpenRead([IO.Path]::GetFullPath($BundlePath))
         foreach ($editorFile in $editorBundleFiles) {
             $editorEntry = $editorBundle.GetEntry($editorFile.Entry)
+            $editorPortableEntry = if ($editorFile.Entry.StartsWith('licenses/')) { "docs/$($editorFile.Entry)" } else { "bin/$([IO.Path]::GetFileName($editorFile.Entry))" }
+            if (!$editorEntry) { $editorEntry = $editorBundle.GetEntry($editorPortableEntry) }
             if (!$editorEntry) { throw "Missing media bundle entry: $($editorFile.Entry)" }
             $editorExtracted = Join-Path $editorRestoreRoot $editorFile.Vendor
             New-Item -ItemType Directory -Path (Split-Path -Parent $editorExtracted) -Force | Out-Null

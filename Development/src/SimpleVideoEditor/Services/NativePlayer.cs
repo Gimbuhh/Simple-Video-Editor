@@ -24,6 +24,8 @@ public sealed class NativePlayer : IDisposable
         NativeLibrary.SetDllImportResolver(typeof(NativePlayer).Assembly, (name, _, _) =>
         {
             if (name != "libmpv-2.dll") return IntPtr.Zero;
+            var binary = Path.Combine(AppContext.BaseDirectory, "bin", name);
+            if (File.Exists(binary)) return NativeLibrary.Load(binary);
             var bundled = Path.Combine(AppContext.BaseDirectory, name);
             if (File.Exists(bundled)) return NativeLibrary.Load(bundled);
             var folder = new DirectoryInfo(AppContext.BaseDirectory);
@@ -33,6 +35,8 @@ public sealed class NativePlayer : IDisposable
                 if (File.Exists(local)) return NativeLibrary.Load(local);
                 var app = Path.Combine(folder.FullName, "App", name);
                 if (File.Exists(app)) return NativeLibrary.Load(app);
+                var portable = Path.Combine(folder.FullName, "App", "bin", name);
+                if (File.Exists(portable)) return NativeLibrary.Load(portable);
                 folder = folder.Parent;
             }
             throw new FileNotFoundException("The playback library is missing. Extract the complete portable app folder.");

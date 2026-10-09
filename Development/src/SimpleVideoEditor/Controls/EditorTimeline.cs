@@ -144,7 +144,6 @@ public sealed class EditorTimeline : Grid
         private bool scrubbing;
         private double originalStart, originalEnd;
         private double originalOffset;
-        private ClipDragPreview? freeDrag;
         private double? freeInsertion;
         private static readonly Brush Cyan = Brush("#25D9E9");
         private void Text(DrawingContext dc, string text, double x, double y, double width, Brush brush, double size = 12)
@@ -269,7 +268,9 @@ public sealed class EditorTimeline : Grid
             if (pressed != null) owner.SelectionRequested?.Invoke(pressed);
             if (pressed != null) { originalStart = pressed.Start; originalEnd = pressed.End; originalOffset = owner.ClipOffset(pressed); }
             if (pressed != null) CaptureMouse();
-            if (edge == 0) SeekAt(down.X);
+            // A clip-body press may become a drag. Seek only after a simple click
+            // completes so moving a clip does not replace its current preview frame.
+            if (edge == 0 && (pressed == null || scrubbing)) SeekAt(down.X);
             if (scrubbing) CaptureMouse();
         }
         protected override void OnMouseMove(MouseEventArgs e)
@@ -304,9 +305,7 @@ public sealed class EditorTimeline : Grid
             }
             else
             {
-                if (!editing) { editing = true; owner.EditStarted?.Invoke(); freeDrag = ClipDragPreview.Attach(this, pressed); }
-                var root = (FrameworkElement)Window.GetWindow(this).Content;
-                freeDrag?.MoveTo(TranslatePoint(point, root));
+                if (!editing) { editing = true; owner.EditStarted?.Invoke(); }
                 var requested = originalOffset + (point.X - down.X) / owner.pixelsPerSecond;
                 freeInsertion = owner.PlaceClip(pressed, requested);
                 owner.PositionChanged?.Invoke(requested);
@@ -325,7 +324,8 @@ public sealed class EditorTimeline : Grid
         }
         private void FinishEdit()
         {
-            freeDrag?.Dispose(); freeDrag = null; freeInsertion = null;
+            if (pressed != null && edge == 0 && !editing && !scrubbing) SeekAt(down.X);
+            freeInsertion = null;
             pressed = null; edge = 0; scrubbing = false;
             if (editing) { editing = false; owner.EditCompleted?.Invoke(); }
             owner.Refresh();
@@ -333,7 +333,7 @@ public sealed class EditorTimeline : Grid
         public void CancelEdit()
         {
             if (!editing) return;
-            editing = false;
+            editing = false; pressed = null;
             ReleaseMouseCapture(); FinishEdit(); owner.EditCanceled?.Invoke();
         }
         protected override void OnMouseRightButtonDown(MouseButtonEventArgs e)

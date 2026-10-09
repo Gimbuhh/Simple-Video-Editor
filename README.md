@@ -8,9 +8,9 @@ A portable Windows editor for trimming and combining gameplay recordings. Record
 
 ## Run
 
-[Download the Windows ZIP](https://github.com/Gimbuhh/simple-video-editor/releases/latest/download/SimpleVideoEditor-win-x64.zip), extract it, and open **SimpleVideoEditor.exe**. Keep its files together; the bundle includes the desktop runtime and video tools. No installer, app account, or separate media-tool setup is required. Downloads require access to this private GitHub repository.
+[Download the Windows ZIP](https://github.com/Gimbuhh/simple-video-editor/releases/latest/download/SimpleVideoEditor-win-x64.zip), extract it, and double-click **Simple Video Editor.exe** at the top of the folder. Keep **bin** beside it; that folder holds the video tools and libraries. Guides and license notices are in **docs**. The desktop runtime is included in the executable. No installer, app account, or separate media-tool setup is required. Downloads require access to this private GitHub repository.
 
-In this local project folder, use the **Simple Video Editor** shortcut or `App/SimpleVideoEditor.exe`. A fresh source checkout needs the build commands below first.
+In this local project folder, use the **Simple Video Editor** shortcut or `App/Simple Video Editor.exe`. A fresh source checkout needs the build commands below first.
 
 ## Editing
 
@@ -36,7 +36,7 @@ See the [user guide](docs/user-guide.md) for all shortcuts, editing behavior, ex
 
 ## Requirements and scope
 
-- Windows x64. Version 1.0.1.
+- Windows x64. Version 1.0.2.
 - SDR video; verified with 1440p/60 fps AV1 Shadowplay recordings. HDR is currently unsupported.
 - One video track with linked audio, straight cuts, and the first audio stream. Separate audio editing, effects, titles, and transitions are outside the current scope.
 - NVIDIA export is optional; CPU encoding is available. Preview uses software rendering.

@@ -1,7 +1,7 @@
 SIMPLE VIDEO EDITOR
 
 Double-click "Simple Video Editor" (the shortcut beside this file).
-The executable is App\SimpleVideoEditor.exe.
+The executable is App\Simple Video Editor.exe.
 
 App         The complete runnable Windows app. Keep its files together.
 Development Source code, build/test scripts, small source backups and verification reports.

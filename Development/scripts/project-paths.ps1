@@ -5,6 +5,9 @@ function Resolve-EditorMediaFile([string]$VendorPath, [string]$AppPath) {
     if (Test-Path -LiteralPath $editorCandidate -PathType Leaf) { return $editorCandidate }
     $editorCandidate = Join-Path (Join-Path $editorWorkspace 'App') $AppPath
     if (Test-Path -LiteralPath $editorCandidate -PathType Leaf) { return $editorCandidate }
+    $editorPortablePath = if ($AppPath.StartsWith('licenses/')) { "docs/$AppPath" } else { "bin/$([IO.Path]::GetFileName($AppPath))" }
+    $editorCandidate = Join-Path (Join-Path $editorWorkspace 'App') $editorPortablePath
+    if (Test-Path -LiteralPath $editorCandidate -PathType Leaf) { return $editorCandidate }
     throw "Missing dependency: $VendorPath. Run Development/scripts/setup.ps1 first."
 }
 function Copy-EditorDependency([string]$Source, [string]$Destination) {

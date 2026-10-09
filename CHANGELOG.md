@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.2 — 2026-10-09
+
+### Changed
+
+- Portable downloads show one clearly named executable and short instructions, with video tools in `bin` and guides and licenses in `docs`.
+- Moving an existing timeline clip shows the moving block without a floating thumbnail. Recordings dragged from the library retain their thumbnail preview.
+
+### Fixed
+
+- Moving or dragging the edges of a timeline clip preserves its preview frame and keeps the playhead aligned. Edge trims that remove the current frame clamp to the nearest retained frame. Ordinary clicks seek on release.
+
 ## 1.0.1 — 2026-10-09
 
 ### Fixed
