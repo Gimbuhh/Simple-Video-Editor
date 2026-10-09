@@ -13,6 +13,7 @@ Directory.CreateDirectory(root);
 var checks = new List<string>();
 void Assert(bool condition, string description) { if (!condition) throw new Exception(description); checks.Add(description); Console.WriteLine("PASS " + description); }
 async Task ExpectFailure(Func<Task> task, string description) { try { await task(); } catch { Assert(true, description); return; } throw new Exception(description + " did not fail"); }
+async Task ExpectPathRejection(Func<Task> task, string description) { try { await task(); } catch (InvalidDataException) { Assert(true, description); return; } throw new Exception(description + " was not rejected by the path policy"); }
 
 try
 {
@@ -122,6 +123,26 @@ try
     }
     var invalidPath = Path.Combine(root, "invalid.sveproject"); await File.WriteAllTextAsync(invalidPath, "{\"Version\":1,\"Clips\":[{\"Path\":\"x\",\"Start\":2,\"End\":1}]}");
     await ExpectFailure(async () => { await ProjectStore.ReadAsync(invalidPath); }, "Invalid project ranges are rejected");
+    var unsafePaths = new[] { @"\\host.invalid\share\clip.mp4", "//host.invalid/share/clip.mp4", @"\/host.invalid\share\clip.mp4", @"\\?\UNC\host.invalid\share\clip.mp4", @"\\?\C:\clip.mp4", @"\\.\C:\clip.mp4", @"\??\C:\clip.mp4", "https://host.invalid/clip.mp4", "C:clip.mp4", "clip.mp4" };
+    foreach (var unsafePath in unsafePaths)
+    {
+        await File.WriteAllTextAsync(invalidPath, JsonSerializer.Serialize(new ProjectDocument(1, [], [unsafePath])));
+        await ExpectPathRejection(() => ProjectStore.ReadAsync(invalidPath), $"Project library rejects unsafe path before access: {unsafePath}");
+        await File.WriteAllTextAsync(invalidPath, JsonSerializer.Serialize(new ProjectDocument(1, [new(unsafePath, 0, 1)])));
+        await ExpectPathRejection(() => ProjectStore.ReadAsync(invalidPath), $"Legacy clip reference rejects unsafe path before access: {unsafePath}");
+        await ExpectPathRejection(() => { ProjectStore.Relink(missingProject, new Dictionary<string, string> { [movedA] = unsafePath, [movedB] = sourceB }); return Task.CompletedTask; }, $"Relink rejects unsafe replacement: {unsafePath}");
+    }
+    Assert(LocalRecordingPath.Validate(sourceA.Replace('\\', '/')) == sourceA && !LocalRecordingPath.Exists(movedA), "Local slash paths and missing recordings remain supported without network access");
+    var localLink = Path.Combine(root, "local-recording-link");
+    Assert(Directory.Exists(localLink) && LocalRecordingPath.Validate(Path.Combine(localLink, Path.GetFileName(sourceA))) == sourceA,
+        "A local directory junction resolves to the validated recording without losing local-link support");
+    foreach (var extremePosition in new[] { 1e20, 1e300, double.MaxValue })
+    {
+        await File.WriteAllTextAsync(invalidPath, JsonSerializer.Serialize(new ProjectDocument(1, [new(sourceA, 0, 1, extremePosition)])));
+        await ExpectFailure(() => ProjectStore.ReadAsync(invalidPath), $"Extreme finite timeline position is rejected before media processing: {extremePosition}");
+    }
+    await File.WriteAllTextAsync(invalidPath, JsonSerializer.Serialize(new ProjectDocument(1, [new(sourceA, 0, double.MaxValue, double.MaxValue)])));
+    await ExpectFailure(() => ProjectStore.ReadAsync(invalidPath), "Overflowing cumulative project duration is rejected");
     var settings = new ExportSettings(ExportCodec.Av1, ExportQuality.High, 320, 180, 60, UseGpu: useGpu);
     var export = new ExportService();
     await ExpectFailure(() => export.ExportAsync([a], sourceA, settings, null, CancellationToken.None), "Export refuses to overwrite a source recording");
@@ -129,6 +150,11 @@ try
     await export.ExportAsync([a, b], output, settings, new Progress<ExportProgress>(p => { }), CancellationToken.None);
     var result = await MediaTools.ProbeAsync(output);
     Assert(result.Codec == "av1" && result.Width == 320 && result.Height == 180 && Math.Abs(result.Duration - 2) < .08, $"{(useGpu ? "NVIDIA" : "CPU")} AV1 export normalizes mixed clips and preserves edited duration");
+    var selectedExtendedOutput = @"\\?\" + output;
+    var outputProbe = typeof(MediaTools).GetMethod("ProbeOutputAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+    var authorizedOutput = await (Task<MediaClip>)outputProbe.Invoke(null, [selectedExtendedOutput, CancellationToken.None])!;
+    Assert(authorizedOutput.Duration == result.Duration, "Explicit output verification accepts a Windows namespace that recording references cannot authorize");
+    await ExpectPathRejection(() => MediaTools.ProbeAsync(selectedExtendedOutput), "Recording-input probing still rejects the same device namespace");
     await MediaTools.RunAsync("ffmpeg", ["-v", "error", "-i", output, "-f", "null", "-"]);
     Assert(true, "Combined AV1 video and AAC audio fully decode without errors");
     using var frames = JsonDocument.Parse(await MediaTools.RunAsync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-count_frames", "-show_entries", "stream=nb_read_frames", "-of", "json", output]));

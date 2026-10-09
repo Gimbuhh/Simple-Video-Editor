@@ -14,5 +14,10 @@ foreach ($editorClip in $Clips) {
     $editorArguments += (Resolve-Path -LiteralPath $editorClip).Path
 }
 if ($Ui -and $Clips.Count -eq 1) { throw 'The optional UI gameplay checks require two recordings. See docs/development.md.' }
+# Exercise local directory-link support without requiring symbolic-link privileges.
+$editorFixtures = Join-Path $editorRoot 'artifacts/verification'
+New-Item -ItemType Directory -Path $editorFixtures -Force | Out-Null
+$editorLocalLink = Join-Path $editorFixtures 'local-recording-link'
+if (!(Test-Path -LiteralPath $editorLocalLink)) { New-Item -ItemType Junction -Path $editorLocalLink -Target $editorFixtures | Out-Null }
 & (Join-Path $editorRoot '.tools\dotnet\dotnet.exe') run --project (Join-Path $editorRoot 'tests\SimpleVideoEditor.Tests\SimpleVideoEditor.Tests.csproj') -c Release -- @editorArguments
 if ($LASTEXITCODE -ne 0) { throw 'Verification failed' }

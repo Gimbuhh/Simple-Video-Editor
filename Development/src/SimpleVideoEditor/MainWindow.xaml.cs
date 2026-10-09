@@ -187,6 +187,7 @@ public partial class MainWindow : Window
         AddToTimelineButton.IsEnabled = SourceList.SelectedItem != null && !busy;
         AddAllToTimelineButton.Visibility = Sources.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
         AddAllToTimelineButton.IsEnabled = Sources.Count > 1 && !busy;
+        Grid.SetColumnSpan(AddToTimelineButton, Sources.Count > 1 ? 1 : 2);
         UndoButton.IsEnabled = undo.Count > 0 && !busy; RedoButton.IsEnabled = redo.Count > 0 && !busy;
         RemoveButton.IsEnabled = TimelineSelected && !busy;
         SplitButton.IsEnabled = TimelineSelected && !gapPreview && !busy && selected!.KeptDuration >= 2 / selected.FrameRate - .0001;
@@ -822,7 +823,7 @@ public partial class MainWindow : Window
         {
             var document = await ProjectStore.ReadAsync(path); var restored = new List<MediaClip>();
             var relinked = false;
-            if (ProjectStore.SourcePaths(document).Any(p => !File.Exists(p)))
+            if (ProjectStore.SourcePaths(document).Any(p => !LocalRecordingPath.Exists(p)))
             {
                 var locate = new RelinkWindow(document) { Owner = this };
                 if (locate.ShowDialog() != true) { StatusText.Text = "Opening canceled"; return false; }

@@ -82,6 +82,31 @@ public static class UiVerification
                     await (Task)Invoke("ImportAsync", (object)new[] { Path.Combine(root, "source B.mp4") })!; await Ready();
                     Assert(window.Sources.Count == 2 && window.Clips.Count == 0 && !Control<Button>("ExportButton").IsEnabled, "Import fills the library without adding unwanted clips to the timeline");
                     Assert(Control<Button>("AddAllToTimelineButton").IsVisible && Control<Button>("AddAllToTimelineButton").IsEnabled && Control<Button>("AddToTimelineButton").IsVisible, "Multiple recordings show both timeline buttons");
+                    window.Width = window.MinWidth; window.Height = window.MinHeight; window.UpdateLayout();
+                    var addOne = Control<Button>("AddToTimelineButton"); var addAll = Control<Button>("AddAllToTimelineButton");
+                    var oneBounds = addOne.TransformToAncestor(window).TransformBounds(new Rect(addOne.RenderSize));
+                    var allBounds = addAll.TransformToAncestor(window).TransformBounds(new Rect(addAll.RenderSize));
+                    Assert(Math.Abs(oneBounds.Top - allBounds.Top) < 1 && oneBounds.Right <= allBounds.Left && Math.Abs(oneBounds.Height - allBounds.Height) < 1,
+                        "Minimum window keeps timeline actions side by side in one row");
+                    Assert(new[] { addOne, addAll }.All(button => Descendants(button).OfType<ButtonLabel>().Single().DesiredSize.Width <= button.ActualWidth - button.Padding.Left - button.Padding.Right),
+                        "Both complete timeline button labels fit at minimum window size");
+                    var compactItem = (ListBoxItem)Control<ListBox>("SourceList").ItemContainerGenerator.ContainerFromItem(window.Sources[0]);
+                    Assert(compactItem.ActualHeight <= 60 && Control<ListBox>("SourceList").ActualHeight >= compactItem.ActualHeight * 2,
+                        $"Compact rows leave room for at least two complete recordings at minimum window size (row {compactItem.ActualHeight}, list {Control<ListBox>("SourceList").ActualHeight})");
+                    SaveRender(window, Path.Combine(root, "recordings-compact-small.png"));
+                    window.Width = 1320; window.Height = 880; window.UpdateLayout();
+                    Assert(Control<ListBox>("SourceList").ActualHeight >= compactItem.ActualHeight * 4, "Normal window has space for at least four compact recording rows");
+                    foreach (var extreme in new[] { 1e20, 1e300 })
+                    {
+                        var renderClip = window.Sources[0].Clone(true); renderClip.Start = 0; renderClip.End = 1; renderClip.TimelineStart = extreme;
+                        var isolatedTimeline = new EditorTimeline { Clips = new([renderClip]), Width = 700, Height = 220 };
+                        var extremeRenderWatch = System.Diagnostics.Stopwatch.StartNew();
+                        isolatedTimeline.Measure(new Size(700, 220)); isolatedTimeline.Arrange(new Rect(0, 0, 700, 220)); isolatedTimeline.Fit(); isolatedTimeline.Zoom(.5); isolatedTimeline.UpdateLayout();
+                        SaveElement(isolatedTimeline, Path.Combine(root, $"extreme-ruler-{extreme:0E0}.png"));
+                        Assert(extremeRenderWatch.Elapsed < TimeSpan.FromSeconds(2) && double.IsFinite(isolatedTimeline.PixelsPerSecond) && isolatedTimeline.PixelsPerSecond > 0,
+                            $"Extreme finite timeline renders and zooms promptly with bounded ruler work: {extreme}");
+                        isolatedTimeline.Clips = null;
+                    }
                     Invoke("SetBusy", true);
                     Click("AddAllToTimelineButton");
                     Assert(!Control<Button>("AddToTimelineButton").IsEnabled && !Control<Button>("AddAllToTimelineButton").IsEnabled && window.Clips.Count == 0, "Busy state disables both timeline actions and blocks batch insertion");
@@ -89,9 +114,10 @@ public static class UiVerification
                     Assert(Control<Slider>("PreviewSeek").IsVisible && !Control<Button>("SplitButton").IsEnabled, "Recording preview has its own scrubber and cannot alter timeline clips");
                     var sourceList = Control<ListBox>("SourceList");
                     var sourceScroll = Descendants(sourceList).OfType<ScrollViewer>().Single();
-                    // Keep the second recording partially visible despite the extra action row.
+                    // Constrain just the list to test partial-item selection independently of card size.
                     window.UpdateLayout();
-                    window.Height = 820 + Control<Button>("AddAllToTimelineButton").ActualHeight + Control<Button>("AddAllToTimelineButton").Margin.Top;
+                    var firstSourceItem = (ListBoxItem)sourceList.ItemContainerGenerator.ContainerFromItem(window.Sources[0]);
+                    sourceList.MaxHeight = firstSourceItem.ActualHeight * 1.5;
                     window.UpdateLayout(); sourceScroll.ScrollToTop(); await Task.Delay(30);
                     Invoke("Select", window.Sources[1], false); await Ready();
                     Assert(sourceScroll.VerticalOffset == 0 && sourceScroll.ExtentHeight > sourceScroll.ViewportHeight,
@@ -102,7 +128,7 @@ public static class UiVerification
                     Invoke("Source_KeyDown", sourceList, sourceKey); secondSourceItem.BringIntoView(); await Task.Delay(30);
                     Assert(sourceScroll.VerticalOffset > 0 && sourceScroll.VerticalOffset < secondSourceItem.ActualHeight,
                         "Keyboard reveal scrolls only the necessary pixels and keeps both recording thumbnails in view");
-                    sourceScroll.ScrollToTop(); window.Height = 880; window.UpdateLayout(); await Task.Delay(30);
+                    sourceList.MaxHeight = double.PositiveInfinity; sourceScroll.ScrollToTop(); window.Height = 880; window.UpdateLayout(); await Task.Delay(30);
                     var dragRoot = (FrameworkElement)window.Content;
                     var dragLayer = System.Windows.Documents.AdornerLayer.GetAdornerLayer(dragRoot);
                     var sourceGhost = ClipDragPreview.Attach(sourceList, window.Sources[0])!;
