@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -27,6 +28,9 @@ public partial class MainWindow : Window
     private bool TimelineSelected => selected != null && Clips.Contains(selected);
     private double pendingSeek;
     private bool updatingSeek;
+    private bool scrubbing, settlingScrub, scrubWasPlaying, scrubSeekQueued;
+    private MediaClip? scrubClip;
+    private readonly System.Diagnostics.Stopwatch scrubSettleClock = new();
     private NativePlayer? player;
     private readonly DispatcherTimer playbackTimer = new() { Interval = TimeSpan.FromMilliseconds(33) };
     private readonly DispatcherTimer recoveryTimer = new() { Interval = TimeSpan.FromSeconds(1) };
@@ -84,6 +88,7 @@ public partial class MainWindow : Window
                 player.PlaybackError += message => Dispatcher.BeginInvoke(() =>
                 {
                     if (closing) return;
+                    ResetScrub();
                     sequencePlayback = resumeAfterLoad = false;
                     playerReady = false;
                     RefreshSummary();
@@ -100,6 +105,10 @@ public partial class MainWindow : Window
             catch (Exception ex) { StatusText.Text = "Playback unavailable"; MessageBox.Show(this, ex.Message, "Playback unavailable", MessageBoxButton.OK, MessageBoxImage.Error); }
         };
         Timeline.SeekRequested += SeekTimeline;
+        Timeline.ScrubStarted += BeginScrub;
+        Timeline.ScrubCompleted += EndScrub;
+        PreviewSeek.AddHandler(Thumb.DragStartedEvent, new DragStartedEventHandler((_, _) => BeginScrub()), handledEventsToo: true);
+        PreviewSeek.AddHandler(Thumb.DragCompletedEvent, new DragCompletedEventHandler((_, _) => EndScrub()), handledEventsToo: true);
         Timeline.SelectionRequested += clip => { if (selected != clip) Select(clip, gapPreview ? gapPlaying : playerReady ? player?.Paused == false : resumeAfterLoad); };
         Timeline.EditStarted += BeginTrimEdit;
         Timeline.RangeChanged += UpdateTrimEdit;
@@ -114,7 +123,7 @@ public partial class MainWindow : Window
             PositionText.Text = Timecode.Format(Timeline.Position);
             RefreshSummary();
         };
-        Timeline.GapSeekRequested += time => SeekGap(time, gapPreview ? gapPlaying : playerReady ? player?.Paused == false : resumeAfterLoad);
+        Timeline.GapSeekRequested += time => SeekGap(time, !scrubbing && (gapPreview ? gapPlaying : playerReady ? player?.Paused == false : resumeAfterLoad));
         Timeline.FilesDropped += async (files, dropTime) =>
         {
             if (busy) return;
@@ -222,6 +231,7 @@ public partial class MainWindow : Window
     private void BeginTrimEdit()
     {
         if (!TimelineSelected || busy) return;
+        ResetScrub();
         pendingEditSeek = Math.Clamp(selected!.Start + Timeline.Position - Timeline.ClipOffset(selected), selected.Start, selected.End);
         gapPreview = gapPlaying = false; gapClock.Reset(); Video.ShowBlank = false;
         sequencePlayback = resumeAfterLoad = false;
@@ -283,6 +293,7 @@ public partial class MainWindow : Window
     private void Select(MediaClip? clip, bool keepSequence = false)
     {
         if (syncing) return;
+        if (!scrubbing) ResetScrub();
         gapPreview = gapPlaying = false; gapClock.Reset(); Video.ShowBlank = false;
         TrimHint.Visibility = Visibility.Collapsed;
         syncing = true; selected = clip;
@@ -369,6 +380,23 @@ public partial class MainWindow : Window
     }
     private void PlaybackTick()
     {
+        if (scrubbing) { FlushScrubSeek(); return; }
+        if (settlingScrub)
+        {
+            if (selected != scrubClip || closing || busy) { ResetScrub(); return; }
+            if (!playerReady || player == null) return;
+            if (player.Get("seeking") == "yes" || Math.Abs(player.Position - pendingSeek) > 1 / selected!.FrameRate + .001)
+            {
+                // Keep the requested position visible while decoding. A failed seek
+                // must not unexpectedly restart playback from an earlier frame.
+                if (scrubSettleClock.Elapsed.TotalSeconds < 5) return;
+                ResetScrub(); StatusText.Text = "Preview seek timed out · scrub again to retry"; return;
+            }
+            var resume = scrubWasPlaying;
+            ResetScrub();
+            sequencePlayback = TimelineSelected && resume; resumeAfterLoad = resume;
+            player.Set("pause", resume ? "no" : "yes");
+        }
         // The active gesture owns the playhead until its final seek. The paused
         // preview can still report the frame grabbed before a clip was moved.
         if (pendingTrimEdit != null) return;
@@ -395,7 +423,7 @@ public partial class MainWindow : Window
     }
     private void CompletePreview()
     {
-        if (closing || gapPreview || selected == null || player == null || !playerReady) return;
+        if (closing || scrubbing || settlingScrub || gapPreview || selected == null || player == null || !playerReady) return;
         player.Set("pause", "yes");
         if (sequencePlayback && TimelineSelected && Clips.IndexOf(selected) < Clips.Count - 1)
         {
@@ -409,6 +437,7 @@ public partial class MainWindow : Window
     }
     private void Play_Click(object sender, RoutedEventArgs e)
     {
+        if (scrubbing || settlingScrub) { scrubWasPlaying = !scrubWasPlaying; UpdatePlaybackButton(); return; }
         if (gapPreview) { gapAnchor = Timeline.Position; gapPlaying = !gapPlaying; if (gapPlaying) gapClock.Restart(); else gapClock.Reset(); UpdatePlaybackButton(); return; }
         if (selected == null || player == null || !playerReady) return;
         if (TimelineSelected && player.Paused && Timeline.Position >= Timeline.Duration - .006)
@@ -420,7 +449,7 @@ public partial class MainWindow : Window
     }
     private void UpdatePlaybackButton()
     {
-        var playing = gapPreview ? gapPlaying : selected != null && (playerReady ? player?.Paused == false : resumeAfterLoad);
+        var playing = scrubbing || settlingScrub ? scrubWasPlaying : gapPreview ? gapPlaying : selected != null && (playerReady ? player?.Paused == false : resumeAfterLoad);
         PlayGlyph.Visibility = playing ? Visibility.Collapsed : Visibility.Visible;
         PauseGlyph.Visibility = playing ? Visibility.Visible : Visibility.Collapsed;
         PlayButton.ToolTip = playing ? "Pause (Space)" : "Play (Space)";
@@ -755,27 +784,69 @@ public partial class MainWindow : Window
     private void SeekTimeline(MediaClip clip, double sourcePosition)
     {
         if (busy || !Clips.Contains(clip)) return;
-        var playing = gapPreview ? gapPlaying : playerReady ? player?.Paused == false : resumeAfterLoad;
+        if (!scrubbing) ResetScrub();
+        var playing = !scrubbing && (gapPreview ? gapPlaying : playerReady ? player?.Paused == false : resumeAfterLoad);
         gapPreview = gapPlaying = false; gapClock.Reset(); Video.ShowBlank = false;
         if (selected != clip) Select(clip, playing);
         sequencePlayback = resumeAfterLoad = playing;
         pendingSeek = Math.Clamp(clip.Start + Math.Round((sourcePosition - clip.Start) * clip.FrameRate) / clip.FrameRate, clip.Start, clip.End);
-        if (playerReady) player?.Seek(pendingSeek);
-        if (playerReady) player?.Set("pause", playing ? "no" : "yes");
-        Timeline.Position = Timeline.ClipOffset(clip) + pendingSeek - clip.Start;
+        if (scrubbing) scrubSeekQueued = true;
+        else if (playerReady) player?.Seek(pendingSeek);
+        if (playerReady && !scrubbing) player?.Set("pause", playing ? "no" : "yes");
+        Timeline.Position = Timeline.ClipOffset(clip) + (scrubbing ? Math.Clamp(sourcePosition - clip.Start, 0, clip.KeptDuration) : pendingSeek - clip.Start);
         PositionText.Text = Timecode.Format(Timeline.Position);
         RefreshSummary();
     }
     private void PreviewSeek_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (updatingSeek || TimelineSelected || selected == null || busy) return;
-        pendingSeek = e.NewValue; if (playerReady) player?.Seek(pendingSeek);
+        pendingSeek = e.NewValue;
+        if (scrubbing) scrubSeekQueued = true;
+        else { ResetScrub(); if (playerReady) player?.Seek(pendingSeek); }
         PositionText.Text = Timecode.Format(pendingSeek);
+    }
+    private void BeginScrub()
+    {
+        if (scrubbing || busy || selected == null || player == null) return;
+        var playing = settlingScrub ? scrubWasPlaying : gapPreview ? gapPlaying : playerReady ? !player.Paused : resumeAfterLoad;
+        ResetScrub(); scrubbing = true; scrubWasPlaying = playing;
+        gapAnchor = Timeline.Position; gapPlaying = false; gapClock.Reset();
+        resumeAfterLoad = false; player.Set("pause", "yes");
+    }
+    private void FlushScrubSeek()
+    {
+        if (!scrubSeekQueued || !playerReady || player == null || selected == null || gapPreview) return;
+        player.Seek(Math.Min(pendingSeek, Math.Max(selected.Start, selected.End - 1 / selected.FrameRate)));
+        scrubSeekQueued = false;
+    }
+    private void EndScrub()
+    {
+        if (!scrubbing) return;
+        scrubbing = false;
+        if (gapPreview)
+        {
+            var resume = scrubWasPlaying; ResetScrub(); SeekGap(Timeline.Position, resume); return;
+        }
+        if (selected == null || player == null) { ResetScrub(); return; }
+        pendingSeek = Math.Clamp(selected.Start + Math.Round((pendingSeek - selected.Start) * selected.FrameRate) / selected.FrameRate,
+            selected.Start, Math.Max(selected.Start, selected.End - 1 / selected.FrameRate));
+        if (TimelineSelected) Timeline.Position = Timeline.ClipOffset(selected) + pendingSeek - selected.Start;
+        else { updatingSeek = true; PreviewSeek.Value = pendingSeek; updatingSeek = false; }
+        PositionText.Text = Timecode.Format(TimelineSelected ? Timeline.Position : pendingSeek);
+        scrubClip = selected; settlingScrub = true; scrubSettleClock.Restart();
+        // Always submit the final position, even if the last preview seek was already sent.
+        scrubSeekQueued = true; FlushScrubSeek();
+    }
+    private void ResetScrub()
+    {
+        scrubbing = settlingScrub = scrubWasPlaying = scrubSeekQueued = false;
+        scrubClip = null; scrubSettleClock.Reset();
     }
     private void Fit_Click(object sender, RoutedEventArgs e) => Timeline.Fit();
     private void SeekGap(double time, bool playing)
     {
         if (busy || Clips.Count == 0) return;
+        if (!scrubbing) ResetScrub();
         if (Timeline.Locate(time) is { } at) { gapPlaying = playing; gapPreview = true; SeekTimeline(at.Clip, at.SourcePosition); return; }
         if (!TimelineSelected) Select(Clips.FirstOrDefault(c => Timeline.ClipOffset(c) > time) ?? Clips[^1]);
         gapPreview = true; gapPlaying = playing; sequencePlayback = playing; resumeAfterLoad = false;
@@ -951,7 +1022,8 @@ public partial class MainWindow : Window
         }
         if (key == Key.Escape && SearchInput.IsKeyboardFocusWithin) { SearchInput.Clear(); e.Handled = true; return; }
         if (Keyboard.FocusedElement is TextBox || RecordingsSplitter.IsKeyboardFocusWithin && (key is Key.Left or Key.Right)) return;
-        if (key == Key.Escape && pendingTrimEdit != null) { Timeline.CancelGesture(); e.Handled = true; return; }
+        if (key == Key.Escape && (pendingTrimEdit != null || scrubbing))
+        { Timeline.CancelGesture(); if (scrubbing) { Mouse.Capture(null); EndScrub(); } e.Handled = true; return; }
         if (key == Key.Apps || key == Key.F10 && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
         { if (TimelineSelected) OpenTimelineMenu(selected!); e.Handled = true; return; }
         if (Keyboard.Modifiers.HasFlag(ModifierKeys.Alt) && selected != null && TimelineSelected)

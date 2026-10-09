@@ -26,6 +26,8 @@ public sealed class EditorTimeline : Grid
     public event Action<double>? GapSeekRequested;
     public event Action<double>? PositionChanged;
     public event Action<MediaClip, double>? SeekRequested;
+    public event Action? ScrubStarted;
+    public event Action? ScrubCompleted;
     public event Action<MediaClip>? SelectionRequested;
     public event Action? EditStarted;
     public event Action<double, double>? RangeChanged;
@@ -277,6 +279,7 @@ public sealed class EditorTimeline : Grid
         {
             Focus(); down = point; pressed = Hit(down); edge = pressed == null ? 0 : Edge(pressed, down);
             scrubbing = point.Y < 28 && owner.Clips?.Count > 0;
+            if (scrubbing) owner.ScrubStarted?.Invoke();
             if (pressed != null) owner.SelectionRequested?.Invoke(pressed);
             if (pressed != null) { originalStart = pressed.Start; originalEnd = pressed.End; originalOffset = owner.ClipOffset(pressed); }
             if (pressed != null) CaptureMouse();
@@ -333,17 +336,21 @@ public sealed class EditorTimeline : Grid
             var time = Math.Clamp(x / owner.pixelsPerSecond, 0, owner.Duration);
             if (owner.Locate(time) is { } at) owner.SeekRequested?.Invoke(at.Clip, at.SourcePosition);
             else if (owner.Clips?.Count > 0) owner.GapSeekRequested?.Invoke(time);
+            // The pointer moves continuously; only the decoded frame snaps to a frame boundary.
+            if (scrubbing) owner.Position = time;
         }
         private void FinishEdit()
         {
             if (pressed != null && edge == 0 && !editing && !scrubbing) SeekAt(down.X);
             freeInsertion = null;
-            pressed = null; edge = 0; scrubbing = false;
+            pressed = null; edge = 0;
+            if (scrubbing) { scrubbing = false; owner.ScrubCompleted?.Invoke(); }
             if (editing) { editing = false; owner.EditCompleted?.Invoke(); }
             owner.Refresh();
         }
         public void CancelEdit()
         {
+            if (scrubbing) { ReleaseMouseCapture(); FinishEdit(); return; }
             if (!editing) return;
             editing = false; pressed = null;
             ReleaseMouseCapture(); FinishEdit(); owner.EditCanceled?.Invoke();
