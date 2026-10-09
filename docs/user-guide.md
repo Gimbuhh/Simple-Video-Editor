@@ -1,6 +1,6 @@
 # User guide
 
-A portable Windows editor for trimming and combining gameplay recordings. Version 1.0.0.
+A portable Windows editor for trimming and combining gameplay recordings. Version 1.0.1.
 
 ## Run
 
@@ -59,7 +59,7 @@ Timestamp fields accept `HH:MM:SS.mmm`, `MM:SS.mmm`, or seconds, using a decimal
 - Export progress and cancellation are supported. Existing outputs are replaced only after the new video finishes and passes a duration check.
 - Temporary exports live beside the output file and are removed after completion or cancellation. Leave space for intermediate files and the finished video. If the computer loses power during export, a `.sve-export-*` folder may remain in the output folder and can be removed once the app is closed.
 
-Audio is stereo, 48 kHz, using the first audio track. Video-only inputs receive silence. Mixed resolutions use letterboxing to preserve the image. Output uses the first recording's nominal frame rate; sections are rounded to whole output frames. Preview uses CPU decoding and software rendering, with its display buffer limited to 1280×720. Source files and exports retain their full resolution. The interface also uses software rendering, so the editor does not create its own Direct3D/OpenGL/Vulkan display surface for capture overlays to detect. This is intended to avoid Shadowplay selecting the editor instead of a game; NVIDIA capture targeting still requires checking with the game running. Preview uses more CPU than the previous GPU renderer. NVIDIA export encoding remains available. The sequence preview can briefly pause while switching source files; exported joins do not contain these preview loading pauses.
+Audio is stereo, 48 kHz, using the first audio track. Video-only inputs receive silence. Mixed resolutions use letterboxing to preserve the image. Output uses the first recording's nominal frame rate; sections are rounded to whole output frames. Preview uses CPU decoding and software rendering, with its display buffer limited to 1280×720. Source files and exports retain their full resolution. The interface also uses software rendering, so the editor does not create its own Direct3D/OpenGL/Vulkan display surface for capture overlays to detect. NVIDIA export encoding remains available.
 
 ## Projects and recovery
 

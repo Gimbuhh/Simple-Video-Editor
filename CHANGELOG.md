@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1 — 2026-10-09
+
+### Fixed
+
+- The white playhead stays steady while freely dragging a clip instead of jumping between two positions.
+
 ## 1.0.0 — 2026-10-09
 
 ### Added

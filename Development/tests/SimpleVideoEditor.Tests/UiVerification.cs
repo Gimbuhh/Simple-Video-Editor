@@ -534,10 +534,25 @@ public static class UiVerification
                     var freeId = window.Clips[0].SectionId;
                     timeline.Zoom(.2); window.UpdateLayout();
                     var freeScale = timeline.PixelsPerSecond;
-                    Pointer("BeginPointer", new Point(.5 * freeScale, 65)); Pointer("MovePointer", new Point(3.75 * freeScale, 65), true);
+                    Pointer("BeginPointer", new Point(.5 * freeScale, 65));
+                    await Task.Delay(150);
+                    Assert(((NativePlayer)Field("player")!).Position > .25, "Dragging begins with a preview frame inside the clip rather than at its start");
+                    Pointer("MovePointer", new Point(3.75 * freeScale, 65), true);
                     Assert(Math.Abs(window.Clips[0].TimelineStart!.Value - 3.25) < .000001 && surface.GetType().GetField("freeDrag", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(surface) != null,
                         "Free dragging moves the linked clip continuously from its grab point and shows its thumbnail");
+                    foreach (var pointerTime in new[] { 4.25, 3.5, 3.75 })
+                    {
+                        Pointer("MovePointer", new Point(pointerTime * freeScale, 65), true);
+                        var dragPosition = timeline.Position;
+                        Invoke("PlaybackTick");
+                        Assert(Math.Abs(timeline.Position - dragPosition) < .000001 && Math.Abs(timeline.Position - window.Clips[0].TimelineStart!.Value) < .000001,
+                            $"Playback updates leave the drag playhead stable at {dragPosition:0.##} seconds");
+                    }
+                    Assert(Control<TextBlock>("PositionText").Text == Timecode.Format(timeline.Position), "The timestamp stays synchronized with the playhead during a free drag");
                     surface.ReleaseMouseCapture(); Pointer("FinishEdit"); await Ready();
+                    Invoke("PlaybackTick");
+                    Assert(Math.Abs(timeline.Position - (timeline.ClipOffset(timeline.SelectedClip!) + Math.Clamp(((NativePlayer)Field("player")!).Position - timeline.SelectedClip!.Start, 0, timeline.SelectedClip.KeptDuration))) < .000001,
+                        "Playback controls the playhead again after a free drag finishes");
                     Assert(window.Clips[1].SectionId == freeId && window.Clips[0].TimelineStart == 1 && Math.Abs(timeline.Duration - 4.25) < .000001 && timeline.Locate(2.5) == null,
                         "Free movement preserves gaps and other clip positions while sorting playback order");
                     var undoBeforeCancel = ((System.Collections.ICollection)Field("undo")!).Count;

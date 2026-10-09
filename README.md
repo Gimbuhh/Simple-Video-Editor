@@ -36,10 +36,10 @@ See the [user guide](docs/user-guide.md) for all shortcuts, editing behavior, ex
 
 ## Requirements and scope
 
-- Windows x64. Version 1.0.0.
+- Windows x64. Version 1.0.1.
 - SDR video; verified with 1440p/60 fps AV1 Shadowplay recordings. HDR is currently unsupported.
 - One video track with linked audio, straight cuts, and the first audio stream. Separate audio editing, effects, titles, and transitions are outside the current scope.
-- NVIDIA export is optional; CPU encoding is available. Preview uses software rendering. Shadowplay capture targeting still needs checking while a game is running.
+- NVIDIA export is optional; CPU encoding is available. Preview uses software rendering.
 
 ## Development
 

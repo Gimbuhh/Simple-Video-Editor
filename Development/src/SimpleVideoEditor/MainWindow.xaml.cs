@@ -99,7 +99,14 @@ public partial class MainWindow : Window
         Timeline.EditCompleted += CompleteTrimEdit;
         Timeline.EditCanceled += CancelTrimEdit;
         Timeline.SourceDropped += InsertSourceClip;
-        Timeline.PositionChanged += position => { if (selected != null && pendingTrimEdit != null) { selected.TimelineStart = Timeline.PlaceClip(selected, position); Timeline.Position = selected.TimelineStart.Value; RefreshSummary(); } };
+        Timeline.PositionChanged += position =>
+        {
+            if (selected == null || pendingTrimEdit == null) return;
+            selected.TimelineStart = Timeline.PlaceClip(selected, position);
+            Timeline.Position = selected.TimelineStart.Value;
+            PositionText.Text = Timecode.Format(Timeline.Position);
+            RefreshSummary();
+        };
         Timeline.GapSeekRequested += time => SeekGap(time, gapPreview ? gapPlaying : playerReady ? player?.Paused == false : resumeAfterLoad);
         Timeline.FilesDropped += async (files, dropTime) =>
         {
@@ -309,6 +316,9 @@ public partial class MainWindow : Window
     }
     private void PlaybackTick()
     {
+        // The active gesture owns the playhead until its final seek. The paused
+        // preview can still report the frame grabbed before a clip was moved.
+        if (pendingTrimEdit != null) return;
         if (gapPreview)
         {
             if (gapPlaying)
