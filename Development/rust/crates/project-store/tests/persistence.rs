@@ -7,6 +7,27 @@ fn root() -> std::path::PathBuf {
     std::fs::create_dir_all(&path).unwrap();
     path
 }
+fn cleanup(path: std::path::PathBuf) {
+    for attempt in 0..6 {
+        match std::fs::remove_dir_all(&path) {
+            Ok(()) => return,
+            Err(error)
+                if attempt < 5
+                    && matches!(
+                        error.kind(),
+                        std::io::ErrorKind::PermissionDenied
+                            | std::io::ErrorKind::DirectoryNotEmpty
+                    ) =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(50 * (attempt + 1)))
+            }
+            Err(error) => panic!(
+                "Test-directory cleanup failed for {}: {error}",
+                path.display()
+            ),
+        }
+    }
+}
 #[test]
 fn atomic_save_roundtrip_and_encoding_compatibility() {
     let root = root();
@@ -52,7 +73,7 @@ fn atomic_save_roundtrip_and_encoding_compatibility() {
         assert_eq!(read_document(&path).unwrap(), value);
     }
     assert!(save_document(std::path::Path::new("relative.sveproject"), &document).is_err());
-    std::fs::remove_dir_all(root).unwrap();
+    cleanup(root);
 }
 #[test]
 fn recovery_never_claims_a_live_session_or_another_prompt() {
@@ -78,7 +99,7 @@ fn recovery_never_claims_a_live_session_or_another_prompt() {
     drop(claims);
     drop(second);
     drop(third);
-    std::fs::remove_dir_all(root).unwrap();
+    cleanup(root);
 }
 #[test]
 fn clip_settings_follow_split_and_undo_without_leaking_into_new_recordings() {
