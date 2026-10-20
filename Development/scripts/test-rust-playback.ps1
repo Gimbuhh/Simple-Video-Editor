@@ -71,3 +71,6 @@ if ($Gpu) {
 }
 @{passed=$editorPlaybackChecks; gpu=[bool]$Gpu; hdrPresentationVerified=$false; toolkitSelected=$false} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $editorPlaybackRoot 'results.json')
 Write-Output "All $editorPlaybackChecks Rust playback checks passed. Physical HDR, visual accuracy, pointer input, toolkit embedding, and game capture remain unverified."
+# Expected rejection probes leave a nonzero LASTEXITCODE. Report success only
+# after all assertions pass, rather than leaking the last negative test to CI.
+exit 0
