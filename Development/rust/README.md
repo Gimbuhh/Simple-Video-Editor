@@ -13,6 +13,12 @@ Run from the repository root on Windows x64:
 # After setup.ps1 restores the C# baseline tools:
 ./Development/scripts/test-rust.ps1 -LegacyParity
 
+# CPU rendering/lifecycle checks with generated SDR/PQ/HLG fixtures:
+./Development/scripts/test-rust.ps1 -LegacyParity -Playback
+
+# Local D3D11 tests open temporary native video windows:
+./Development/scripts/test-rust-playback.ps1 -Gpu
+
 # Inspect an existing project without writing it or opening its recordings:
 ./Development/rust/target/release/sve-inspect.exe 'C:/projects/example.sveproject'
 ```
@@ -24,8 +30,9 @@ unchanged production reader. It is never a runtime dependency of Rust.
 
 Legacy floating-point trim values remain intact. Rational frame rates describe
 new split constraints; this is not a finished rational/VFR timing engine.
-Recording syntax checks are not filesystem authorization: a future Windows
-adapter must validate drives and each link target before any media access.
+The project importer's syntax checks are not filesystem authorization. The
+playback lab uses `media-path` to validate drives and link targets before access;
+the future editor must apply the same boundary to imported source references.
 No save/upgrade/export/recovery path is present.
 
 Rust 1.90.0, bootstrap checksum and Cargo.lock are pinned. Tools, downloaded
@@ -41,3 +48,46 @@ Apache-2.0), memchr (Unlicense or MIT), itoa (MIT or Apache-2.0), and ryu
 (Apache-2.0 or BSL-1.0). Build-time unicode-ident additionally requires Unicode-3.0.
 The future Rust portable package must include the matching notices and runtime
 toolchain licenses before distribution; the current App bundle contains no Rust.
+
+## Playback experiment
+
+`media-path` checks local drives and immediate link targets before recording
+access. `native-mpv` verifies the pinned DLL hash before loading it with a
+restricted Windows DLL search. Its control handle stays on its owning thread;
+the software render API has a separate worker, bounded one-frame mailbox and
+an atomic-only update callback. Shutdown unregisters callbacks and joins that
+worker before destroying the player and unloading the library.
+
+`sve-playback-lab` exercises repeated load/play/pause/exact-seek/shutdown using
+one of three modes:
+
+| Mode | Purpose |
+| --- | --- |
+| `software` | CPU decode and in-memory 8-bit SDR frames; explicitly rejects PQ/HLG. |
+| `native-sdr` | mpv-owned D3D11 window, forced sRGB/BT.709 target; native renderer converts HDR sources. |
+| `native-auto` | mpv-owned D3D11 window with automatic color-space hints; reports the negotiated target without claiming physical HDR correctness. |
+
+After the test build, invoke the lab with a mode, an absolute path to the pinned
+`libmpv-2.dll`, and an absolute local recording path. The executable prints a JSON
+report and exits; native modes briefly open their own windows. Audio output is
+disabled. This is a backend diagnostic, not an interactive editor or an embedded
+Slint window. Neither UI toolkit selection nor the M1 exit gate is complete.
+
+The PowerShell test runner generates actual SDR-to-PQ/HLG sample conversions
+with the pinned FFmpeg, rather than changing metadata alone. Reports/media stay
+ignored under `Development/artifacts/rust-playback/`. The default CI runs the
+software checks; native D3D11 remains an explicit local check.
+
+Seeks/loads are serialized and bounded in the lab. Generation-safe pointer
+scrubbing, source-switch preview presentation, correct HDR/SDR screenshots,
+audio synchronization, HDR display changes, and toolkit embedding remain future
+work. Do not run this synchronous lab control API on a future UI thread.
+The same filesystem race limitations as the existing path validator apply;
+this is not a guarantee against another process replacing links during access.
+
+The native ABI declarations were checked against the official
+[mpv 0.41 client header](https://github.com/mpv-player/mpv/blob/v0.41.0/include/mpv/client.h)
+and [render header](https://github.com/mpv-player/mpv/blob/v0.41.0/include/mpv/render.h).
+Runtime client API major version and the exact repository DLL hash are checked
+independently. Hashing uses the locked sha2 dependency (MIT or Apache-2.0);
+production packaging must include its transitive notices too.

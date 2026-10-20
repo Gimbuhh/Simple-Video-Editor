@@ -37,7 +37,7 @@ jobs:
       - name: Restore pinned workspace Rust tools
         run: ./Development/scripts/setup-rust.ps1
       - name: Verify Rust contracts and legacy project parity
-        run: ./Development/scripts/test-rust.ps1 -LegacyParity
+        run: ./Development/scripts/test-rust.ps1 -LegacyParity -Playback
       - name: Build portable app
         run: ./Development/scripts/build.ps1 -Zip
       - name: Verify portable package
@@ -52,6 +52,7 @@ jobs:
           path: |
             Development/artifacts/verification/results.json
             Development/artifacts/package-verification/results.json
+            Development/artifacts/rust-playback/*.json
           retention-days: 7
           if-no-files-found: warn
       - name: Keep portable package

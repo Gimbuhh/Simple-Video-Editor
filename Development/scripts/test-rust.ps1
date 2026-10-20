@@ -1,4 +1,4 @@
-param([switch]$LegacyParity)
+param([switch]$LegacyParity, [switch]$Playback)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'rust-environment.ps1')
 if (!(Test-Path -LiteralPath $editorCargo)) { throw 'Run Development/scripts/setup-rust.ps1 first.' }
@@ -7,6 +7,10 @@ $editorRustManifest = Join-Path $editorRustWorkspace 'Cargo.toml'
 if ($LASTEXITCODE -ne 0) { throw 'Rust formatting failed.' }
 & $editorCargo clippy --manifest-path $editorRustManifest --workspace --all-targets --locked -- -D warnings
 if ($LASTEXITCODE -ne 0) { throw 'Rust lint checks failed.' }
+$editorPathFixtureRoot = Join-Path $editorRustDevelopment 'artifacts/verification'
+if (Test-Path -LiteralPath (Join-Path $editorPathFixtureRoot 'local-recording-link/source B.mp4')) {
+    $env:SVE_PATH_FIXTURES = $editorPathFixtureRoot
+} else { Remove-Item Env:SVE_PATH_FIXTURES -ErrorAction SilentlyContinue }
 & $editorCargo test --manifest-path $editorRustManifest --workspace --locked
 if ($LASTEXITCODE -ne 0) { throw 'Rust tests failed.' }
 & $editorCargo build --manifest-path $editorRustManifest --release --locked -p sve-inspect
@@ -48,3 +52,4 @@ if ($LegacyParity) {
     }
 }
 Write-Output 'Rust formatting, lint, contracts, executable tests, and release inspector smoke check passed.'
+if ($Playback) { & (Join-Path $PSScriptRoot 'test-rust-playback.ps1') }

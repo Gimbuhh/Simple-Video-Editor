@@ -1,0 +1,11 @@
+[package]
+name = "media-path"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+# The sole native call queries drive type, before filesystem/native media access.
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"

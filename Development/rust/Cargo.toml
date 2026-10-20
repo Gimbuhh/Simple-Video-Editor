@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/editor-core", "crates/project-store", "crates/sve-inspect"]
+members = ["crates/editor-core", "crates/project-store", "crates/sve-inspect", "crates/media-path", "crates/native-mpv", "crates/sve-playback-lab"]
 resolver = "2"
 
 # Migration tooling only. The shipping version remains authoritative in the
@@ -16,6 +16,9 @@ editor-core = { path = "crates/editor-core" }
 project-store = { path = "crates/project-store" }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = { version = "=1.0.145", features = ["float_roundtrip"] }
+media-path = { path = "crates/media-path" }
+native-mpv = { path = "crates/native-mpv" }
+sha2 = "=0.10.9"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -74,6 +74,10 @@ Rust cutover; transitions are follow-up work.
 ```powershell
 ./Development/scripts/setup-rust.ps1
 ./Development/scripts/test-rust.ps1 -LegacyParity
+./Development/scripts/test-rust.ps1 -LegacyParity -Playback
+
+# Explicit local GPU rendering checks; opens temporary mpv video windows.
+./Development/scripts/test-rust-playback.ps1 -Gpu
 ```
 
 Run the existing setup first for `-LegacyParity`, which builds a test-only C#
@@ -89,6 +93,15 @@ prints a read-only, path-free summary without opening recordings. The Rust
 [workspace guide](https://github.com/Gimbuhh/Simple-Video-Editor/tree/main/Development/rust) describes its current limits.
 Schema-1 fixtures are committed under `Development/rust/crates/project-store/tests/fixtures/`;
 personal projects, media, and all generated verification output remain ignored.
+
+The playback lab tests the pinned libmpv from Rust, using software SDR rendering
+and optional native D3D11 SDR/automatic targets. The default CI includes generated
+SDR/PQ/HLG fixtures, repeated load/seek/shutdown, native-hash protection and path
+checks. Software output rejects HDR until a tested CPU tone-mapping path exists.
+Native reports include source and target color properties; these do not certify
+visible HDR output. Logs and generated fixtures are ignored under
+`Development/artifacts/rust-playback/`. This slice has no embedded toolkit window
+or interactive timeline and does not complete the rendering/HDR gate.
 
 ## Icon and dependencies
 

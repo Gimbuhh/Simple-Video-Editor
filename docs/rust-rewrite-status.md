@@ -53,10 +53,12 @@ folders are ignored. No private recordings were imported or committed.
 | Existing desktop UI harness | 233 passed; callback-driven WPF harness, not external OS drag automation. |
 | Reproduced portable artifact | Layout, embedded version, checksum, native pins, documentation, relocated project preview and clean close passed. |
 | Packaging safeguards | 9 passed using the isolated baseline package directory. |
-| Rust foundation | 15 tests passed, formatting and Clippy passed, optimized inspector smoke passed. |
+| Rust foundation and native boundary | 23 tests passed, formatting and Clippy passed, optimized inspector smoke passed. |
 | C#/Rust differential import | Both committed fixtures passed exact numeric field comparisons against unchanged C# ProjectStore/TimelineLayout. |
 | Exact release rollback | Downloaded original ZIP extracted and passed relocated saved-project preview/native pin/clean-close verification. |
-| GPU/HDR/display/capture | Not verified by this slice. No UI framework or HDR rendering claim. |
+| Rust software playback | 9 checks passed: generated SDR frames, serialized reload/seek/pause intent, missing-input failure, active-playback shutdown, and explicit PQ/HLG rejection. |
+| Native D3D11 experiment | 48 checks passed across generated SDR/PQ/HLG, native SDR and automatic targets, including the software checks. Local automatic-mode reports show 10-bit PQ/BT.2020. |
+| Physical HDR/toolkit/display changes/capture | Not verified. No UI framework selected and no full HDR presentation claim. |
 
 Commands and fixture locations are in the [development guide](development.md).
 No application source changed, so the baseline UI/media evidence remains valid
@@ -78,10 +80,10 @@ test-only and must remain outside app packaging.
 | C05 | Delete closes only the joined local group; MainWindow.Remove_Click / TimelineLayout.JoinedFollowing | editor-core | Tests cover joined group, separated group and undo; not connected to desktop UI. |
 | C06 | Add-all is one edit independent of search filtering; MainWindow.AppendSources | editor-core command; future library owner | Batch append/undo test; library UI/filter behavior still belongs to C#. |
 | C07 | Reject invalid/overlapping/extreme timeline values before media work; ProjectStore.ReadAsync | project-store + editor-core | Invalid input, bounded stream/count, future-schema and failed-command tests. |
-| C08 | Original recordings remain untouched; LocalRecordingPath/ExportService | future Windows media authorization + export | Inspector has no recording access or write path. Full drive/link authorization and source-as-output protection still require porting. |
+| C08 | Original recordings remain untouched; LocalRecordingPath/ExportService | media-path + future export | Rust lab validates local drives/link targets and hashes generated sources before/after. Inspector still has no media access. Export source-as-output protection remains unported. |
 | C09 | Pointer owns scrubbing; stale decoder events cannot change play/pause intent; MainWindow/NativePlayer | future playback + desktop-ui | Baseline harness only; not ported. |
 | C10 | Save/recovery/relink/cache and concurrent-session isolation | future project-store/cache | Baseline harness only; Rust importer cannot save or upgrade projects. |
-| C11 | Exact exclusive cuts, silent/black gaps, linked audio and cancellation | future export/playback | Baseline media checks only; Rust does not export or play media yet. |
+| C11 | Exact exclusive cuts, silent/black gaps, linked audio and cancellation | future export/playback | Rust lab verifies decode and serialized seeking only. Timeline playback/export, frame-exact presentation, audio sync and cancellation remain unported. |
 | C12 | Portable version/layout/native pins and safe replacement | future Rust packaging | Existing packaging retained; inspector is not included in App or release ZIP. |
 
 Intentional importer hardening: 8 MiB input limit, explicit collection limits,
@@ -99,7 +101,7 @@ within the imported document/undo history; persistent schema-2 IDs remain future
 | M0 baseline/ledger | Yes | Existing 1.0.4 artifact | Baseline checks above | Not applicable |
 | Rust timeline foundation | Split/delete/append/undo subset | Pure tests only | Focused contracts | No; C# editor still owns the application |
 | Rust schema-1 importer | Read-only subset | sve-inspect executable only | Unit, CLI and C# differential checks | No; saves/recovery/media authorization remain unported |
-| M1 rendering/HDR spike | No | No | No | No |
+| M1 rendering/HDR spike | Native/software backend experiment | sve-playback-lab only, not editor UI | CPU/native tests; physical HDR and toolkit integration pending | No |
 | Full M2 domain/persistence | No | No | No | No |
 | M3-M8 desktop/cutover | No | No | No | No |
 
@@ -109,11 +111,12 @@ fixtures provide an independent sufficient oracle. Delete C# production owners
 only after their Rust replacements are connected to the desktop entry point,
 verified in the actual package, and no remaining production callers use them.
 
-Next: rendering/HDR spike comparing UI/video-surface integration, native libmpv
-ownership and shutdown, genuine Windows HDR versus labeled SDR fallback, and
-scrubbing responsiveness. Validate on a physical HDR display before freezing
-the desktop framework or promising full HDR preview. Independent core work may
-continue, but full UI migration waits for that gate.
+Next: connect a UI candidate to the native/software backend experiment, compare
+video-surface integration and generation-safe pointer scrubbing, and test actual
+HDR presentation. The standalone native windows establish a backend baseline;
+they do not prove embedding, widget interaction, accessibility or DPI behavior.
+Validate on a physical HDR display before freezing the desktop framework or
+promising full HDR preview. Full UI migration still waits for the M1 gate.
 
 Initial metrics: four Rust source/test modules, approximately 750 lines including
 tests, three workspace packages and eleven locked registry dependencies. The
@@ -125,3 +128,40 @@ cutover; the current tests and inspector do not justify removing the C# app.
 Rollback for this slice is the unchanged 1.0.4 release and original projects.
 No schema upgrades or source-file writes occur. Keep the PR open for user review
 and testing; no merge, release tag or publication is authorized yet.
+
+## M1 backend experiment
+
+The Rust runtime now owns its libmpv handle and render-worker lifecycle in the
+standalone lab. It loads only the existing checksum-pinned DLL, disables config,
+scripts, external references and audio output, and never invokes the C# app.
+The loader uses the library directory and system directory, without changing
+the process-wide DLL search path. ABI declarations use official 0.41 headers;
+the runtime client API major version is checked separately.
+
+Unsafe application code is confined to `native-mpv` and the local-drive query in `media-path`.
+The domain, parser, inspector and lab entry point retain the unsafe-code ban.
+The software renderer uses an aligned allocation, one-frame mailbox and an
+atomic-only callback. Its thread unregisters callbacks and frees the render
+context before the player is destroyed. Source authorization supports local
+links and rejects network/device namespaces before media access. It retains the
+baseline's filesystem race limitations and is not yet wired into project loading.
+
+Generated three-second FFV1 fixtures include real linear-light conversion to
+10-bit PQ and HLG. The native SDR mode reports sRGB/BT.709 for each source; the
+automatic mode reports a 10-bit PQ/BT.2020 output target on this machine. This is
+libmpv pipeline evidence, not a measured luminance or visual correctness result.
+The machine exposes NVIDIA RTX 5070 Ti (driver 32.0.16.1714), AMD integrated
+graphics and a virtual display adapter; adapter-specific behavior, mixed-display
+movement and Shadowplay alongside a game are not established by those reports.
+
+The software reference is deliberately SDR-only. A CPU tone-mapped HDR fallback
+still needs implementing and matching against native preview/export. UI toolkit
+prototypes, HDR/SDR display-state handling, pointer latency, color/geometry visual
+checks and preview/export agreement remain M1 exit conditions. No C# production
+owner can be removed yet. The shipping App and release metadata remain 1.0.4.
+
+After this slice: ten Rust source/test modules, 1,725 lines including tests, six
+workspace packages and twenty Windows registry dependencies (additional target
+dependencies remain in Cargo.lock). The optimized playback lab is about 1.74 MB.
+The original production source/tests and native pins are unchanged. Package
+size growth is limited to documentation because Rust is not bundled in App.

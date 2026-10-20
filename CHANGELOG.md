@@ -6,6 +6,10 @@
   inspector, contract tests, and direct comparisons against the C# baseline.
 - Recorded the 1.1 rewrite plan and migration evidence. The shipping application
   remains 1.0.4; UI/HDR migration and transitions are not included in this slice.
+- Added a Rust rendering lab for the pinned libmpv, local recording authorization,
+  CPU SDR frames and native D3D11 SDR/automatic color targets. Generated HDR
+  fixtures exercise color handling; the software reference rejects HDR explicitly.
+  This diagnostic is separate from the editor and does not certify HDR presentation.
 
 ## 1.0.4 — 2026-10-09
 
