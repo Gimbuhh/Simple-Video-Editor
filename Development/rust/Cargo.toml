@@ -1,0 +1,21 @@
+[workspace]
+members = ["crates/editor-core", "crates/project-store", "crates/sve-inspect"]
+resolver = "2"
+
+# Migration tooling only. The shipping version remains authoritative in the
+# C# project until the verified Rust application replaces it.
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+publish = false
+license = "MIT"
+
+[workspace.dependencies]
+editor-core = { path = "crates/editor-core" }
+project-store = { path = "crates/project-store" }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = { version = "=1.0.145", features = ["float_roundtrip"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"

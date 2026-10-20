@@ -1,0 +1,14 @@
+$ErrorActionPreference = 'Stop'
+$editorRustDevelopment = Split-Path -Parent $PSScriptRoot
+$editorRustWorkspace = Join-Path $editorRustDevelopment 'rust'
+$editorRustTools = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'rust-tools.json') -Raw | ConvertFrom-Json
+$editorRustToolchain = Get-Content -LiteralPath (Join-Path $editorRustWorkspace 'rust-toolchain.toml') -Raw
+if ($editorRustToolchain -notmatch '(?m)^channel = "(\d+\.\d+\.\d+)"$') { throw 'Rust must have a pinned three-part toolchain version.' }
+$editorRustVersion = $Matches[1]
+$env:CARGO_HOME = Join-Path $editorRustDevelopment '.tools/cargo'
+$env:RUSTUP_HOME = Join-Path $editorRustDevelopment '.tools/rustup'
+$env:RUSTUP_TOOLCHAIN = "$editorRustVersion-$($editorRustTools.Host)"
+$env:CARGO_TARGET_DIR = Join-Path $editorRustWorkspace 'target'
+$editorCargo = Join-Path $env:CARGO_HOME 'bin/cargo.exe'
+$editorRustc = Join-Path $env:CARGO_HOME 'bin/rustc.exe'
+$env:PATH = (Join-Path $env:CARGO_HOME 'bin') + [IO.Path]::PathSeparator + $env:PATH

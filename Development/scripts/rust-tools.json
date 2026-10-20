@@ -1,0 +1,5 @@
+{
+  "Host": "x86_64-pc-windows-gnu",
+  "RustupUrl": "https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-pc-windows-gnu/rustup-init.exe",
+  "RustupSha256": "ccbfd951d8024856043b3a0c3903a59f39937bce8d3074768b0d3da55f21e817"
+}

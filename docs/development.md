@@ -65,6 +65,31 @@ Git ignores packaged apps, release ZIPs, build tools, native dependencies, build
 
 Cleanup verifies the `App/` media bundle, stops build servers, and removes reproducible build output, vendor copies, and workspace build tools. It preserves the app, releases, source, local history, and verification reports. Run setup before building again.
 
+## Rust 1.1 rewrite
+
+The [rewrite plan](rust-rewrite-plan.md) and [status/contract ledger](rust-rewrite-status.md)
+track the authorized migration. The current portable app remains 1.0.4 until
+Rust cutover; transitions are follow-up work.
+
+```powershell
+./Development/scripts/setup-rust.ps1
+./Development/scripts/test-rust.ps1 -LegacyParity
+```
+
+Run the existing setup first for `-LegacyParity`, which builds a test-only C#
+oracle. Omit that switch for Rust-only development. The same checks run in the
+Windows PR workflow. Rust tools and crate caches install in ignored
+`Development/.tools/`; build output is ignored under `Development/rust/target/`.
+Setup uses the checksum-pinned bootstrap from the official
+[rustup archive](https://rust-lang.github.io/rustup/installation/other.html).
+It does not modify system PATH or replace the portable app.
+
+After testing, `Development/rust/target/release/sve-inspect.exe <project.sveproject>`
+prints a read-only, path-free summary without opening recordings. The Rust
+[workspace guide](../Development/rust/README.md) describes its current limits.
+Schema-1 fixtures are committed under `Development/rust/crates/project-store/tests/fixtures/`;
+personal projects, media, and all generated verification output remain ignored.
+
 ## Icon and dependencies
 
 The approved icon source is `Development/src/SimpleVideoEditor/Assets/app-icon.png`. It was generated with imagegen for this project. Run `./Development/scripts/make-icon.ps1` after changing it, then rebuild.

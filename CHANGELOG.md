@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Rust rewrite toward 1.1.0
+
+- Started the Rust timeline and legacy-project import foundation with a read-only
+  inspector, contract tests, and direct comparisons against the C# baseline.
+- Recorded the 1.1 rewrite plan and migration evidence. The shipping application
+  remains 1.0.4; UI/HDR migration and transitions are not included in this slice.
+
 ## 1.0.4 — 2026-10-09
 
 ### Changed

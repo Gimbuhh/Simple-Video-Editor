@@ -54,6 +54,11 @@ Run from the repository root in PowerShell:
 
 Setup downloads the pinned, checksum-verified SDK and media dependencies. The default tests use generated recordings and CPU encoding, without NVIDIA hardware. [Development documentation](docs/development.md) covers desktop UI checks and optional NVIDIA/real-recording tests.
 
+The Rust rewrite toward **1.1.0** has started. The current app remains 1.0.4;
+the initial Rust workspace provides timeline contracts and a read-only project
+inspector. See the [rewrite status](docs/rust-rewrite-status.md) and
+[implementation plan](docs/rust-rewrite-plan.md). Transitions follow after the rewrite.
+
 | Folder | Purpose |
 | --- | --- |
 | `Development/src/` | Application source and icon assets |
