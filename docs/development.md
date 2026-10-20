@@ -86,7 +86,7 @@ It does not modify system PATH or replace the portable app.
 
 After testing, `Development/rust/target/release/sve-inspect.exe <project.sveproject>`
 prints a read-only, path-free summary without opening recordings. The Rust
-[workspace guide](../Development/rust/README.md) describes its current limits.
+[workspace guide](https://github.com/Gimbuhh/Simple-Video-Editor/tree/main/Development/rust) describes its current limits.
 Schema-1 fixtures are committed under `Development/rust/crates/project-store/tests/fixtures/`;
 personal projects, media, and all generated verification output remain ignored.
 
