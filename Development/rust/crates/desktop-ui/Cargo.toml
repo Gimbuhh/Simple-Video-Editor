@@ -1,0 +1,20 @@
+[package]
+name = "simple-video-editor"
+version = "1.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+[dependencies]
+editor-core.workspace = true
+project-store.workspace = true
+native-mpv.workspace = true
+media-path.workspace = true
+media-engine.workspace = true
+platform-windows.workspace = true
+serde_json.workspace = true
+eframe.workspace = true
+raw-window-handle.workspace = true
+image.workspace = true
+[lints]
+workspace = true

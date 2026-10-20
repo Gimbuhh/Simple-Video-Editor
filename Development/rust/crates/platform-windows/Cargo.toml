@@ -1,0 +1,11 @@
+[package]
+name = "platform-windows"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+[dependencies]
+windows-sys = { workspace = true, features = ["Win32_Globalization"] }
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"

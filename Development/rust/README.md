@@ -1,8 +1,31 @@
-# Rust migration workspace
+# Rust rewrite workspace
 
-This is the first foundation for the planned 1.1.0 rewrite, not a replacement
-desktop editor. See the [plan](../../docs/rust-rewrite-plan.md) and
+This workspace now contains the 1.1.0 desktop test candidate. See the [plan](../../docs/rust-rewrite-plan.md) and
 [status/contract ledger](../../docs/rust-rewrite-status.md).
+
+The Rust candidate owns editor commands/history, schema-2 projects and schema-1
+import, atomic saves/recovery, authorized local media, preview coordination,
+shared color/framing transforms, caching, export, and the egui desktop. It has no
+C# runtime dependency. Production cutover, remaining parity cases, and physical
+HDR/display/game-capture acceptance remain unfinished.
+
+```powershell
+./Development/scripts/test-rust-media.ps1
+./Development/scripts/test-rust-desktop.ps1
+./Development/scripts/build-rust.ps1 -Zip
+./Development/scripts/verify-rust-package.ps1 -Desktop
+```
+
+Generate fixtures using `test-rust-playback.ps1` first. The candidate bundle is
+separate from the shipping App; its executable has version 1.1.0.0. Core/private
+tool crates retain workspace version 0.1.0. Native pins remain unchanged. Rust
+1.90.0 and checksum-pinned LLVM-MinGW provide reproducible local build tools;
+the candidate bundles locked dependency and Rust runtime license notices.
+
+## Historical foundation and backend notes — 2026-10-20
+
+The notes below describe the original inspector/lab stage. Their missing-editor
+limitations are superseded by the candidate described above.
 
 Run from the repository root on Windows x64:
 

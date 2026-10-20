@@ -5,6 +5,8 @@ use editor_core::{Clip, ClipId, SourceId, Timeline};
 use serde::Deserialize;
 use serde_json::Value;
 use std::{fmt, io::Read};
+mod document;
+pub use document::*;
 
 pub const MAX_PROJECT_BYTES: usize = 8 * 1024 * 1024;
 const MAX_SOURCES: usize = 10_000;
@@ -122,16 +124,16 @@ pub fn parse_project(bytes: &[u8]) -> Result<ImportedProject, ProjectError> {
         ));
     }
     let mut sources: Vec<Source> = Vec::new();
-    let mut source_ids = std::collections::HashMap::new();
     let mut add_source = |path: String| -> Result<SourceId, ProjectError> {
         validate_reference(&path)?;
-        let key = path.to_lowercase();
-        if let Some(id) = source_ids.get(&key) {
-            return Ok(*id);
+        if let Some(source) = sources
+            .iter()
+            .find(|s| platform_windows::ordinal_ignore_case(&s.path, &path))
+        {
+            return Ok(source.id);
         }
         let id = SourceId(sources.len() as u64 + 1);
         sources.push(Source { id, path });
-        source_ids.insert(key, id);
         Ok(id)
     };
     for path in legacy.sources.unwrap_or_default() {

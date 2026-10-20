@@ -12,3 +12,8 @@ $env:CARGO_TARGET_DIR = Join-Path $editorRustWorkspace 'target'
 $editorCargo = Join-Path $env:CARGO_HOME 'bin/cargo.exe'
 $editorRustc = Join-Path $env:CARGO_HOME 'bin/rustc.exe'
 $env:PATH = (Join-Path $env:CARGO_HOME 'bin') + [IO.Path]::PathSeparator + $env:PATH
+$env:PATH = (Join-Path $editorRustDevelopment '.tools/llvm/bin') + [IO.Path]::PathSeparator + $env:PATH
+# Keep GNU and raw-dylib imports under one linker. GNU ld can leave duplicate
+# import groups unresolved when the GUI graph combines windows-sys generations.
+$env:CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER = Join-Path $editorRustDevelopment '.tools/llvm/bin/ld.lld.exe'
+$env:CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS = '-C linker-flavor=ld.lld -C link-self-contained=yes'

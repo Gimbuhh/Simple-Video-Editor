@@ -23,7 +23,20 @@ The bundle uses BtbN's `n8.1.3-14-g330caae0c1-win64-gpl-shared-8.1` build from `
 
 The archive hash, installed executable/DLL hashes, and origins are recorded in `licenses/dependencies.json` beside this document. Keep the complete `bin` folder together; the shared executables require its DLLs.
 
-## .NET / WPF
+## Rust 1.1 test candidate
+
+The separate Rust candidate uses egui/eframe 0.32.3 with Glow, AccessKit and
+locked Cargo dependencies. Its package includes the resolved dependency versions
+and SPDX expressions in `licenses/rust-dependencies.md`, the matching crate
+license/notice files under `licenses/rust/`, and Rust toolchain library copyright
+notices. Embedded fonts have their own licenses: Hack's font notice, Noto Emoji's
+SIL Open Font License, Ubuntu's Font License, and the emoji icon font's MIT notice
+are included under the `epaint_default_fonts` package's `fonts` folder.
+
+The Rust candidate does not contain .NET/WPF. LLVM-MinGW is a checksum-pinned
+build-time dependency and is not included in the portable app.
+
+## .NET / WPF — shipping 1.0.x
 
 The portable app includes Microsoft's .NET 10 Windows Desktop runtime through self-contained publishing. Its license and third-party notices are copied into the `licenses` folder from the exact runtime packages and Windows Desktop SDK used by the build.
 

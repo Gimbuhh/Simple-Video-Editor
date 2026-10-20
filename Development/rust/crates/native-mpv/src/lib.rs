@@ -1,5 +1,4 @@
-//! Narrow, thread-confined libmpv owner for the rendering spike. This is not an
-//! editor playback coordinator and never upgrades the shipping native bundle.
+//! Narrow, thread-confined libmpv owner. Scheduling belongs to the editor actor.
 mod ffi;
 mod software;
 use sha2::{Digest, Sha256};
@@ -44,6 +43,17 @@ pub struct Player {
 
 impl Player {
     pub fn open(library: &Path, mode: Mode) -> Result<Self> {
+        Self::open_window(library, mode, None, false)
+    }
+
+    pub fn open_embedded(library: &Path, mode: Mode, window: isize) -> Result<Self> {
+        if window == 0 {
+            return Err("A live video child window is required".into());
+        }
+        Self::open_window(library, mode, Some(window), true)
+    }
+
+    fn open_window(library: &Path, mode: Mode, window: Option<isize>, audio: bool) -> Result<Self> {
         if !library.is_absolute() {
             return Err("libmpv path must be absolute".into());
         }
@@ -96,9 +106,12 @@ impl Player {
             ("osc", "no"),
             ("osd-level", "0"),
             ("hwdec", "no"),
-            ("ao", "null"), // Tests never play private audio.
+            ("ao", if audio { "auto" } else { "null" }),
         ] {
             player.option(key, value)?;
+        }
+        if let Some(window) = window {
+            player.option("wid", &window.to_string())?;
         }
         match mode {
             Mode::SoftwareSdr => {
@@ -110,7 +123,7 @@ impl Player {
                     ("vo", "gpu-next"),
                     ("gpu-api", "d3d11"),
                     ("gpu-context", "d3d11"),
-                    ("force-window", "yes"),
+                    ("force-window", if window.is_some() { "no" } else { "yes" }),
                     ("geometry", "960x540"),
                     ("title", mode.label()),
                     ("target-colorspace-hint", "auto"),
@@ -155,13 +168,13 @@ impl Player {
         }
     }
 
-    fn set(&self, key: &str, value: &str) -> Result<()> {
+    pub fn set(&self, key: &str, value: &str) -> Result<()> {
         let (key, value) = (CString::new(key)?, CString::new(value)?);
         // SAFETY: live handle; NUL-terminated strings retained for this call.
         self.check(unsafe { (self.api.set)(self.handle.as_ptr(), key.as_ptr(), value.as_ptr()) })
     }
 
-    fn command(&self, arguments: &[&str]) -> Result<()> {
+    pub fn command(&self, arguments: &[&str]) -> Result<()> {
         let strings = arguments
             .iter()
             .map(|s| CString::new(*s))
@@ -257,7 +270,7 @@ impl Player {
         Ok(())
     }
 
-    fn poll_event(&self, timeout: f64) -> Result<i32> {
+    pub fn poll_event(&self, timeout: f64) -> Result<i32> {
         let mut id = 0;
         // SAFETY: event is borrowed only until the next wait; copy its fields
         // immediately. Never expose native pointers outside this module.

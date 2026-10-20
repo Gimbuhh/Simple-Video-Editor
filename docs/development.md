@@ -97,11 +97,33 @@ personal projects, media, and all generated verification output remain ignored.
 The playback lab tests the pinned libmpv from Rust, using software SDR rendering
 and optional native D3D11 SDR/automatic targets. The default CI includes generated
 SDR/PQ/HLG fixtures, repeated load/seek/shutdown, native-hash protection and path
-checks. Software output rejects HDR until a tested CPU tone-mapping path exists.
+checks. The lab's raw software mode rejects unconverted HDR. The desktop uses
+a shared FFmpeg tone-mapping graph for its explicit SDR software fallback.
 Native reports include source and target color properties; these do not certify
 visible HDR output. Logs and generated fixtures are ignored under
-`Development/artifacts/rust-playback/`. This slice has no embedded toolkit window
-or interactive timeline and does not complete the rendering/HDR gate.
+`Development/artifacts/rust-playback/`. The desktop candidate embeds libmpv in
+egui/eframe; physical HDR and the full cutover gate remain open.
+
+```powershell
+# Actual Rust window, pointer/keyboard input and native/software preview:
+./Development/scripts/test-rust-desktop.ps1
+
+# Mixed SDR/PQ/HLG exports, decoded gaps/audio and source protections:
+./Development/scripts/test-rust-media.ps1
+./Development/scripts/test-rust-media.ps1 -Gpu
+
+# Separate 1.1 test bundle; keeps the shipping App and Releases pair intact:
+./Development/scripts/build-rust.ps1 -Zip
+./Development/scripts/verify-rust-package.ps1 -Desktop
+```
+
+Run `test-rust-playback.ps1` first to create the generated SDR/PQ/HLG fixtures.
+The Rust desktop harness injects pointer and keyboard events into the actual egui
+input pipeline and captures its own framebuffer. It does not certify external
+OS dialogs, physical HDR presentation or a game capture session. The portable
+check relocates the ZIP, checks PE/version/native pins and absence of a managed
+runtime, then exercises persistence, CPU export and libmpv from the packaged
+executable. Desktop checks require a Windows desktop session with OpenGL support.
 
 ## Icon and dependencies
 
