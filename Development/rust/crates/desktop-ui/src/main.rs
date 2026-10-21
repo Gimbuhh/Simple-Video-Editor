@@ -4,6 +4,7 @@ mod ui;
 mod verification;
 use eframe::egui;
 fn main() -> eframe::Result {
+    verification::install_desktop_diagnostics();
     if std::env::args_os()
         .nth(1)
         .is_some_and(|a| a == "--verify-media")

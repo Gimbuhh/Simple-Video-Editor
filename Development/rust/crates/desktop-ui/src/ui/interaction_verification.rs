@@ -5,6 +5,18 @@ impl EditorApp {
             return;
         };
         let result = (|| -> media_engine::Result<()> {
+            std::fs::write(test.directory.join("phase.txt"), test.phase.to_string())?;
+            if test.graphics_only {
+                if test.started.elapsed() > Duration::from_millis(500) && test.phase != 7 {
+                    test.checks
+                        .push("Desktop graphics startup and rendered frames".into());
+                    test.report();
+                    self.close_approved = true;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    test.phase = 7;
+                }
+                return Ok(());
+            }
             if test.started.elapsed() > Duration::from_secs(90) {
                 return Err(format!(
                     "Desktop verification timed out at phase {}: {}",
@@ -76,6 +88,13 @@ impl EditorApp {
                         }
                         test.checks
                             .push("Undo and redo through actual keyboard input".into());
+                        if test.startup_only {
+                            test.report();
+                            self.close_approved = true;
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            test.phase = 7;
+                            return Ok(());
+                        }
                         let document = SavedProject::capture(&self.editor);
                         let path = test.directory.join("roundtrip.sveproject");
                         save_document(&path, &document)?;
@@ -173,6 +192,9 @@ impl EditorApp {
                                 "Pointer drag did not move the linked section into free space"
                                     .into(),
                             );
+                        }
+                        if (self.playhead - clip.timeline_start).abs() > 0.000001 {
+                            return Err("Dragging a newly selected section did not preview its first retained frame".into());
                         }
                         test.key(egui::Key::Z, true);
                         test.phase = 19;
@@ -814,6 +836,94 @@ impl EditorApp {
                 }
                 test.checks
                     .push("VFR trim before and undo preserve decoded frame boundaries".into());
+                self.recovery.save(&SavedProject::capture(&self.editor))?;
+                use std::os::windows::fs::OpenOptionsExt;
+                test.recovery_lock = Some(
+                    std::fs::OpenOptions::new()
+                        .read(true)
+                        .share_mode(0)
+                        .open(&self.recovery.path)?,
+                );
+                let clip = self.editor.timeline().clips()[0].id;
+                let rate = self.editor.metadata().sources[0].rate;
+                self.apply(Command::Duplicate { clip, rate });
+                self.recovery_saved = None;
+                self.busy = true;
+                self.exporting = true;
+                self.recovery_tick = Instant::now() - Duration::from_secs(3);
+                test.phase = 11;
+            }
+            11 if self.recovery_saved.is_none()
+                && self.message.starts_with("Recovery save failed") =>
+            {
+                drop(test.recovery_lock.take());
+                self.recovery_tick = Instant::now() - Duration::from_secs(3);
+                test.phase = 12;
+            }
+            12 => {
+                let written = read_document(&self.recovery.path)
+                    .ok()
+                    .and_then(|v| serde_json::from_value::<SavedProject>(v).ok());
+                if written.as_ref() == Some(&SavedProject::capture(&self.editor)) {
+                    test.checks.push("Recovery retries a locked-file failure while export is busy and preserves the latest edit".into());
+                    self.busy = false;
+                    self.exporting = false;
+                    self.path = Some(test.directory.join("verified-save.sveproject"));
+                    self.save(false);
+                    test.phase = 13;
+                }
+            }
+            13 if !self.busy => {
+                if self.dirty() || self.recovery.path.exists() || self.recovery_saved.is_some() {
+                    return Err("Successful project save left a stale recovery session".into());
+                }
+                let document: SavedProject =
+                    serde_json::from_value(read_document(self.path.as_ref().unwrap())?)?;
+                if document != SavedProject::capture(&self.editor) {
+                    return Err("Asynchronous save changed the current project".into());
+                }
+                test.checks.push("Successful asynchronous save clears only its own obsolete recovery and marks the exact snapshot saved".into());
+                self.selected = self.editor.timeline().clips().first().map(|c| c.id);
+                self.trim(Some(0.38123456789), Some(0.82987654321));
+                test.precision = Some(SavedProject::capture(&self.editor));
+                test.phase = 14;
+            }
+            14 => {
+                test.pointer(self.controls["trim-in"].center(), Some(true));
+                test.phase = 15;
+            }
+            15 => {
+                test.pointer(self.controls["trim-in"].center(), Some(false));
+                test.phase = 16;
+            }
+            16 => {
+                test.key(egui::Key::Enter, false);
+                test.phase = 17;
+            }
+            17 => {
+                if SavedProject::capture(&self.editor) != *test.precision.as_ref().unwrap() {
+                    return Err(
+                        "Unchanged in-point field rounded the original trim timestamp".into(),
+                    );
+                }
+                test.pointer(self.controls["trim-out"].center(), Some(true));
+                test.phase = 18;
+            }
+            18 => {
+                test.pointer(self.controls["trim-out"].center(), Some(false));
+                test.phase = 19;
+            }
+            19 => {
+                test.key(egui::Key::Enter, false);
+                test.phase = 20;
+            }
+            20 => {
+                if SavedProject::capture(&self.editor) != *test.precision.as_ref().unwrap() {
+                    return Err(
+                        "Unchanged out-point field rounded the original trim timestamp".into(),
+                    );
+                }
+                test.checks.push("Focusing and accepting unchanged in/out fields preserves full timestamp precision".into());
                 ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
                 test.phase = 6;
             }

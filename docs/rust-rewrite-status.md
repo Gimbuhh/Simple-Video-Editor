@@ -1,6 +1,6 @@
 # Rust rewrite status
 
-Target **1.1.0**. Started 2026-10-20. Production source/build cutover is implemented on the PR branch. This is an unreleased candidate: physical HDR, display/DPI/accessibility and game-capture acceptance still prevent declaring the full rewrite/release verified. No merge, tag or publication is authorized or performed.
+Target **1.1.0**. Started 2026-10-20. Production source/build cutover is implemented on the PR branch. This is an unreleased candidate: an intermittent desktop startup crash is under investigation, and physical HDR, display/DPI/accessibility and game-capture acceptance still prevent declaring the full rewrite/release verified. No merge, tag or publication is authorized or performed.
 
 ## Current implementation — 2026-10-21
 
@@ -37,6 +37,7 @@ Current Rust inventory is 28 source/test/build modules, approximately 9,500 nonb
 
 ## Outstanding acceptance gates
 
+- Resolve the intermittent graphics/startup access violation observed in a debug desktop verification process. Windows' report lists graphics/capture/overlay modules but no libmpv; it provides no usable stack. Loaded overlays alone do not establish causation. Isolated startup/early-edit stress and opt-in native diagnostics are being used without changing or stopping other apps.
 - Physical HDR display luminance/color accuracy, real display movement and Windows HDR toggles. An OS HDR flag, PQ target or ordinary screenshot is insufficient proof.
 - Game/Shadowplay coexistence with a running game. No user game or capture session was opened or stopped.
 - Full 100–200% DPI and assistive-technology navigation matrix. Automated window sizing and AccessKit integration are partial evidence.

@@ -1,5 +1,15 @@
 use eframe::egui;
 use std::{path::PathBuf, time::Instant};
+pub fn install_desktop_diagnostics() {
+    let args: Vec<_> = std::env::args_os().collect();
+    if args.get(1).is_some_and(|v| v == "--verify-desktop")
+        && let Some(directory) = args.get(3).map(PathBuf::from)
+        && std::fs::create_dir_all(&directory).is_ok()
+    {
+        let _ = std::fs::write(directory.join("phase.txt"), "graphics initialization");
+        platform_windows::trace_verification_crashes(directory.join("native-crash.txt"));
+    }
+}
 pub fn media() -> media_engine::Result<()> {
     use editor_core::{Clip, ClipId, FrameRate, SourceId};
     use media_engine::{Tools, file_hash, uncancelled};
@@ -85,7 +95,9 @@ pub fn media() -> media_engine::Result<()> {
     result.map(|_| ())
 }
 pub struct Verification {
+    pub graphics_only: bool,
     pub vfr: bool,
+    pub startup_only: bool,
     pub source: PathBuf,
     pub secondary: Option<PathBuf>,
     pub scrub_target: f64,
@@ -99,6 +111,8 @@ pub struct Verification {
     pub expected: Option<Vec<editor_core::Clip>>,
     pub layout: usize,
     pub was_software: bool,
+    pub recovery_lock: Option<std::fs::File>,
+    pub precision: Option<project_store::SavedProject>,
 }
 impl Verification {
     pub fn arguments() -> Option<Self> {
@@ -115,6 +129,8 @@ impl Verification {
         let directory = PathBuf::from(args.get(3)?);
         std::fs::create_dir_all(&directory).ok()?;
         Some(Self {
+            graphics_only: args.iter().any(|a| a == "--graphics-startup-only"),
+            startup_only: args.iter().any(|a| a == "--startup-only"),
             vfr: source
                 .file_name()
                 .is_some_and(|name| name == "variable.mkv"),
@@ -131,6 +147,8 @@ impl Verification {
             expected: None,
             layout: 0,
             was_software: false,
+            recovery_lock: None,
+            precision: None,
         })
     }
     pub fn key(&mut self, key: egui::Key, command: bool) {

@@ -17,6 +17,8 @@ Default tests check formatting, strict Clippy, Rust unit/executable tests, nativ
 
 Use `. ./Development/scripts/rust-environment.ps1` before direct Cargo commands. Build from the pinned workspace environment rather than a system toolchain.
 
+For desktop startup failures, `test-rust-startup.ps1 -AppPath <candidate-exe> -Cycles 100` repeats generated PQ import, exact seek, split, undo/redo and shutdown. Add `-GraphicsOnly` to isolate initial rendered frames without importing media. These isolated `--verify-desktop` processes write their phase and native exception/module addresses on failure; ordinary app sessions do not install the diagnostic handler. Reports remain in ignored artifacts, and the runner closes or times out only its own helper process.
+
 ## Frozen legacy oracle
 
 The old implementation is removed from production source. Optional differential tests restore only its source from Git commit `dd65df13a41490e8168a624b65fcff6a27956940` into ignored `Development/artifacts/rewrite-baseline/source`. The Rust application never loads it.

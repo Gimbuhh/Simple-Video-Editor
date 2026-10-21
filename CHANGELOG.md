@@ -7,6 +7,7 @@
 - Adds PQ/HLG import, mixed SDR/HDR profiles, explicit source interpretation and 10-bit HDR10 AV1/HEVC export.
 - Adds display-aware native preview with deliberate SDR/software fallback, per-section audio controls and non-destructive framing/rotation.
 - Corrects trim gesture anchoring, retained-frame previews, VFR frame stepping, search focus and multi-video stream selection.
+- Preserves precise trim values when unchanged fields are accepted, retries failed recovery writes during exports, and clears stale recovery after successful saves.
 - Verifies pixel geometry, audio/gaps, cancellation/source protection and relocated portable startup with generated fixtures.
 - Physical HDR, DPI/accessibility and game/Shadowplay acceptance remain required before release. Transitions remain follow-up work.
 

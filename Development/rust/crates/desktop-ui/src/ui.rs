@@ -17,6 +17,7 @@ enum Event {
     Imported(Vec<MediaSource>, Vec<String>),
     Opened(Result<(SavedProject, PathBuf, bool), String>),
     Saved(Result<(SavedProject, PathBuf), String>),
+    Recovery(u64, SavedProject, Result<(), String>),
     Waveform(MediaSource, Vec<f32>),
     Thumbnail(MediaSource, egui::ColorImage),
     Cache(Result<(usize, u64), String>),
@@ -803,6 +804,8 @@ impl EditorApp {
                 let document = tools.load_project_relinked(&path, &replacements, &cancel)?;
                 if restoring {
                     recovery.save(&document)?;
+                } else {
+                    recovery.clear();
                 }
                 Ok((document, path, legacy))
             })()
@@ -829,9 +832,13 @@ impl EditorApp {
         let document = SavedProject::capture(&self.editor);
         let tx = self.tx.clone();
         self.busy = true;
+        let recovery = self.recovery.clone();
         self.jobs.push(std::thread::spawn(move || {
             let result = save_document(&path, &document)
-                .map(|()| (document, path))
+                .map(|()| {
+                    recovery.clear();
+                    (document, path)
+                })
                 .map_err(|e| e.to_string());
             let _ = tx.send(Event::Saved(result));
         }));
@@ -1006,6 +1013,7 @@ impl EditorApp {
                                 self.request_key.clear();
                                 self.waveforms.clear();
                                 self.thumbnails.clear();
+                                self.recovery_saved = None;
                                 self.scrub = None;
                                 self.settling = None;
                                 self.playing = false;
@@ -1030,9 +1038,19 @@ impl EditorApp {
                             self.saved = document;
                             self.update_dirty();
                             self.path = Some(path);
+                            self.recovery_saved = None;
                             self.message = "Project saved".into();
                         }
                         Err(e) => self.fail(e),
+                    }
+                }
+                Event::Recovery(revision, document, result) => {
+                    if revision == self.recovery.revision()
+                        && self.recovery_saved.as_ref() == Some(&document)
+                        && let Err(error) = result
+                    {
+                        self.recovery_saved = None;
+                        self.message = format!("Recovery save failed; retrying: {error}");
                     }
                 }
                 Event::Waveform(source, peaks) => {
@@ -1485,6 +1503,16 @@ impl EditorApp {
                             }
                             if interaction.drag_started() {
                                 self.stepping = None;
+                                let new_selection =
+                                    self.library_preview || self.selected != Some(clip.id);
+                                let preview_source = if new_selection {
+                                    clip.source_in
+                                } else {
+                                    clip.source_in + self.playhead - clip.timeline_start
+                                };
+                                if new_selection {
+                                    self.playhead = clip.timeline_start;
+                                }
                                 self.selected = Some(clip.id);
                                 self.library_preview = false;
                                 self.playing = false;
@@ -1508,8 +1536,7 @@ impl EditorApp {
                                     source_out: clip.source_out,
                                     pointer_x: px,
                                     playhead: self.playhead,
-                                    preview_source: clip.source_in + self.playhead
-                                        - clip.timeline_start,
+                                    preview_source,
                                 });
                             }
                             if interaction.dragged()
@@ -1815,31 +1842,15 @@ impl EditorApp {
                         let mut end = clip.source_out;
                         ui.horizontal(|ui| {
                             ui.label("In");
-                            if ui
-                                .add(
-                                    egui::DragValue::new(&mut start)
-                                        .speed(0.01)
-                                        .custom_parser(editor_core::parse_timecode)
-                                        .fixed_decimals(3)
-                                        .suffix(" s"),
-                                )
-                                .changed()
-                            {
+                            let response=trim_input(ui,&mut start,("trim-in",clip.id.0));self.controls.insert("trim-in",response.rect);
+                            if response.changed(){
                                 self.trim(Some(start), None);
                             }
                         });
                         ui.horizontal(|ui| {
                             ui.label("Out");
-                            if ui
-                                .add(
-                                    egui::DragValue::new(&mut end)
-                                        .speed(0.01)
-                                        .custom_parser(editor_core::parse_timecode)
-                                        .fixed_decimals(3)
-                                        .suffix(" s"),
-                                )
-                                .changed()
-                            {
+                            let response=trim_input(ui,&mut end,("trim-out",clip.id.0));self.controls.insert("trim-out",response.rect);
+                            if response.changed(){
                                 self.trim(None, Some(end));
                             }
                         });
@@ -2549,15 +2560,19 @@ impl eframe::App for EditorApp {
                 self.import(dropped);
             }
         }
-        if self.recovery_tick.elapsed() > Duration::from_secs(2) && !self.busy {
+        if self.recovery_tick.elapsed() > Duration::from_secs(2) && (!self.busy || self.exporting) {
             self.recovery_tick = Instant::now();
             let document = SavedProject::capture(&self.editor);
             if self.dirty() && self.recovery_saved.as_ref() != Some(&document) {
                 self.recovery_saved = Some(document.clone());
                 let recovery = self.recovery.clone();
                 let revision = recovery.revision();
+                let tx = self.tx.clone();
                 self.jobs.push(std::thread::spawn(move || {
-                    let _ = recovery.save_revision(&document, revision);
+                    let result = recovery
+                        .save_revision(&document, revision)
+                        .map_err(|e| e.to_string());
+                    let _ = tx.send(Event::Recovery(revision, document, result));
                 }));
             }
         }
@@ -2617,6 +2632,26 @@ impl Drop for EditorApp {
             self.recovery.clear();
         }
     }
+}
+fn trim_input(ui: &mut egui::Ui, value: &mut f64, id: (&'static str, u64)) -> egui::Response {
+    let original = *value;
+    ui.push_id(id, |ui| {
+        ui.add(
+            egui::DragValue::new(value)
+                .speed(0.01)
+                .fixed_decimals(3)
+                .suffix(" s")
+                .custom_formatter(|v, _| format!("{v:.3}"))
+                .custom_parser(move |text| {
+                    if text.trim() == format!("{original:.3}") {
+                        Some(original)
+                    } else {
+                        editor_core::parse_timecode(text)
+                    }
+                }),
+        )
+    })
+    .inner
 }
 fn read_thumbnail(path: PathBuf) -> media_engine::Result<image::DynamicImage> {
     if std::fs::metadata(&path)?.len() > 128_000 {

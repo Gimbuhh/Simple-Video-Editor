@@ -1,5 +1,7 @@
 //! Windows UI/file-system boundary. Editor rules remain outside this crate.
+mod diagnostics;
 mod display;
+pub use diagnostics::trace_verification_crashes;
 pub use display::{DisplayColor, display_color};
 use std::{
     io,
