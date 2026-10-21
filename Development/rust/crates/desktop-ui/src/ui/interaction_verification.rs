@@ -17,7 +17,9 @@ impl EditorApp {
                 }
                 return Ok(());
             }
-            if test.started.elapsed() > Duration::from_secs(90) {
+            if test.started.elapsed()
+                > Duration::from_secs(if test.capture_hold { 300 } else { 90 })
+            {
                 return Err(format!(
                     "Desktop verification timed out at phase {}: {}",
                     test.phase, self.message
@@ -27,7 +29,18 @@ impl EditorApp {
             if let Some(error) = self.playback.as_ref().and_then(|p| p.status().error) {
                 return Err(error.into());
             }
-            if test.vfr && test.phase != 6 && test.phase != 7 {
+            if test.capture_hold && test.phase == 80 {
+                if test.directory.join("capture-stop").exists() {
+                    test.checks
+                        .push("Preview held until capture stop request".into());
+                    test.report();
+                    self.close_approved = true;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    test.phase = 7;
+                }
+                return Ok(());
+            }
+            if test.vfr && !test.capture_hold && test.phase != 6 && test.phase != 7 {
                 self.verify_vfr(&mut test, ctx)?;
             } else {
                 match test.phase {
@@ -38,6 +51,11 @@ impl EditorApp {
                         test.phase = 1;
                     }
                     1 if !self.busy => {
+                        if test.capture_hold && test.capture_hdr {
+                            let output = &mut self.editor.metadata_mut().output;
+                            output.profile = ColorProfile::Hdr10;
+                            output.codec = Codec::Hevc;
+                        }
                         let id = self
                             .editor
                             .metadata()
@@ -59,8 +77,39 @@ impl EditorApp {
                             && (!status.software || status.frame.is_some())
                     }) =>
                     {
+                        let status = self.playback.as_ref().unwrap().status();
+                        if test.capture_hold && test.capture_hdr && !status.software {
+                            let Some(display) = &status.display else {
+                                return Ok(());
+                            };
+                            if !display.hdr_active {
+                                return Err(
+                                    "Capture test requires active HDR on the preview display"
+                                        .into(),
+                                );
+                            }
+                            if status.gamma.as_deref() != Some("pq") {
+                                return Ok(());
+                            }
+                        }
                         test.checks
                             .push("Source load and shared preview filter".into());
+                        if test.capture_hold {
+                            std::fs::write(
+                                test.directory.join("capture-ready.json"),
+                                serde_json::to_vec_pretty(&serde_json::json!({
+                                    "software": status.software,
+                                    "hdrOutputRequested": test.capture_hdr,
+                                    "generation": status.generation,
+                                    "position": status.position,
+                                    "outputGamma": status.gamma,
+                                    "displayHdrActive": status.display.as_ref().map(|d| d.hdr_active),
+                                    "displayStateKnown": status.display.as_ref().map(|d| d.state_known),
+                                }))?,
+                            )?;
+                            test.phase = 80;
+                            return Ok(());
+                        }
                         test.key(egui::Key::S, false);
                         test.phase = 3;
                     }

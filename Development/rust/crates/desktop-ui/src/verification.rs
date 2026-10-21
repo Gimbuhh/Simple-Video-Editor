@@ -121,6 +121,8 @@ pub fn media() -> media_engine::Result<()> {
     result.map(|_| ())
 }
 pub struct Verification {
+    pub capture_hold: bool,
+    pub capture_hdr: bool,
     pub graphics_only: bool,
     pub vfr: bool,
     pub startup_only: bool,
@@ -155,6 +157,8 @@ impl Verification {
         let directory = PathBuf::from(args.get(3)?);
         std::fs::create_dir_all(&directory).ok()?;
         Some(Self {
+            capture_hold: args.iter().any(|a| a == "--capture-hold"),
+            capture_hdr: args.iter().any(|a| a == "--capture-hdr"),
             graphics_only: args.iter().any(|a| a == "--graphics-startup-only"),
             startup_only: args.iter().any(|a| a == "--startup-only"),
             vfr: source

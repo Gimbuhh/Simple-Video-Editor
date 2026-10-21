@@ -5,6 +5,10 @@ mod verification;
 use eframe::egui;
 fn main() -> eframe::Result {
     verification::install_desktop_diagnostics();
+    let capture_hold = std::env::args_os()
+        .nth(1)
+        .is_some_and(|a| a == "--verify-desktop")
+        && std::env::args_os().any(|a| a == "--capture-hold");
     if std::env::args_os()
         .nth(1)
         .is_some_and(|a| a == "--verify-media")
@@ -14,6 +18,12 @@ fn main() -> eframe::Result {
             std::process::exit(1);
         }
         return Ok(());
+    }
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([1360.0, 900.0])
+        .with_min_inner_size([1000.0, 740.0]);
+    if capture_hold {
+        viewport = viewport.with_active(false);
     }
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Wgpu,
@@ -31,9 +41,7 @@ fn main() -> eframe::Result {
             ),
             ..Default::default()
         },
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1360.0, 900.0])
-            .with_min_inner_size([1000.0, 740.0]),
+        viewport,
         ..Default::default()
     };
     eframe::run_native(
