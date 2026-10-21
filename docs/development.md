@@ -15,6 +15,8 @@ Setup installs pinned Rust 1.90.0 and checksum-pinned LLVM-MinGW 20260616 inside
 
 Default tests check formatting, strict Clippy, Rust unit/executable tests, native playback lifecycle, generated SDR/PQ/HLG media exports, pixel geometry, VFR stepping, audio/gaps/cancellation and persistence. `-Gpu` exercises available NVIDIA encoders. `-Ui` runs actual egui input and captures app framebuffers. `-Extended` adds portrait, anamorphic, RGB and multiple-video recordings to the desktop matrix. Generated fixtures and screenshots stay ignored. No user editor is stopped and no private recording is required.
 
+The AV1/PQ integration fixture checks full and limited range with known primary colors and a neutral gray ramp through thumbnails, post-seek software preview, SDR export and HDR10 AV1 export. CPU runs generate it with libaom; `-Gpu` uses NVIDIA encoding. A recognizable/nonblack frame alone is not treated as color correctness.
+
 Use `. ./Development/scripts/rust-environment.ps1` before direct Cargo commands. Build from the pinned workspace environment rather than a system toolchain.
 
 For desktop startup failures, `test-rust-startup.ps1 -AppPath <candidate-exe> -Cycles 100` repeats generated PQ import, exact seek, split, undo/redo and shutdown. Add `-GraphicsOnly` to isolate initial rendered frames without importing media. These isolated `--verify-desktop` processes write their phase and native exception/module addresses on failure; ordinary app sessions do not install the diagnostic handler. Reports remain in ignored artifacts, and the runner closes or times out only its own helper process.
