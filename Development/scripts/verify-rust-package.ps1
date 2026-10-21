@@ -1,5 +1,6 @@
 param([string]$PackagePath,[switch]$Desktop,[switch]$Extended)
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'project-paths.ps1')
 . (Join-Path $PSScriptRoot 'rust-environment.ps1')
 . (Join-Path $PSScriptRoot 'portable-package.ps1')
 $editorRustVersionFile=Join-Path $editorRustWorkspace 'crates/desktop-ui/Cargo.toml'

@@ -21,7 +21,8 @@ native-mpv = { path = "crates/native-mpv" }
 sha2 = "=0.10.9"
 platform-windows = { path = "crates/platform-windows" }
 media-engine = { path = "crates/media-engine" }
-eframe = { version = "=0.32.3", default-features = false, features = ["glow", "default_fonts", "accesskit"] }
+eframe = { version = "=0.32.3", default-features = false, features = ["wgpu", "default_fonts", "accesskit"] }
+wgpu = { version = "=25.0.2", default-features = false, features = ["dx12", "wgsl"] }
 raw-window-handle = "=0.6.2"
 image = { version="=0.25.10",default-features=false,features=["bmp","png"] }
 windows-sys = { version = "=0.52.0", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Controls_Dialogs", "Win32_UI_Shell", "Win32_System_LibraryLoader", "Win32_Graphics_Gdi", "Win32_System_Threading", "Win32_Storage_FileSystem", "Win32_System_Com"] }

@@ -1,5 +1,31 @@
 use eframe::egui;
 use std::{path::PathBuf, time::Instant};
+pub fn record_desktop_renderer(cc: &eframe::CreationContext<'_>) -> std::io::Result<()> {
+    let args: Vec<_> = std::env::args_os().collect();
+    if args.get(1).is_none_or(|v| v != "--verify-desktop") {
+        return Ok(());
+    }
+    let renderer = cc
+        .wgpu_render_state
+        .as_ref()
+        .ok_or_else(|| std::io::Error::other("Missing desktop renderer"))?;
+    let adapter = renderer.adapter.get_info();
+    if adapter.backend != wgpu::Backend::Dx12 {
+        return Err(std::io::Error::other("Desktop did not select Direct3D 12"));
+    }
+    if let Some(directory) = args.get(3).map(PathBuf::from) {
+        std::fs::write(
+            directory.join("graphics.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "backend": format!("{:?}", adapter.backend),
+                "adapter": adapter.name,
+                "driver": adapter.driver,
+                "format": format!("{:?}", renderer.target_format),
+            }))?,
+        )?;
+    }
+    Ok(())
+}
 pub fn install_desktop_diagnostics() {
     let args: Vec<_> = std::env::args_os().collect();
     if args.get(1).is_some_and(|v| v == "--verify-desktop")

@@ -14,6 +14,7 @@ media-engine.workspace = true
 platform-windows.workspace = true
 serde_json.workspace = true
 eframe.workspace = true
+wgpu.workspace = true
 raw-window-handle.workspace = true
 image.workspace = true
 [lints]

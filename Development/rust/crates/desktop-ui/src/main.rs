@@ -16,6 +16,21 @@ fn main() -> eframe::Result {
         return Ok(());
     }
     let options = eframe::NativeOptions {
+        renderer: eframe::Renderer::Wgpu,
+        wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
+            wgpu_setup: eframe::egui_wgpu::WgpuSetup::CreateNew(
+                eframe::egui_wgpu::WgpuSetupCreateNew {
+                    // Keep the interface off OpenGL, including software video
+                    // preview. Capture coexistence is verified separately.
+                    instance_descriptor: wgpu::InstanceDescriptor {
+                        backends: wgpu::Backends::DX12,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            ),
+            ..Default::default()
+        },
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1360.0, 900.0])
             .with_min_inner_size([1000.0, 740.0]),
@@ -24,6 +39,9 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "Simple Video Editor",
         options,
-        Box::new(|cc| Ok(Box::new(ui::EditorApp::new(cc)?))),
+        Box::new(|cc| {
+            verification::record_desktop_renderer(cc)?;
+            Ok(Box::new(ui::EditorApp::new(cc)?))
+        }),
     )
 }

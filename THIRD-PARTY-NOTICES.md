@@ -25,7 +25,7 @@ The archive hash, installed executable/DLL hashes, and origins are recorded in `
 
 ## Rust desktop application
 
-The Rust application uses egui/eframe 0.32.3 with Glow, AccessKit and
+The Rust application uses egui/eframe 0.32.3 with wgpu 25.0.2 (Direct3D 12), AccessKit and
 locked Cargo dependencies. Its package includes the resolved dependency versions
 and SPDX expressions in `licenses/rust-dependencies.md`, the matching crate
 license/notice files under `licenses/rust/`, and Rust toolchain library copyright
