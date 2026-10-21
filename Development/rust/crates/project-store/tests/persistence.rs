@@ -12,11 +12,20 @@ fn cleanup(path: std::path::PathBuf) {
         match std::fs::remove_dir_all(&path) {
             Ok(()) => return,
             Err(error)
+                if error.kind() == std::io::ErrorKind::NotFound
+                    && !path
+                        .try_exists()
+                        .expect("Cannot check test-directory cleanup") =>
+            {
+                return;
+            }
+            Err(error)
                 if attempt < 5
                     && matches!(
                         error.kind(),
                         std::io::ErrorKind::PermissionDenied
                             | std::io::ErrorKind::DirectoryNotEmpty
+                            | std::io::ErrorKind::NotFound
                     ) =>
             {
                 std::thread::sleep(std::time::Duration::from_millis(50 * (attempt + 1)))
