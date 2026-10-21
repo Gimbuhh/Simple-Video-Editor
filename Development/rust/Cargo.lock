@@ -1508,7 +1508,9 @@ name = "media-engine"
 version = "0.1.0"
 dependencies = [
  "editor-core",
+ "image",
  "media-path",
+ "native-mpv",
  "platform-windows",
  "project-store",
  "serde",

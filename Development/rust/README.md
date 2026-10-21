@@ -1,26 +1,17 @@
-# Rust rewrite workspace
+# Rust application workspace
 
-This workspace now contains the 1.1.0 desktop test candidate. See the [plan](../../docs/rust-rewrite-plan.md) and
-[status/contract ledger](../../docs/rust-rewrite-status.md).
+This workspace owns the production Simple Video Editor 1.1.0 candidate. The application's Cargo.toml is the version authority. See the [user guide](../../docs/user-guide.md), [development commands](../../docs/development.md) and [contract/cutover ledger](../../docs/rust-rewrite-status.md).
 
-The Rust candidate owns editor commands/history, schema-2 projects and schema-1
-import, atomic saves/recovery, authorized local media, preview coordination,
-shared color/framing transforms, caching, export, and the egui desktop. It has no
-C# runtime dependency. Production cutover, remaining parity cases, and physical
-HDR/display/game-capture acceptance remain unfinished.
+Rust owns all production editor, persistence, media, playback, export and UI responsibilities. No C#/.NET bridge or runtime is packaged. The legacy C# project is restored from an exact Git commit only for isolated differential tests. Physical HDR/display/game-capture and full DPI/accessibility acceptance remain unfinished; the PR stays open for user testing.
 
 ```powershell
-./Development/scripts/test-rust-media.ps1
-./Development/scripts/test-rust-desktop.ps1
-./Development/scripts/build-rust.ps1 -Zip
-./Development/scripts/verify-rust-package.ps1 -Desktop
+./Development/scripts/setup.ps1
+./Development/scripts/test.ps1 -Ui -Gpu -Extended
+./Development/scripts/build.ps1 -Zip -OutputName App-Updated
+./Development/scripts/verify-package.ps1 -OutputName App-Updated -Desktop -Extended
 ```
 
-Generate fixtures using `test-rust-playback.ps1` first. The candidate bundle is
-separate from the shipping App; its executable has version 1.1.0.0. Core/private
-tool crates retain workspace version 0.1.0. Native pins remain unchanged. Rust
-1.90.0 and checksum-pinned LLVM-MinGW provide reproducible local build tools;
-the candidate bundles locked dependency and Rust runtime license notices.
+Omit -Gpu without compatible NVIDIA hardware. Native pins are unchanged. Rust 1.90.0 and checksum-pinned LLVM-MinGW supply workspace-local build tools. The portable package includes locked crate/font/Rust notices and needs no installed runtime. Core/private tool crates retain workspace version 0.1.0.
 
 ## Historical foundation and backend notes — 2026-10-20
 

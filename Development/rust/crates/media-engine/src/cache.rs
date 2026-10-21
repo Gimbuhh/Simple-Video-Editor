@@ -25,21 +25,27 @@ impl Tools {
             "{:x}",
             Sha256::digest(
                 format!(
-                    "v1|{}|{}|{:?}|{}|{}|{}|{}",
+                    "v2|{}|{}|{:?}|{}|{}|{}|{}|{}|{}",
                     source.path,
                     metadata.len(),
                     metadata.modified()?,
                     source.transfer,
                     source.primaries,
                     source.matrix,
-                    source.range
+                    source.range,
+                    source.rotation,
+                    source.sample_aspect_ratio
                 )
                 .as_bytes()
             )
         ))
     }
     /// Delete only our generated flat cache files, never directories or links.
-    pub fn clear_cache(&self) -> Result<(usize, u64)> {
+    pub fn clear_cache(&self, protected: &[PathBuf]) -> Result<(usize, u64)> {
+        let protected: Vec<_> = protected
+            .iter()
+            .map(|path| media_path::RecordingPath::authorize(path))
+            .collect::<std::result::Result<_, _>>()?;
         unlinked(&self.cache)?;
         let mut count = 0;
         let mut bytes = 0;
@@ -60,7 +66,21 @@ impl Tools {
                         .file_stem()
                         .and_then(|s| s.to_str())
                         .is_some_and(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()));
-                if valid && std::fs::remove_file(&path).is_ok() {
+                let mut original = false;
+                if valid {
+                    for source in &protected {
+                        if platform_windows::ordinal_ignore_case(
+                            &path.to_string_lossy(),
+                            &source.as_path().to_string_lossy(),
+                        ) || source.as_path().exists()
+                            && platform_windows::same_file(&path, source.as_path())?
+                        {
+                            original = true;
+                            break;
+                        }
+                    }
+                }
+                if valid && !original && std::fs::remove_file(&path).is_ok() {
                     count += 1;
                     bytes += meta.len();
                 }

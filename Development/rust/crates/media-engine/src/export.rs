@@ -189,11 +189,19 @@ impl Tools {
                     .iter()
                     .find(|s| s.id == clip.source)
                     .ok_or("Missing source")?
-                    .clone();
+                    .interpreted(
+                        document
+                            .metadata
+                            .interpretations
+                            .get(&clip.source)
+                            .copied()
+                            .unwrap_or_default(),
+                    );
                 let path = media_path::RecordingPath::authorize(Path::new(&source.path))?;
                 args.extend([
                     "-ss".into(),
                     format!("{:.9}", clip.source_in),
+                    "-noautorotate".into(),
                     "-i".into(),
                     path.as_path().to_string_lossy().into_owned(),
                 ]);
@@ -228,8 +236,11 @@ impl Tools {
                         height: output.height,
                         display_width: f64::from(output.width),
                         display_height: f64::from(output.height),
+                        rotation: 0.0,
+                        sample_aspect_ratio: 1.0,
                         rate: output.rate,
                         codec: "rawvideo".into(),
+                        video_stream: 0,
                         audio: Vec::new(),
                         transfer: "bt709".into(),
                         primaries: "bt709".into(),
@@ -271,7 +282,7 @@ impl Tools {
             }
             args.extend([
                 "-map".into(),
-                "0:v:0".into(),
+                format!("0:{}", source.video_stream),
                 "-map".into(),
                 audio.map(|i| format!("0:{i}")).unwrap_or("1:a:0".into()),
                 "-t".into(),

@@ -7,6 +7,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../src/SimpleVideoEditor/SimpleVideoEditor.csproj" />
+    <ProjectReference Include="../../artifacts/rewrite-baseline/source/Development/src/SimpleVideoEditor/SimpleVideoEditor.csproj" />
   </ItemGroup>
 </Project>

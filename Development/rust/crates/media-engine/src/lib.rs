@@ -42,11 +42,11 @@ pub struct Tools {
 impl Tools {
     pub fn discover(cache: PathBuf) -> Result<Self> {
         let executable = std::env::current_exe()?;
-        let mut roots = vec![
-            executable.parent().unwrap().to_path_buf(),
-            std::env::current_dir()?,
-        ];
-        roots.extend(executable.ancestors().map(Path::to_path_buf));
+        let mut roots = vec![executable.parent().unwrap().to_path_buf()];
+        if cfg!(debug_assertions) {
+            roots.push(std::env::current_dir()?);
+            roots.extend(executable.ancestors().map(Path::to_path_buf));
+        }
         for root in roots {
             for (ff, mpv) in [
                 (root.join("bin"), root.join("bin/libmpv-2.dll")),
@@ -59,6 +59,9 @@ impl Tools {
                     root.join("vendor/mpv/libmpv-2.dll"),
                 ),
             ] {
+                if !cfg!(debug_assertions) && ff != root.join("bin") {
+                    continue;
+                }
                 if ff.join("ffmpeg.exe").is_file()
                     && ff.join("ffprobe.exe").is_file()
                     && mpv.is_file()
@@ -197,9 +200,16 @@ impl Tools {
             return Ok(output);
         }
         let temp = root.join(format!("{key}-{}.bmp", project_store::unique_id()));
-        let filters = format!(
-            "{},scale=160:90:force_original_aspect_ratio=decrease:force_divisible_by=2",
-            color_transform(source, ColorProfile::Sdr)
+        let filters = video_filters(
+            source,
+            &ClipSettings::default(),
+            &OutputSettings {
+                width: 160,
+                height: 90,
+                profile: ColorProfile::Sdr,
+                ..Default::default()
+            },
+            false,
         );
         let result = run(
             &self.ffmpeg,
@@ -209,8 +219,11 @@ impl Tools {
                 "-nostdin".into(),
                 "-ss".into(),
                 (source.duration / 4.0).min(5.0).to_string(),
+                "-noautorotate".into(),
                 "-i".into(),
                 source.path.clone(),
+                "-map".into(),
+                format!("0:{}", source.video_stream),
                 "-vf".into(),
                 filters,
                 "-frames:v".into(),
@@ -470,17 +483,20 @@ pub fn parse_probe(bytes: &[u8], path: String, id: SourceId) -> Result<MediaSour
         .as_str()
         .and_then(|s| s.split_once(':'))
         .and_then(|(a, b)| Some(a.parse::<f64>().ok()? / b.parse::<f64>().ok()?))
-        .filter(|s| s.is_finite() && *s > 0.0)
+        .filter(|s| s.is_finite() && *s > 0.0 && *s <= 100.0)
         .unwrap_or(1.0);
     let rotation = video["side_data_list"]
         .as_array()
         .and_then(|a| a.iter().find_map(|v| v["rotation"].as_f64()))
+        .filter(|v| v.is_finite())
         .unwrap_or(0.0);
-    let (dw, dh) = if (rotation.abs() % 180.0 - 90.0).abs() < 1.0 {
-        (f64::from(height), f64::from(width) * sar)
-    } else {
-        (f64::from(width) * sar, f64::from(height))
-    };
+    let rotation = (-rotation).rem_euclid(360.0);
+    let angle = rotation.to_radians();
+    let (w, h) = (f64::from(width) * sar, f64::from(height));
+    let (dw, dh) = (
+        w * angle.cos().abs() + h * angle.sin().abs(),
+        w * angle.sin().abs() + h * angle.cos().abs(),
+    );
     let field = |name: &str| video[name].as_str().unwrap_or("unknown").to_owned();
     Ok(MediaSource {
         id,
@@ -490,8 +506,14 @@ pub fn parse_probe(bytes: &[u8], path: String, id: SourceId) -> Result<MediaSour
         height,
         display_width: dw,
         display_height: dh,
+        rotation,
+        sample_aspect_ratio: sar,
         rate,
         codec: field("codec_name"),
+        video_stream: video["index"]
+            .as_u64()
+            .ok_or("Missing video stream identity")?
+            .try_into()?,
         audio: streams
             .iter()
             .filter(|s| s["codec_type"] == "audio")
@@ -510,28 +532,52 @@ pub fn parse_probe(bytes: &[u8], path: String, id: SourceId) -> Result<MediaSour
 }
 
 pub fn color_transform(source: &MediaSource, profile: ColorProfile) -> String {
+    let rgb = source.pixel_format.starts_with("gbr")
+        || source.pixel_format.starts_with("rgb")
+        || source.pixel_format.starts_with("bgr");
     let trc = match source.transfer.as_str() {
         "smpte2084" => "smpte2084",
         "arib-std-b67" => "arib-std-b67",
+        "iec61966-2-1" => "iec61966-2-1",
+        "linear" => "linear",
+        "smpte170m" => "smpte170m",
+        "smpte240m" => "smpte240m",
+        "gamma22" => "bt470m",
+        "gamma28" => "bt470bg",
+        "bt2020-10" => "bt2020-10",
+        "bt2020-12" => "bt2020-12",
+        "unknown" | "unspecified" if rgb => "iec61966-2-1",
         _ => "bt709",
     };
-    let prim = if source.hdr() || source.primaries == "bt2020" {
-        "bt2020"
-    } else {
-        "bt709"
+    let prim = match source.primaries.as_str() {
+        "bt709" => "bt709",
+        "bt2020" => "bt2020",
+        "smpte170m" => "smpte170m",
+        "bt470bg" => "bt470bg",
+        "smpte432" => "smpte432",
+        "smpte431" => "smpte431",
+        _ if source.hdr() => "bt2020",
+        _ => "bt709",
     };
-    let matrix = match source.matrix.as_str() {
-        "bt2020nc" => "bt2020nc",
-        "smpte170m" | "bt470bg" => "smpte170m",
-        _ => {
-            if source.hdr() {
-                "bt2020nc"
-            } else {
-                "bt709"
+    let matrix = if rgb {
+        "gbr"
+    } else {
+        match source.matrix.as_str() {
+            "bt709" => "bt709",
+            "gbr" => "gbr",
+            "bt2020nc" => "bt2020nc",
+            "bt2020c" => "bt2020c",
+            "smpte170m" | "bt470bg" => "smpte170m",
+            _ => {
+                if source.hdr() {
+                    "bt2020nc"
+                } else {
+                    "bt709"
+                }
             }
         }
     };
-    let range = if source.range == "pc" {
+    let range = if source.range == "pc" || rgb && source.range != "tv" {
         "full"
     } else {
         "limited"
@@ -557,7 +603,26 @@ pub fn video_filters(
     output: &OutputSettings,
     frame_rate: bool,
 ) -> String {
-    let mut filters = vec![color_transform(source, output.profile)];
+    let mut filters = vec!["scale=-2:ceil(ih/2)*2:reset_sar=1".into()];
+    let rotation = if (source.rotation - source.rotation.round()).abs() < 0.00001 {
+        source.rotation.round() as i32
+    } else {
+        -1
+    };
+    match rotation {
+        0 => {}
+        90 => filters.push("transpose=clock".into()),
+        180 => filters.extend(["hflip".into(), "vflip".into()]),
+        270 => filters.push("transpose=cclock".into()),
+        _ => {
+            let angle = source.rotation.to_radians();
+            filters.push(format!(
+                "rotate={angle}:ow=ceil(rotw({angle})/2)*2:oh=ceil(roth({angle})/2)*2:c=black"
+            ));
+        }
+    }
+    filters.push("sidedata=mode=delete:type=DISPLAYMATRIX".into());
+    filters.push(color_transform(source, output.profile));
     match adjustment.rotation {
         90 => filters.push("transpose=clock".into()),
         180 => filters.extend(["hflip".into(), "vflip".into()]),
@@ -567,7 +632,7 @@ pub fn video_filters(
     if adjustment.framing == Framing::Crop {
         let [x, y, w, h] = adjustment.crop;
         filters.push(format!(
-            "crop=trunc(iw*{w}/2)*2:trunc(ih*{h}/2)*2:iw*{x}:ih*{y}"
+            "crop=max(2\\,trunc(iw*{w}/2)*2):max(2\\,trunc(ih*{h}/2)*2):iw*{x}:ih*{y}"
         ));
     }
     let (w, h) = (output.width, output.height);

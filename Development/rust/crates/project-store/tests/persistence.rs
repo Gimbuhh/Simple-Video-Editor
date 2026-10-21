@@ -113,8 +113,11 @@ fn clip_settings_follow_split_and_undo_without_leaking_into_new_recordings() {
         height: 180,
         display_width: 320.0,
         display_height: 180.0,
+        rotation: 0.0,
+        sample_aspect_ratio: 1.0,
         rate,
         codec: "h264".into(),
+        video_stream: 0,
         audio: vec![],
         transfer: "bt709".into(),
         primaries: "bt709".into(),
@@ -191,4 +194,16 @@ fn clip_settings_follow_split_and_undo_without_leaking_into_new_recordings() {
         .is_err()
     );
     assert_eq!(SavedProject::capture(&editor), before);
+    let first = editor.timeline().clips()[0].id;
+    editor.metadata_mut().view = Some(ViewSelection::Clip(first));
+    let selected = editor.metadata().view;
+    let snapshot = SavedProject::capture(&editor);
+    assert_eq!(snapshot, before);
+    remove_source(&mut editor, SourceId(1)).unwrap();
+    assert!(editor.timeline().clips().is_empty());
+    assert!(editor.metadata().sources.is_empty());
+    assert!(editor.metadata().adjustments.is_empty());
+    assert!(editor.undo());
+    assert_eq!(SavedProject::capture(&editor), before);
+    assert_eq!(editor.metadata().view, selected);
 }

@@ -2,8 +2,8 @@
 members = ["crates/editor-core", "crates/project-store", "crates/sve-inspect", "crates/media-path", "crates/native-mpv", "crates/sve-playback-lab", "crates/platform-windows", "crates/media-engine", "crates/desktop-ui"]
 resolver = "2"
 
-# Migration tooling only. The shipping version remains authoritative in the
-# C# project until the verified Rust application replaces it.
+# Private engine/tool crate version. The application version is authoritative
+# in crates/desktop-ui/Cargo.toml and owns portable executable metadata.
 [workspace.package]
 version = "0.1.0"
 edition = "2024"

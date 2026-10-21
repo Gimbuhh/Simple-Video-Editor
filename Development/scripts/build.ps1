@@ -1,96 +1,89 @@
-param([switch]$Zip, [string]$OutputName = 'App', [string]$PackageDirectory)
-$ErrorActionPreference = 'Stop'
-$editorRoot = Split-Path -Parent $PSScriptRoot
+param([switch]$Zip,[string]$OutputName='App',[string]$PackageDirectory)
+$ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'rust-environment.ps1')
 . (Join-Path $PSScriptRoot 'project-paths.ps1')
 . (Join-Path $PSScriptRoot 'portable-package.ps1')
-$editorVersion = ([xml](Get-Content (Join-Path $editorRoot 'src/SimpleVideoEditor/SimpleVideoEditor.csproj') -Raw)).Project.PropertyGroup.Version
-$editorDependencies = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'dependencies.json') -Raw | ConvertFrom-Json
-$editorSdk = Join-Path $editorRoot '.tools/dotnet/dotnet.exe'
-if (!(Test-Path -LiteralPath $editorSdk)) { throw 'Run Development/scripts/setup.ps1 first to restore the workspace build tools.' }
-$env:DOTNET_CLI_HOME = Join-Path $editorRoot '.tools/cli'
-$env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
-$env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = '1'
-$env:DOTNET_GENERATE_ASPNET_CERTIFICATE = 'false'
-if ($OutputName -notmatch '^App(?:-[A-Za-z0-9_-]+)?$') { throw 'OutputName must be App or an App-* folder name at the project root.' }
-$editorDestination = [IO.Path]::GetFullPath((Join-Path $editorWorkspace $OutputName))
-if ((Split-Path -Parent $editorDestination) -ne [IO.Path]::GetFullPath($editorWorkspace)) { throw 'Build output escapes the workspace.' }
-function Assert-EditorOutputStopped {
-    if (Get-Process -Name SimpleVideoEditor,'Simple Video Editor' -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($editorDestination + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) }) { throw 'This app bundle is running. Choose a different App-* output folder.' }
+if ($OutputName -notmatch '^App(?:-[A-Za-z0-9_-]+)?$') { throw 'Choose App or an App-* output folder.' }
+$editorRustDestination=[IO.Path]::GetFullPath((Join-Path $editorWorkspace $OutputName))
+if ((Split-Path -Parent $editorRustDestination) -ne [IO.Path]::GetFullPath($editorWorkspace)) { throw 'Output escapes the workspace.' }
+function Assert-RustOutputStopped {
+    if (Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -in @('Simple Video Editor','simple-video-editor') -and $_.Path -and $_.Path.StartsWith($editorRustDestination+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) }) { throw 'The candidate app is running. Choose another output folder.' }
 }
-Assert-EditorOutputStopped
-# Stage the complete bundle before replacing an older generated output. This also
-# keeps the old App's native files available when setup reuses that bundle.
-$editorOutput = Join-Path $editorRoot ('.tools/bundle-' + [Guid]::NewGuid().ToString('N'))
-& $editorSdk publish (Join-Path $editorRoot 'src/SimpleVideoEditor/SimpleVideoEditor.csproj') -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o $editorOutput --nologo
-if ($LASTEXITCODE -ne 0) { throw 'Publish failed' }
-Move-Item -LiteralPath (Join-Path $editorOutput 'SimpleVideoEditor.exe') -Destination (Join-Path $editorOutput 'Simple Video Editor.exe')
-$editorBin = Join-Path $editorOutput 'bin'
-$editorDocs = Join-Path $editorOutput 'docs'
-New-Item -ItemType Directory -Path $editorBin,(Join-Path $editorDocs 'licenses'),(Join-Path $editorDocs 'images'),(Join-Path $editorDocs 'release-notes') -Force | Out-Null
-$editorMpv = Resolve-EditorMediaFile 'mpv/libmpv-2.dll' 'libmpv-2.dll'
-if ((Get-FileHash -LiteralPath $editorMpv -Algorithm SHA256).Hash -ne $editorDependencies.MpvLibrarySha256) { throw 'Playback dependency checksum mismatch.' }
-Copy-EditorDependency $editorMpv (Join-Path $editorBin 'libmpv-2.dll')
-foreach ($editorFile in $editorDependencies.FfmpegFiles.psobject.Properties) {
-    $editorSourceFile = Resolve-EditorMediaFile "ffmpeg/$($editorFile.Name)" "tools/$($editorFile.Name)"
-    if ((Get-FileHash -LiteralPath $editorSourceFile -Algorithm SHA256).Hash -ne $editorFile.Value) { throw "Media dependency checksum mismatch: $($editorFile.Name)" }
-    Copy-EditorDependency $editorSourceFile (Join-Path $editorBin $editorFile.Name)
+Assert-RustOutputStopped
+$editorRustManifest=Join-Path $editorRustWorkspace 'Cargo.toml'
+& $editorCargo build --manifest-path $editorRustManifest --release --locked -p simple-video-editor
+if ($LASTEXITCODE -ne 0) { throw 'Rust desktop build failed.' }
+$editorRustMetadata=(& $editorCargo metadata --manifest-path $editorRustManifest --format-version 1 --locked --filter-platform $editorRustTools.Host | ConvertFrom-Json)
+if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the locked dependency graph.' }
+$editorRustPackage=$editorRustMetadata.packages | Where-Object name -eq 'simple-video-editor'
+$editorRustVersion=$editorRustPackage.version
+$editorRustStage=Join-Path $editorRustDevelopment ('.tools/rust-bundle-'+[guid]::NewGuid().ToString('N'))
+$editorRustBin=Join-Path $editorRustStage 'bin';$editorRustDocs=Join-Path $editorRustStage 'docs';$editorRustLicenses=Join-Path $editorRustDocs 'licenses'
+New-Item -ItemType Directory -Path $editorRustBin,$editorRustLicenses -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $env:CARGO_TARGET_DIR 'release/simple-video-editor.exe') -Destination (Join-Path $editorRustStage 'Simple Video Editor.exe')
+if ([Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $editorRustStage 'Simple Video Editor.exe')).FileVersion -ne "$editorRustVersion.0") { throw 'Rust executable version resource mismatch.' }
+$editorRustPins=Get-Content (Join-Path $PSScriptRoot 'dependencies.json') -Raw | ConvertFrom-Json
+foreach ($editorRustFile in $editorRustPins.FfmpegFiles.psobject.Properties) {
+    $editorRustSource=Resolve-EditorMediaFile "ffmpeg/$($editorRustFile.Name)" "tools/$($editorRustFile.Name)"
+    if ((Get-FileHash -LiteralPath $editorRustSource -Algorithm SHA256).Hash -ine $editorRustFile.Value) { throw "Native checksum mismatch: $($editorRustFile.Name)" }
+    Copy-Item -LiteralPath $editorRustSource -Destination (Join-Path $editorRustBin $editorRustFile.Name)
 }
-Copy-EditorDependency (Resolve-EditorMediaFile 'mpv/LICENSE.LGPL' 'licenses/mpv-LGPL.txt') (Join-Path $editorDocs 'licenses/mpv-LGPL.txt')
-Copy-EditorDependency (Resolve-EditorMediaFile 'ffmpeg/LICENSE.txt' 'licenses/ffmpeg-GPL.txt') (Join-Path $editorDocs 'licenses/ffmpeg-GPL.txt')
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'dependencies.json') -Destination (Join-Path $editorDocs 'licenses')
-Copy-Item -LiteralPath (Join-Path $editorWorkspace 'THIRD-PARTY-NOTICES.md'),(Join-Path $editorWorkspace 'README.md'),(Join-Path $editorWorkspace 'LICENSE'),(Join-Path $editorWorkspace 'CHANGELOG.md'),(Join-Path $editorWorkspace 'CONTRIBUTING.md'),(Join-Path $editorWorkspace 'SECURITY.md') -Destination $editorDocs
-Get-ChildItem -LiteralPath (Join-Path $editorWorkspace 'docs') -Filter '*.md' -File | Copy-Item -Destination $editorDocs
-Get-ChildItem -LiteralPath (Join-Path $editorWorkspace 'release-notes') -Filter '*.md' -File | Copy-Item -Destination (Join-Path $editorDocs 'release-notes')
-Copy-Item -LiteralPath (Join-Path $editorWorkspace 'docs/images/editor.png') -Destination (Join-Path $editorDocs 'images')
-# The packaged guides share a folder with the repository's root documents.
-foreach ($editorDocument in Get-ChildItem -LiteralPath $editorDocs -Filter '*.md' -File) {
-    $editorDocumentText = [IO.File]::ReadAllText($editorDocument.FullName).Replace('](docs/', '](').Replace('](../', '](')
-    [IO.File]::WriteAllText($editorDocument.FullName, $editorDocumentText, [Text.UTF8Encoding]::new($false))
+$editorRustMpv=Resolve-EditorMediaFile 'mpv/libmpv-2.dll' 'libmpv-2.dll'
+if ((Get-FileHash -LiteralPath $editorRustMpv -Algorithm SHA256).Hash -ine $editorRustPins.MpvLibrarySha256) { throw 'libmpv checksum mismatch.' }
+Copy-Item -LiteralPath $editorRustMpv -Destination (Join-Path $editorRustBin 'libmpv-2.dll')
+Copy-Item -LiteralPath (Resolve-EditorMediaFile 'mpv/LICENSE.LGPL' 'licenses/mpv-LGPL.txt') -Destination (Join-Path $editorRustLicenses 'mpv-LGPL.txt')
+Copy-Item -LiteralPath (Resolve-EditorMediaFile 'ffmpeg/LICENSE.txt' 'licenses/ffmpeg-GPL.txt') -Destination (Join-Path $editorRustLicenses 'ffmpeg-GPL.txt')
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'dependencies.json') -Destination $editorRustLicenses
+Copy-Item -LiteralPath (Join-Path $editorWorkspace 'LICENSE'),(Join-Path $editorWorkspace 'THIRD-PARTY-NOTICES.md'),(Join-Path $editorWorkspace 'docs/rust-rewrite-status.md') -Destination $editorRustDocs
+Copy-Item -LiteralPath (Join-Path $editorWorkspace 'README.md'),(Join-Path $editorWorkspace 'CHANGELOG.md'),(Join-Path $editorWorkspace 'CONTRIBUTING.md'),(Join-Path $editorWorkspace 'SECURITY.md') -Destination $editorRustDocs
+Get-ChildItem -LiteralPath (Join-Path $editorWorkspace 'docs') -Filter '*.md' -File | Copy-Item -Destination $editorRustDocs
+New-Item -ItemType Directory -Path (Join-Path $editorRustDocs 'release-notes'),(Join-Path $editorRustDocs 'images') -Force | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $editorWorkspace 'release-notes') -Filter '*.md' -File | Copy-Item -Destination (Join-Path $editorRustDocs 'release-notes')
+Copy-Item -LiteralPath (Join-Path $editorWorkspace 'docs/images/editor.png') -Destination (Join-Path $editorRustDocs 'images')
+foreach($editorRustDocument in Get-ChildItem -LiteralPath $editorRustDocs -Filter '*.md' -File){
+    $editorRustText=[IO.File]::ReadAllText($editorRustDocument.FullName).Replace('](docs/','](').Replace('](../','](')
+    [IO.File]::WriteAllText($editorRustDocument.FullName,$editorRustText,[Text.UTF8Encoding]::new($false))
 }
-$editorAssets = Get-Content -LiteralPath (Join-Path $editorRoot 'src/SimpleVideoEditor/obj/project.assets.json') -Raw | ConvertFrom-Json
-$editorFramework = ([xml](Get-Content (Join-Path $editorRoot 'src/SimpleVideoEditor/SimpleVideoEditor.csproj') -Raw)).Project.PropertyGroup.TargetFramework
-$editorRuntimeConfig = Get-Content (Join-Path $editorRoot "src/SimpleVideoEditor/bin/Release/$editorFramework/win-x64/SimpleVideoEditor.runtimeconfig.json") -Raw | ConvertFrom-Json
-$editorRuntimeVersion = ($editorRuntimeConfig.runtimeOptions.includedFrameworks | Where-Object { $_.name -eq 'Microsoft.NETCore.App' }).version
-if (!$editorRuntimeVersion) { throw 'Could not identify the bundled runtime version.' }
-$editorPackageRoot = $editorAssets.packageFolders.psobject.Properties.Name | Select-Object -First 1
-Copy-Item -LiteralPath (Join-Path $editorPackageRoot "microsoft.netcore.app.runtime.win-x64/$editorRuntimeVersion/LICENSE.TXT") -Destination (Join-Path $editorDocs 'licenses/dotnet-LICENSE.txt')
-Copy-Item -LiteralPath (Join-Path $editorPackageRoot "microsoft.netcore.app.runtime.win-x64/$editorRuntimeVersion/THIRD-PARTY-NOTICES.TXT") -Destination (Join-Path $editorDocs 'licenses/dotnet-THIRD-PARTY-NOTICES.txt')
-Copy-Item -LiteralPath (Join-Path $editorPackageRoot "microsoft.windowsdesktop.app.runtime.win-x64/$editorRuntimeVersion/LICENSE") -Destination (Join-Path $editorDocs 'licenses/WPF-LICENSE.txt')
-Copy-Item -LiteralPath (Join-Path $editorRoot ".tools/dotnet/sdk/$($editorDependencies.SdkVersion)/Sdks/Microsoft.NET.Sdk.WindowsDesktop/THIRD-PARTY-NOTICES.TXT") -Destination (Join-Path $editorDocs 'licenses/WPF-THIRD-PARTY-NOTICES.txt')
-@'
-SIMPLE VIDEO EDITOR
-
-Double-click Simple Video Editor.exe to start.
-Keep the bin folder beside it. No installation is needed.
-
-Import recordings, drag them onto the timeline, trim, and export.
-Your original recordings stay unchanged.
-The full guide is docs/user-guide.md. Guides and licenses are in docs.
-'@ | Set-Content -LiteralPath (Join-Path $editorOutput 'README.txt') -Encoding utf8
-Assert-EditorOutputStopped
-if (Test-Path -LiteralPath $editorDestination) { Remove-Item -LiteralPath $editorDestination -Recurse -Force }
-Move-Item -LiteralPath $editorOutput -Destination $editorDestination
-$editorOutput = $editorDestination
-if ($Zip) {
-    $editorReleases = if ($PackageDirectory) { [IO.Path]::GetFullPath($PackageDirectory) } else { Join-Path $editorWorkspace 'Releases' }
-    $editorPackageStage = Join-Path $editorRoot ('.tools/package-' + [Guid]::NewGuid().ToString('N'))
-    New-Item -ItemType Directory -Path $editorPackageStage -Force | Out-Null
-    $editorPackageName = Get-EditorPackageName $editorVersion
-    $editorZipPath = Join-Path $editorPackageStage $editorPackageName
-    try {
-        Compress-Archive -Path (Join-Path $editorOutput '*') -DestinationPath $editorZipPath
-        $editorZipHash = (Get-FileHash -LiteralPath $editorZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
-        "$editorZipHash  $editorPackageName" | Set-Content -LiteralPath ($editorZipPath + '.sha256') -Encoding ascii
-        Publish-EditorLocalPackage $editorZipPath $editorReleases $editorVersion
-        Assert-EditorCurrentPackage $editorReleases $editorVersion
-    } finally {
-        $editorCheckedStage = [IO.Path]::GetFullPath($editorPackageStage)
-        if (!$editorCheckedStage.StartsWith([IO.Path]::GetFullPath((Join-Path $editorRoot '.tools')) + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Package staging cleanup escapes build tools.' }
-        if (Test-Path -LiteralPath $editorCheckedStage) { Remove-Item -LiteralPath $editorCheckedStage -Recurse -Force }
+$editorRustLicenseRows=@()
+foreach ($editorRustDependency in $editorRustMetadata.packages | Where-Object source) {
+    $editorRustLicenseRows += "| $($editorRustDependency.name) | $($editorRustDependency.version) | $($editorRustDependency.license) |"
+    $editorRustDependencyRoot=Split-Path -Parent $editorRustDependency.manifest_path
+    $editorRustDependencyLicenses=@(Get-ChildItem -LiteralPath $editorRustDependencyRoot -Recurse -File | Where-Object Name -Match '(LICENSE|LICENCE|COPYING|NOTICE|COPYRIGHT|^OFL\.txt$|^UFL\.txt$|^Hack-Regular\.txt$)')
+    if ($editorRustDependencyLicenses.Count) {
+        $editorRustLicenseFolder=Join-Path $editorRustLicenses "rust/$($editorRustDependency.name)-$($editorRustDependency.version)"
+        New-Item -ItemType Directory -Path $editorRustLicenseFolder -Force | Out-Null
+        foreach($editorRustLicenseFile in $editorRustDependencyLicenses){
+            $editorRustRelative=[IO.Path]::GetRelativePath($editorRustDependencyRoot,$editorRustLicenseFile.FullName)
+            $editorRustLicenseTarget=Join-Path $editorRustLicenseFolder $editorRustRelative
+            New-Item -ItemType Directory -Path (Split-Path -Parent $editorRustLicenseTarget) -Force | Out-Null
+            Copy-Item -LiteralPath $editorRustLicenseFile.FullName -Destination $editorRustLicenseTarget
+        }
     }
 }
-$editorShell = New-Object -ComObject WScript.Shell
-$editorShortcut = $editorShell.CreateShortcut((Join-Path $editorWorkspace "Simple Video Editor $editorVersion.lnk"))
-$editorShortcut.TargetPath = Join-Path $editorOutput 'Simple Video Editor.exe'; $editorShortcut.WorkingDirectory = $editorOutput
-$editorShortcut.IconLocation = $editorShortcut.TargetPath + ',0'; $editorShortcut.Description = "Open Simple Video Editor $editorVersion"; $editorShortcut.Save()
-Write-Output "Portable app: $editorOutput/Simple Video Editor.exe"
+@('# Locked Rust dependency licenses','','| Package | Version | SPDX license |','| --- | --- | --- |')+$editorRustLicenseRows | Set-Content (Join-Path $editorRustLicenses 'rust-dependencies.md') -Encoding utf8
+$editorRustCompilerNotices=Join-Path $env:RUSTUP_HOME "toolchains/$env:RUSTUP_TOOLCHAIN/share/doc/rust"
+foreach ($editorRustNotice in Get-ChildItem -LiteralPath $editorRustCompilerNotices -File | Where-Object Name -Match '^(LICENSE|COPYRIGHT)') {Copy-Item -LiteralPath $editorRustNotice.FullName -Destination (Join-Path $editorRustLicenses ('rust-'+$editorRustNotice.Name))}
+@"
+SIMPLE VIDEO EDITOR $editorRustVersion
+
+Run Simple Video Editor.exe. Keep bin and docs beside it.
+No .NET runtime or installation is required.
+This release candidate awaits physical HDR/game-capture acceptance; see docs/rust-rewrite-status.md.
+Original recordings remain untouched. Save legacy projects to a new filename.
+"@ | Set-Content (Join-Path $editorRustStage 'README.txt') -Encoding utf8
+Assert-RustOutputStopped
+if (Test-Path -LiteralPath $editorRustDestination) {Remove-Item -LiteralPath $editorRustDestination -Recurse -Force}
+Move-Item -LiteralPath $editorRustStage -Destination $editorRustDestination
+if ($Zip) {
+    $editorRustPackages=Join-Path $editorRustDevelopment ('.tools/package-'+[guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Path $editorRustPackages -Force | Out-Null
+    $editorRustZip=Join-Path $editorRustPackages (Get-EditorPackageName $editorRustVersion)
+    Get-ChildItem -LiteralPath $editorRustDestination -Recurse -File | Where-Object LastWriteTime -LT ([datetime]::new(1980,1,1)) | ForEach-Object { $_.LastWriteTime=[datetime]::new(1980,1,1) }
+    Compress-Archive -Path (Join-Path $editorRustDestination '*') -DestinationPath $editorRustZip -Force
+    $editorRustHash=(Get-FileHash -LiteralPath $editorRustZip -Algorithm SHA256).Hash.ToLowerInvariant()
+    "$editorRustHash  $([IO.Path]::GetFileName($editorRustZip))" | Set-Content -LiteralPath ($editorRustZip+'.sha256') -Encoding ascii
+    Assert-EditorPackage $editorRustZip $editorRustVersion
+    $editorRustPublished=if($PackageDirectory){[IO.Path]::GetFullPath($PackageDirectory)}else{Join-Path $editorWorkspace 'Releases'}
+    Publish-EditorLocalPackage $editorRustZip $editorRustPublished $editorRustVersion
+    Assert-EditorCurrentPackage $editorRustPublished $editorRustVersion
+}
+Write-Output "Rust portable app: $editorRustDestination/Simple Video Editor.exe"

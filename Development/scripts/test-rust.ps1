@@ -7,12 +7,22 @@ $editorRustManifest = Join-Path $editorRustWorkspace 'Cargo.toml'
 if ($LASTEXITCODE -ne 0) { throw 'Rust formatting failed.' }
 & $editorCargo clippy --manifest-path $editorRustManifest --workspace --all-targets --locked -- -D warnings
 if ($LASTEXITCODE -ne 0) { throw 'Rust lint checks failed.' }
-$editorPathFixtureRoot = Join-Path $editorRustDevelopment 'artifacts/verification'
-if (Test-Path -LiteralPath (Join-Path $editorPathFixtureRoot 'local-recording-link/source B.mp4')) {
-    $env:SVE_PATH_FIXTURES = $editorPathFixtureRoot
-} else { Remove-Item Env:SVE_PATH_FIXTURES -ErrorAction SilentlyContinue }
-& $editorCargo test --manifest-path $editorRustManifest --workspace --locked
-if ($LASTEXITCODE -ne 0) { throw 'Rust tests failed.' }
+$editorPathFixtureRoot = Join-Path $editorRustDevelopment ('artifacts/rust-paths-'+[guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $editorPathFixtureRoot -Force | Out-Null
+$editorPathLink=Join-Path $editorPathFixtureRoot 'local-recording-link'
+try{
+    [IO.File]::WriteAllBytes((Join-Path $editorPathFixtureRoot 'source B.mp4'),[byte[]](1,2,3)) # Authorization-only fixture; never decoded.
+    New-Item -ItemType Junction -Path $editorPathLink -Target $editorPathFixtureRoot | Out-Null
+    $env:SVE_PATH_FIXTURES=$editorPathFixtureRoot
+    & $editorCargo test --manifest-path $editorRustManifest --workspace --locked
+    if ($LASTEXITCODE -ne 0) { throw 'Rust tests failed.' }
+}finally{
+    # Delete the exact owned junction before its empty, unique test directory.
+    if(Test-Path -LiteralPath $editorPathLink){Remove-Item -LiteralPath $editorPathLink -Force}
+    Remove-Item -LiteralPath (Join-Path $editorPathFixtureRoot 'source B.mp4') -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $editorPathFixtureRoot -Force
+    Remove-Item Env:SVE_PATH_FIXTURES -ErrorAction SilentlyContinue
+}
 & $editorCargo build --manifest-path $editorRustManifest --release --locked -p sve-inspect
 if ($LASTEXITCODE -ne 0) { throw 'Rust inspector build failed.' }
 $editorRustFixture = Join-Path $editorRustWorkspace 'crates/project-store/tests/fixtures/gaps-library.json'
@@ -23,6 +33,7 @@ $editorRustResult = $editorRustSummary | ConvertFrom-Json
 if ($editorRustResult.clipCount -ne 2 -or $editorRustResult.sourceCount -ne 2 -or $editorRustResult.durationSeconds -ne 5) { throw 'Built inspector returned an incorrect project summary.' }
 if ((Get-FileHash -LiteralPath $editorRustFixture -Algorithm SHA256).Hash -ne $editorRustBefore) { throw 'Inspector changed its input project.' }
 if ($LegacyParity) {
+    & (Join-Path $PSScriptRoot 'restore-legacy-oracle.ps1')
     $editorOracleProject = Join-Path $editorRustDevelopment 'tests/RustParityOracle/RustParityOracle.csproj'
     $editorOracleSdk = Join-Path $editorRustDevelopment '.tools/dotnet/dotnet.exe'
     if (!(Test-Path -LiteralPath $editorOracleSdk)) { throw 'Run setup.ps1 before the legacy parity checks.' }

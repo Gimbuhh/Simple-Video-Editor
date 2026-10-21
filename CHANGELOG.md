@@ -1,15 +1,14 @@
 # Changelog
 
-## Unreleased — Rust rewrite toward 1.1.0
+## 1.1.0 — Unreleased Rust candidate
 
-- Started the Rust timeline and legacy-project import foundation with a read-only
-  inspector, contract tests, and direct comparisons against the C# baseline.
-- Recorded the 1.1 rewrite plan and migration evidence. The shipping application
-  remains 1.0.4; UI/HDR migration and transitions are not included in this slice.
-- Added a Rust rendering lab for the pinned libmpv, local recording authorization,
-  CPU SDR frames and native D3D11 SDR/automatic color targets. Generated HDR
-  fixtures exercise color handling; the software reference rejects HDR explicitly.
-  This diagnostic is separate from the editor and does not certify HDR presentation.
+- Replaces the C#/WPF app and production build with Rust, without a .NET runtime dependency.
+- Retains linked edits, gaps, legacy project precision, bounded undo/redo, recovery and relinking.
+- Adds PQ/HLG import, mixed SDR/HDR profiles, explicit source interpretation and 10-bit HDR10 AV1/HEVC export.
+- Adds display-aware native preview with deliberate SDR/software fallback, per-section audio controls and non-destructive framing/rotation.
+- Corrects trim gesture anchoring, retained-frame previews, VFR frame stepping, search focus and multi-video stream selection.
+- Verifies pixel geometry, audio/gaps, cancellation/source protection and relocated portable startup with generated fixtures.
+- Physical HDR, DPI/accessibility and game/Shadowplay acceptance remain required before release. Transitions remain follow-up work.
 
 ## 1.0.4 — 2026-10-09
 

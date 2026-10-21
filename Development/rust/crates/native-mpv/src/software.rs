@@ -3,7 +3,7 @@ use std::{
     ffi::c_void,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc,
     },
     thread::{self, JoinHandle},
@@ -11,6 +11,7 @@ use std::{
 };
 
 pub struct Frame {
+    pub serial: u64,
     pub width: usize,
     pub height: usize,
     pub stride: usize,
@@ -21,6 +22,8 @@ pub(super) struct Renderer {
     frame: Arc<Mutex<Option<Frame>>>,
     error: Arc<Mutex<Option<String>>>,
     thread: Option<JoinHandle<()>>,
+    size: Arc<Mutex<(usize, usize)>>,
+    refresh: Arc<AtomicU64>,
 }
 
 impl Renderer {
@@ -31,6 +34,10 @@ impl Renderer {
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let (worker_stop, worker_frame, worker_error) =
             (stop.clone(), frame.clone(), error.clone());
+        let size = Arc::new(Mutex::new((320, 180)));
+        let worker_size = size.clone();
+        let refresh = Arc::new(AtomicU64::new(0));
+        let worker_refresh = refresh.clone();
         // Transfer the render-only pointer value, never control API ownership.
         // Player::drop always joins this worker before destroying the core.
         let player_address = player as usize;
@@ -42,6 +49,8 @@ impl Renderer {
                     &api,
                     &worker_stop,
                     &worker_frame,
+                    &worker_size,
+                    &worker_refresh,
                     &ready_tx,
                 );
                 if let Err(message) = result {
@@ -53,12 +62,24 @@ impl Renderer {
             frame,
             error,
             thread: Some(thread),
+            size,
+            refresh,
         };
         ready_rx.recv_timeout(Duration::from_secs(5))??;
         Ok(renderer)
     }
     pub fn take_frame(&self) -> Option<Frame> {
         self.frame.lock().unwrap().take()
+    }
+    pub fn refresh(&self) -> u64 {
+        self.refresh.fetch_add(1, Ordering::AcqRel) + 1
+    }
+    pub fn resize(&self, width: usize, height: usize) -> Result<()> {
+        if !(1..=1920).contains(&width) || !(1..=1080).contains(&height) {
+            return Err("Software preview size is outside its bounded surface".into());
+        }
+        *self.size.lock().unwrap() = (width, height);
+        Ok(())
     }
     pub fn check(&self) -> Result<()> {
         if let Some(error) = self.error.lock().unwrap().as_ref() {
@@ -95,6 +116,8 @@ fn run(
     api: &ffi::Api,
     stop: &AtomicBool,
     frame: &Mutex<Option<Frame>>,
+    size: &Mutex<(usize, usize)>,
+    refresh: &AtomicU64,
     ready: &mpsc::SyncSender<Result<()>>,
 ) -> Result<()> {
     let mut handle = std::ptr::null_mut();
@@ -129,20 +152,33 @@ fn run(
         );
     }
     ready.send(Ok(()))?;
-    let (width, height, stride) = (320_usize, 180_usize, 1280_usize);
+    let (mut width, mut height, mut stride) = (320_usize, 180_usize, 1280_usize);
     let mut dimensions = [width as i32, height as i32];
     let mut stride_value = stride;
     let mut memory = vec![0_u8; stride * height + 63];
-    let offset = (64 - memory.as_ptr() as usize % 64) % 64;
+    let mut offset = (64 - memory.as_ptr() as usize % 64) % 64;
+    let mut rendered_serial = 0;
     while !stop.load(Ordering::Acquire) {
-        if !context._signal.swap(false, Ordering::AcqRel) {
+        let desired = *size.lock().unwrap();
+        let resized = desired != (width, height);
+        let serial = refresh.load(Ordering::Acquire);
+        let refreshed = serial != rendered_serial;
+        if !context._signal.swap(false, Ordering::AcqRel) && !resized && !refreshed {
             thread::sleep(Duration::from_millis(2));
             continue;
         }
+        if resized {
+            (width, height) = desired;
+            stride = (width * 4).next_multiple_of(64);
+            stride_value = stride;
+            dimensions = [width as i32, height as i32];
+            memory = vec![0; stride * height + 63];
+            offset = (64 - memory.as_ptr() as usize % 64) % 64;
+        }
         // SAFETY: single render owner; allocation and stride have 64-byte
-        // alignment and sufficient space for 320x180 bgr0 pixels.
+        // alignment and sufficient space for the bounded bgr0 surface.
         unsafe {
-            if (api.render_update)(handle) & 1 == 0 {
+            if (api.render_update)(handle) & 1 == 0 && !resized && !refreshed {
                 continue;
             }
             let mut parameters = [
@@ -169,12 +205,14 @@ fn run(
             ];
             check(api, (api.render)(handle, parameters.as_mut_ptr()))?;
             *frame.lock().unwrap() = Some(Frame {
+                serial,
                 width,
                 height,
                 stride,
                 pixels: memory[offset..offset + stride * height].to_vec(),
             });
             (api.render_swap)(handle);
+            rendered_serial = serial;
         }
     }
     Ok(())

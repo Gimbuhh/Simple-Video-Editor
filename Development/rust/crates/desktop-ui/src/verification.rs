@@ -85,7 +85,10 @@ pub fn media() -> media_engine::Result<()> {
     result.map(|_| ())
 }
 pub struct Verification {
+    pub vfr: bool,
     pub source: PathBuf,
+    pub secondary: Option<PathBuf>,
+    pub scrub_target: f64,
     pub directory: PathBuf,
     pub phase: u8,
     pub started: Instant,
@@ -94,6 +97,8 @@ pub struct Verification {
     pub failure: Option<String>,
     pub anchor: Option<egui::Pos2>,
     pub expected: Option<Vec<editor_core::Clip>>,
+    pub layout: usize,
+    pub was_software: bool,
 }
 impl Verification {
     pub fn arguments() -> Option<Self> {
@@ -102,10 +107,20 @@ impl Verification {
             return None;
         }
         let source = PathBuf::from(args.get(2)?);
+        let secondary = args
+            .iter()
+            .position(|v| v == "--second-recording")
+            .and_then(|i| args.get(i + 1))
+            .map(PathBuf::from);
         let directory = PathBuf::from(args.get(3)?);
         std::fs::create_dir_all(&directory).ok()?;
         Some(Self {
+            vfr: source
+                .file_name()
+                .is_some_and(|name| name == "variable.mkv"),
             source,
+            secondary,
+            scrub_target: 1.6031,
             directory,
             phase: 0,
             started: Instant::now(),
@@ -114,6 +129,8 @@ impl Verification {
             failure: None,
             anchor: None,
             expected: None,
+            layout: 0,
+            was_software: false,
         })
     }
     pub fn key(&mut self, key: egui::Key, command: bool) {

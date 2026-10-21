@@ -1,132 +1,49 @@
 # Development
 
-## Setup and build
+Run scripts from the repository root in PowerShell. Source is in `Development/rust`; the application package is `crates/desktop-ui`. Its Cargo version is authoritative. Tool crates use their separate private workspace version. Native pins and their exact recovery mirror remain in `Development/scripts/dependencies.json`.
 
-Use Windows x64 and PowerShell. Run commands from the repository root. No globally installed .NET SDK or video tools are required.
-
-The canonical repository is [Gimbuhh/simple-video-editor](https://github.com/Gimbuhh/simple-video-editor). This local project is its Git checkout; use commits and that remote for future work rather than source-backup ZIPs. For a new checkout:
-
-```powershell
-git clone https://github.com/Gimbuhh/simple-video-editor.git
-cd simple-video-editor
-git config --local core.hooksPath .githooks
-```
+## Setup and verification
 
 ```powershell
 ./Development/scripts/setup.ps1
 ./Development/scripts/check-repository.ps1
 ./Development/scripts/test.ps1
-./Development/scripts/build.ps1 -Zip
-./Development/scripts/verify-package.ps1
+./Development/scripts/test.ps1 -Ui -Gpu -Extended
 ```
 
-`global.json` and `Development/scripts/dependencies.json` pin the same SDK version. Setup downloads it into `Development/.tools/`, verifies the archive, and removes the download afterward. On a fresh checkout, setup downloads verified libmpv and FFmpeg binaries into `Development/vendor/`. When an existing `App/` has those exact files, setup reuses them.
+Setup installs pinned Rust 1.90.0 and checksum-pinned LLVM-MinGW 20260616 inside `Development/.tools`. GNU x64 Rust uses the pinned LLD linker and self-contained CRT. LLVM supplies dlltool and Windows resource tools; it is excluded from the portable app. Rust dependencies are locked in Cargo.lock. FFmpeg/FFprobe/libmpv are restored with their existing hashes; upstream rolling downloads may fall back to the release named by MediaMirrorTag. Authenticate GitHub CLI and set GH_REPO for the private mirror, or pass `-MediaBundlePath` to setup with an exact matching portable ZIP.
 
-Build produces the self-contained app under `App/`, a version-named local shortcut for the chosen output folder, and optionally `Releases/SimpleVideoEditor-<version>-win-x64.zip` plus its SHA-256 checksum. The version comes from the app project. The portable ZIP has four top-level entries: `Simple Video Editor.exe`, `README.txt`, `bin/`, and `docs/`. The executable bundles the .NET runtime; `bin` contains libmpv, FFmpeg, FFprobe, and their libraries, while `docs` contains guides and licenses. Keep the extracted folder together. Builds stage a complete bundle before replacing a generated output and refuse to overwrite a running editor. ZIP builds verify the replacement's embedded app version, contents and checksum before removing older generated package pairs from the local package directory. Unrelated files and published GitHub assets stay intact.
+Default tests check formatting, strict Clippy, Rust unit/executable tests, native playback lifecycle, generated SDR/PQ/HLG media exports, pixel geometry, VFR stepping, audio/gaps/cancellation and persistence. `-Gpu` exercises available NVIDIA encoders. `-Ui` runs actual egui input and captures app framebuffers. `-Extended` adds portrait, anamorphic, RGB and multiple-video recordings to the desktop matrix. Generated fixtures and screenshots stay ignored. No user editor is stopped and no private recording is required.
 
-Upstream rolling media releases can remove old assets. Setup never silently changes versions: if a pinned download fails, CI tries the portable ZIP on this repository's pinned `MediaMirrorTag` release and verifies every native binary before restoring it. It accepts versioned assets and the unversioned names on older releases. Locally, supply a matching ZIP with `./Development/scripts/setup.ps1 -MediaBundlePath ./Releases/SimpleVideoEditor-1.0.4-win-x64.zip`. To use a private mirror automatically, authenticate GitHub CLI and set `GH_REPO` to the repository's `owner/name`. The first repository upload should preserve the verified portable ZIP in a draft release; see the release guide.
+Use `. ./Development/scripts/rust-environment.ps1` before direct Cargo commands. Build from the pinned workspace environment rather than a system toolchain.
 
-Run `./Development/scripts/test-packaging.ps1` after building a ZIP. These checks cover stale-package cleanup, a failed replacement retaining the previous package, unrelated-file preservation, misleading filenames and extra bundled apps. Both Windows workflows run them. For isolated packaging experiments, pass the same `-PackageDirectory` to build and package verification; this keeps the published local download unchanged.
+## Frozen legacy oracle
 
-When the app is open, use `./Development/scripts/build.ps1 -Zip -OutputName App-Updated`. Save and close the existing editor before switching builds. This alternative output is also ignored by Git.
-
-## Verification
+The old implementation is removed from production source. Optional differential tests restore only its source from Git commit `dd65df13a41490e8168a624b65fcff6a27956940` into ignored `Development/artifacts/rewrite-baseline/source`. The Rust application never loads it.
 
 ```powershell
-# Generated fixtures, CPU encoding, and software playback; no NVIDIA GPU required.
-./Development/scripts/test.ps1
-
-# Verify the NVIDIA AV1 path with a compatible GPU and driver.
-./Development/scripts/test.ps1 -Gpu
-
-# Actual WPF window and editing; run in a desktop session.
-./Development/scripts/test.ps1 -Ui
-
-# Optional private recordings, supplied explicitly.
-./Development/scripts/test.ps1 -Gpu -Clips @('D:/recordings/first.mp4', 'D:/recordings/second.mp4')
-./Development/scripts/test.ps1 -Ui -Clips @('D:/recordings/first.mp4', 'D:/recordings/second.mp4')
-```
-
-The core real-recording check needs at least 22 seconds in each recording. Optional UI gameplay/performance checks expect two SDR 1440p/60 fps AV1 recordings with audio: at least 40 seconds in the first and 20 seconds in the second. Omit `-Clips` for portable generated-fixture checks. Missing explicit paths fail instead of silently skipping verification.
-
-Run core tests before UI tests; core tests generate the fixtures consumed by the UI harness. UI checks dispatch WPF control/pointer callbacks in-process; they do not automate external operating-system drag gestures or file pickers. Default CI runs core/media checks and builds the portable app. GPU and desktop UI checks remain local integration checks.
-
-Reports, screenshots, media fixtures, recovery files, and benchmarks stay under ignored `Development/artifacts/verification/`. Reports may contain private paths or recording frames; do not commit them. The curated README screenshot under `docs/images/` shows Arc Raiders gameplay captured in the editor; the original recordings remain outside Git.
-
-Core checks cover exact non-keyframe cuts, frame counts, joins, gap silence, source protection, cancellation, CPU encoding, projects, relinking, recovery, cache cleanup, and native software playback. UI checks cover linked-track editing, playback, undo/redo, search, relinking, cache dialogs, dark loading states, text alignment, and layout.
-
-## Local files and cleanup
-
-Git ignores packaged apps, release ZIPs, build tools, native dependencies, build output, local source backups, shortcuts, projects, and verification artifacts. Only source, tests, scripts, authored assets, and repository documentation belong in commits. Git history replaces source-backup ZIPs after the repository is in use; existing local backups are retained.
-
-```powershell
-./Development/scripts/clean.ps1 -BuildTools
-```
-
-Cleanup verifies the `App/` media bundle, stops build servers, and removes reproducible build output, vendor copies, and workspace build tools. It preserves the app, releases, source, local history, and verification reports. Run setup before building again.
-
-## Rust 1.1 rewrite
-
-The [rewrite plan](rust-rewrite-plan.md) and [status/contract ledger](rust-rewrite-status.md)
-track the authorized migration. The current portable app remains 1.0.4 until
-Rust cutover; transitions are follow-up work.
-
-```powershell
-./Development/scripts/setup-rust.ps1
+./Development/scripts/setup.ps1 -LegacyOracle
 ./Development/scripts/test-rust.ps1 -LegacyParity
-./Development/scripts/test-rust.ps1 -LegacyParity -Playback
-
-# Explicit local GPU rendering checks; opens temporary mpv video windows.
-./Development/scripts/test-rust-playback.ps1 -Gpu
 ```
 
-Run the existing setup first for `-LegacyParity`, which builds a test-only C#
-oracle. Omit that switch for Rust-only development. The same checks run in the
-Windows PR workflow. Rust tools and crate caches install in ignored
-`Development/.tools/`; build output is ignored under `Development/rust/target/`.
-Setup uses the checksum-pinned bootstrap from the official
-[rustup archive](https://rust-lang.github.io/rustup/installation/other.html).
-It does not modify system PATH or replace the portable app.
+This optional path restores the pinned .NET SDK solely to compile the independent C# test oracle. Fetch full Git history if the baseline commit is unavailable in a shallow checkout. Ordinary Rust builds and packaged startup require no .NET SDK/runtime.
 
-After testing, `Development/rust/target/release/sve-inspect.exe <project.sveproject>`
-prints a read-only, path-free summary without opening recordings. The Rust
-[workspace guide](https://github.com/Gimbuhh/Simple-Video-Editor/tree/main/Development/rust) describes its current limits.
-Schema-1 fixtures are committed under `Development/rust/crates/project-store/tests/fixtures/`;
-personal projects, media, and all generated verification output remain ignored.
-
-The playback lab tests the pinned libmpv from Rust, using software SDR rendering
-and optional native D3D11 SDR/automatic targets. The default CI includes generated
-SDR/PQ/HLG fixtures, repeated load/seek/shutdown, native-hash protection and path
-checks. The lab's raw software mode rejects unconverted HDR. The desktop uses
-a shared FFmpeg tone-mapping graph for its explicit SDR software fallback.
-Native reports include source and target color properties; these do not certify
-visible HDR output. Logs and generated fixtures are ignored under
-`Development/artifacts/rust-playback/`. The desktop candidate embeds libmpv in
-egui/eframe; physical HDR and the full cutover gate remain open.
+## Portable build
 
 ```powershell
-# Actual Rust window, pointer/keyboard input and native/software preview:
-./Development/scripts/test-rust-desktop.ps1
-
-# Mixed SDR/PQ/HLG exports, decoded gaps/audio and source protections:
-./Development/scripts/test-rust-media.ps1
-./Development/scripts/test-rust-media.ps1 -Gpu
-
-# Separate 1.1 test bundle; keeps the shipping App and Releases pair intact:
-./Development/scripts/build-rust.ps1 -Zip
-./Development/scripts/verify-rust-package.ps1 -Desktop
+./Development/scripts/build.ps1 -Zip -OutputName App-Updated
+./Development/scripts/verify-package.ps1 -OutputName App-Updated -Desktop -Extended
+./Development/scripts/test-packaging.ps1
 ```
 
-Run `test-rust-playback.ps1` first to create the generated SDR/PQ/HLG fixtures.
-The Rust desktop harness injects pointer and keyboard events into the actual egui
-input pipeline and captures its own framebuffer. It does not certify external
-OS dialogs, physical HDR presentation or a game capture session. The portable
-check relocates the ZIP, checks PE/version/native pins and absence of a managed
-runtime, then exercises persistence, CPU export and libmpv from the packaged
-executable. Desktop checks require a Windows desktop session with OpenGL support.
+The build stages a complete bundle, checks version/native pins and licenses, then replaces only its chosen stopped App/App-* output. It refuses to overwrite a running editor. ZIP names derive from Cargo's application version. The current local Releases pair is replaced/pruned only after embedded version, layout and checksum checks pass; unrelated files remain untouched. Published release assets are never replaced.
 
-## Icon and dependencies
+`build-rust.ps1` is a compatibility entry point that invokes this same build with a separate candidate output/package directory. `verify-rust-package.ps1` tests the extracted executable from a relocated Unicode/space path, including absence of .NET, exact native pins, persistence/export/playback and optional desktop tests.
 
-The approved icon source is `Development/src/SimpleVideoEditor/Assets/app-icon.png`. It was generated with imagegen for this project. Run `./Development/scripts/make-icon.ps1` after changing it, then rebuild.
+The approved icon source is `Development/assets/app-icon.png`. Run `Development/scripts/make-icon.ps1` after editing it. Source assets and license notices are tracked; binaries, toolchains, caches, media, projects and verification results are ignored.
 
-Dependency versions, origins, and checksums live in `Development/scripts/dependencies.json`. Update them together and verify fresh setup, build, core tests, and local UI/GPU checks when changing the pinned bundle. Preserve the [third-party notices](../THIRD-PARTY-NOTICES.md) and packaged licenses.
+## Acceptance and repository policy
+
+Physical HDR luminance/color accuracy, monitor movement/HDR toggles, 100–200% DPI, screen-reader navigation and concurrent game/Shadowplay capture require the corresponding hardware/session. Automated metadata and framebuffer checks do not prove these gates. Record unavailable combinations honestly in the [rewrite ledger](rust-rewrite-status.md).
+
+Use feature branches and open PRs. Enable the tracked guard with `git config --local core.hooksPath .githooks`; never push directly to main. Keep PRs open until the user finishes testing and approves merge. Tags come from merged main, after checks, and workflows prepare draft releases only. See [release instructions](releasing.md).

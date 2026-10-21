@@ -1,4 +1,6 @@
 //! Windows UI/file-system boundary. Editor rules remain outside this crate.
+mod display;
+pub use display::{DisplayColor, display_color};
 use std::{
     io,
     os::windows::ffi::OsStrExt,

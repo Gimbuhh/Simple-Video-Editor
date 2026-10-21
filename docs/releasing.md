@@ -1,6 +1,8 @@
 # Releasing
 
-Version 1.0.0 is the initial release, dated 2026-10-09. The private repository is [Gimbuhh/simple-video-editor](https://github.com/Gimbuhh/simple-video-editor). Source versioning uses the `<Version>` in `Development/src/SimpleVideoEditor/SimpleVideoEditor.csproj`; version 1.0.4 corresponds to tag `v1.0.4` after its PR is approved and merged.
+The private repository is [Gimbuhh/simple-video-editor](https://github.com/Gimbuhh/simple-video-editor). The application version in `Development/rust/crates/desktop-ui/Cargo.toml` owns executable metadata, project application-version fields and package names. The 1.1.0 Rust candidate is unreleased; preserve published 1.0.x assets and original schema-1 projects for rollback.
+
+Before approving 1.1, collect physical HDR color/brightness, display/DPI/accessibility and concurrent game/Shadowplay acceptance evidence described in the [rewrite ledger](rust-rewrite-status.md). Metadata and screenshots do not prove physical HDR. This PR is not authorization to merge, tag or publish.
 
 ## Initial repository upload
 

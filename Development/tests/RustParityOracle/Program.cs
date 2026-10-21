@@ -1,4 +1,4 @@
-// Test-only oracle: references the unchanged production baseline. The Rust
+// Test-only oracle: references v1.0.4 restored from its exact Git commit. The Rust
 // executable never loads this assembly and has no C# runtime dependency.
 using System.Text.Json;
 using SimpleVideoEditor;

@@ -111,6 +111,7 @@ impl Player {
             player.option(key, value)?;
         }
         if let Some(window) = window {
+            player.option("video-rotate", "no")?;
             player.option("wid", &window.to_string())?;
         }
         match mode {
@@ -233,6 +234,13 @@ impl Player {
     }
 
     pub fn seek(&self, time: f64) -> Result<()> {
+        self.seek_interruptible(time, || false).map(|_| ())
+    }
+    pub fn seek_interruptible(
+        &self,
+        time: f64,
+        mut interrupted: impl FnMut() -> bool,
+    ) -> Result<bool> {
         let duration: f64 = self
             .property("duration")
             .ok_or("No media loaded")?
@@ -240,15 +248,85 @@ impl Player {
         if !time.is_finite() || time < 0.0 || time >= duration {
             return Err("Seek must be finite and inside the recording".into());
         }
+        for _ in 0..1024 {
+            if self.poll_event(0.0)? == 0 {
+                break;
+            }
+        }
         self.command(&["seek", &time.to_string(), "absolute+exact"])?;
-        // The lab serializes seeks; this is not a generation-safe editor seek
-        // protocol. Predicate checks state/position, not just an event arrival.
-        self.wait_for(5.0, |p| {
-            p.property("seeking").as_deref() == Some("no")
-                && p.property("time-pos")
-                    .and_then(|v| v.parse::<f64>().ok())
-                    .is_some_and(|v| (v - time).abs() <= 0.05)
-        })
+        let deadline = Instant::now() + Duration::from_secs(8);
+        let mut seeking = false;
+        while Instant::now() < deadline {
+            if interrupted() {
+                return Ok(false);
+            }
+            let event = self.poll_event(0.005)?;
+            // time-pos can report the requested timestamp before a frame is
+            // presented. Wait for the SEEK -> PLAYBACK_RESTART completion.
+            if event == 20 {
+                seeking = true;
+            }
+            if event == 21 && seeking && self.property("seeking").as_deref() == Some("no") {
+                return Ok(true);
+            }
+        }
+        Err("Timed out completing the recording seek".into())
+    }
+
+    /// Step decoded frames; reverse stepping uses mpv's exact previous-frame seek.
+    /// The caller can interrupt between polls when a newer generation supersedes it.
+    pub fn step_frames(
+        &self,
+        count: i32,
+        mut interrupted: impl FnMut() -> bool,
+    ) -> Result<Option<f64>> {
+        self.set_paused(true)?;
+        let position = |player: &Self| {
+            player
+                .property("time-pos")
+                .and_then(|v| v.parse::<f64>().ok())
+        };
+        let mut current = position(self).ok_or("No video frame available")?;
+        for _ in 0..count.unsigned_abs().min(120) {
+            if interrupted() {
+                return Ok(None);
+            }
+            let before = current;
+            if count > 0 {
+                self.command(&["frame-step", "1", "mute"])?;
+            } else {
+                self.command(&["frame-back-step"])?;
+            }
+            let deadline = Instant::now() + Duration::from_secs(8);
+            loop {
+                if interrupted() {
+                    self.set_paused(true)?;
+                    return Ok(None);
+                }
+                self.poll_event(0.005)?;
+                current = position(self).unwrap_or(before);
+                let changed = if count > 0 {
+                    current > before + 0.000001
+                } else {
+                    current < before - 0.000001
+                };
+                if self.property("pause").as_deref() == Some("yes")
+                    && self.property("seeking").as_deref() == Some("no")
+                    && (changed
+                        || count < 0 && current <= 0.000001
+                        || self.property("eof-reached").as_deref() == Some("yes"))
+                {
+                    break;
+                }
+                if Instant::now() > deadline {
+                    return Err("Timed out stepping a video frame".into());
+                }
+            }
+            if (current - before) * f64::from(count.signum()) <= 0.000001 {
+                break;
+            }
+        }
+        Ok(Some(current))
     }
 
     pub fn wait_for(&self, seconds: f64, predicate: impl Fn(&Self) -> bool) -> Result<()> {
@@ -302,6 +380,15 @@ impl Player {
 
     pub fn take_frame(&self) -> Option<Frame> {
         self.renderer.as_ref().and_then(|r| r.take_frame())
+    }
+    pub fn refresh_frame(&self) -> u64 {
+        self.renderer.as_ref().map_or(0, |r| r.refresh())
+    }
+    pub fn resize_software(&self, width: usize, height: usize) -> Result<()> {
+        if let Some(renderer) = &self.renderer {
+            renderer.resize(width, height)?;
+        }
+        Ok(())
     }
 
     pub(crate) fn check(&self, status: i32) -> Result<()> {

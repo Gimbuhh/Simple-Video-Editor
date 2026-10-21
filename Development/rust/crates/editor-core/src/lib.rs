@@ -7,6 +7,31 @@ pub const MAX_TIMELINE_SECONDS: f64 = 922_337_203_685.477_5;
 pub const MAX_CLIPS: usize = 10_000;
 const POSITION_TOLERANCE: f64 = 0.00001;
 
+/// Accept seconds, mm:ss or hh:mm:ss with an invariant decimal point.
+/// Formatting a trim does not change its stored presentation timestamp.
+pub fn parse_timecode(text: &str) -> Option<f64> {
+    let parts: Vec<_> = text.trim().split(':').collect();
+    if parts.is_empty() || parts.len() > 3 {
+        return None;
+    }
+    let mut result = 0.0;
+    for (index, part) in parts.iter().enumerate() {
+        if part.is_empty() || !part.bytes().all(|c| c.is_ascii_digit() || c == b'.') {
+            return None;
+        }
+        let value = part.parse::<f64>().ok()?;
+        if !value.is_finite()
+            || value < 0.0
+            || index + 1 < parts.len() && value.fract() != 0.0
+            || index > 0 && value >= 60.0
+        {
+            return None;
+        }
+        result = result * 60.0 + value;
+    }
+    (result <= MAX_TIMELINE_SECONDS).then_some(result)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct SourceId(pub u64);
 
@@ -161,6 +186,15 @@ pub enum Command {
         source_duration: f64,
         rate: FrameRate,
     },
+    /// During a trim gesture the pointer edge moves without closing its gap.
+    /// Commit with `Trim` against the original timeline to ripple joined clips.
+    PreviewTrim {
+        clip: ClipId,
+        start: f64,
+        end: f64,
+        source_duration: f64,
+        rate: FrameRate,
+    },
     Duplicate {
         clip: ClipId,
         rate: FrameRate,
@@ -254,6 +288,7 @@ impl<M: Clone> Editor<M> {
                 .ok_or(EditError("Clip identity space exhausted"))?;
             Ok(id)
         };
+        let preview_trim = matches!(&command, Command::PreviewTrim { .. });
         match command {
             Command::Replace { clips: replacement } => {
                 clips = replacement;
@@ -276,8 +311,15 @@ impl<M: Clone> Editor<M> {
             }
             Command::Trim {
                 clip,
-                start,
-                end,
+                mut start,
+                mut end,
+                source_duration,
+                rate,
+            }
+            | Command::PreviewTrim {
+                clip,
+                mut start,
+                mut end,
                 source_duration,
                 rate,
             } => {
@@ -310,6 +352,13 @@ impl<M: Clone> Editor<M> {
                 if joined {
                     let maximum = original.duration()
                         + ((next - clips[last].timeline_end()) / frame + 1e-8).floor() * frame;
+                    if preview_trim {
+                        if start != original.source_in {
+                            start = start.max(end - maximum);
+                        } else {
+                            end = end.min(start + maximum);
+                        }
+                    }
                     if end - start > maximum + POSITION_TOLERANCE {
                         return Err(EditError("Trim overlaps the next group"));
                     }
@@ -319,11 +368,15 @@ impl<M: Clone> Editor<M> {
                         .max(0.0);
                     let maximum = original.source_out
                         + ((next - original.timeline_end()) / frame + 1e-8).floor() * frame;
+                    if preview_trim {
+                        start = start.max(minimum);
+                        end = end.min(maximum);
+                    }
                     if start < minimum - POSITION_TOLERANCE || end > maximum + POSITION_TOLERANCE {
                         return Err(EditError("Trim overlaps another clip"));
                     }
                 }
-                let position = if joined {
+                let position = if joined && !preview_trim {
                     original.timeline_start
                 } else {
                     (original.timeline_start + start - original.source_in).max(previous)
@@ -569,6 +622,22 @@ pub fn available_position(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn timecode_accepts_seconds_minutes_hours_and_rejects_invalid_fields() {
+        for (text, seconds) in [
+            ("1.25", 1.25),
+            ("01:02.125", 62.125),
+            ("02:01:03.5", 7263.5),
+            (" 00:00:01.001 ", 1.001),
+        ] {
+            assert_eq!(parse_timecode(text), Some(seconds));
+        }
+        for text in [
+            "", "-1", "NaN", "inf", "1e3", "1:60", "1.5:01", "1:2:3:4", "01::02",
+        ] {
+            assert_eq!(parse_timecode(text), None);
+        }
+    }
     fn section(id: u64, position: f64) -> Clip {
         Clip {
             id: ClipId(id),
@@ -697,6 +766,40 @@ mod tests {
         assert_eq!(clips[0].timeline_start, 1.0);
         assert!((clips[1].timeline_start - 1.75).abs() < 1e-10);
         assert_eq!(clips[2].timeline_start, 5.0);
+    }
+    #[test]
+    fn trim_gesture_anchors_right_edge_until_commit() {
+        let initial =
+            Timeline::new(vec![section(1, 1.0), section(2, 2.0), section(3, 5.0)]).unwrap();
+        let mut preview = Editor::new(initial.clone()).unwrap();
+        let rate = FrameRate::new(60, 1).unwrap();
+        preview
+            .apply(Command::PreviewTrim {
+                clip: ClipId(1),
+                start: 1.4,
+                end: 2.15,
+                source_duration: 8.0,
+                rate,
+            })
+            .unwrap();
+        assert!((preview.timeline().clips()[0].timeline_start - 1.25).abs() < 1e-10);
+        assert_eq!(preview.timeline().clips()[0].timeline_end(), 2.0);
+        assert_eq!(preview.timeline().clips()[1].timeline_start, 2.0);
+        let mut committed = Editor::new(initial.clone()).unwrap();
+        committed
+            .apply(Command::Trim {
+                clip: ClipId(1),
+                start: 1.4,
+                end: 2.15,
+                source_duration: 8.0,
+                rate,
+            })
+            .unwrap();
+        assert_eq!(committed.timeline().clips()[0].timeline_start, 1.0);
+        assert_eq!(committed.timeline().clips()[1].timeline_start, 1.75);
+        assert_eq!(committed.timeline().clips()[2].timeline_start, 5.0);
+        assert!(committed.undo());
+        assert_eq!(committed.timeline(), &initial);
     }
     #[test]
     fn free_trim_anchors_source_time_and_failed_overlap_is_atomic() {

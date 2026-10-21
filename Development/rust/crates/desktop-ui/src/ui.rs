@@ -1,3 +1,4 @@
+mod interaction_verification;
 use crate::playback::{Playback, Request};
 use editor_core::{Clip, ClipId, Command, Editor, SourceId, Timeline};
 use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Vec2};
@@ -16,8 +17,8 @@ enum Event {
     Imported(Vec<MediaSource>, Vec<String>),
     Opened(Result<(SavedProject, PathBuf, bool), String>),
     Saved(Result<(SavedProject, PathBuf), String>),
-    Waveform(SourceId, String, Vec<f32>),
-    Thumbnail(SourceId, String, egui::ColorImage),
+    Waveform(MediaSource, Vec<f32>),
+    Thumbnail(MediaSource, egui::ColorImage),
     Cache(Result<(usize, u64), String>),
     Progress(f64, String),
     Exported(Result<(PathBuf, bool), String>),
@@ -31,8 +32,24 @@ struct Drag {
     source_in: f64,
     source_out: f64,
     pointer_x: f32,
+    playhead: f64,
+    preview_source: f64,
 }
 type RelinkState = (PathBuf, Vec<String>, Vec<(String, PathBuf)>);
+struct Scrub {
+    owner: u8,
+    resume: bool,
+}
+struct Settling {
+    generation: Option<u64>,
+    resume: bool,
+    started: Instant,
+}
+struct Stepping {
+    generation: Option<u64>,
+    count: i32,
+    trim_after: Option<(ClipId, f64)>,
+}
 pub struct EditorApp {
     // The actor must be destroyed before its native child window.
     playback: Option<Playback>,
@@ -57,6 +74,10 @@ pub struct EditorApp {
     search: String,
     playhead: f64,
     playing: bool,
+    scrub: Option<Scrub>,
+    settling: Option<Settling>,
+    stepping: Option<Stepping>,
+    ignore_scrub_until_release: bool,
     last_tick: Instant,
     generation: u64,
     request_key: String,
@@ -74,6 +95,7 @@ pub struct EditorApp {
     close_approved: bool,
     settings: bool,
     hdr_preview: bool,
+    software_preview: bool,
     preview_texture: Option<egui::TextureHandle>,
     preview_frame: Option<Arc<native_mpv::Frame>>,
     controls: BTreeMap<&'static str, Rect>,
@@ -142,6 +164,10 @@ impl EditorApp {
             search: String::new(),
             playhead: 0.0,
             playing: false,
+            scrub: None,
+            settling: None,
+            stepping: None,
+            ignore_scrub_until_release: false,
             last_tick: Instant::now(),
             generation: 0,
             request_key: String::new(),
@@ -158,7 +184,8 @@ impl EditorApp {
             restoring: None,
             close_approved: false,
             settings: false,
-            hdr_preview: false,
+            hdr_preview: true,
+            software_preview: std::env::args_os().any(|a| a == "--software-preview"),
             preview_texture: None,
             preview_frame: None,
             controls: BTreeMap::new(),
@@ -173,14 +200,78 @@ impl EditorApp {
         self.dirty_cache = SavedProject::capture(&self.editor) != self.saved;
     }
     fn history(&mut self, redo: bool) {
+        self.editor.metadata_mut().view = self.current_view();
         if if redo {
             self.editor.redo()
         } else {
             self.editor.undo()
         } {
+            self.playing = false;
+            self.scrub = None;
+            self.settling = None;
+            self.stepping = None;
+            self.drag = None;
+            self.preview_timeline = None;
+            self.ignore_scrub_until_release = true;
+            match self.editor.metadata().view {
+                Some(ViewSelection::Clip(id)) => {
+                    self.selected = Some(id);
+                    self.library_preview = false;
+                }
+                Some(ViewSelection::Recording(id)) => {
+                    self.library_selected = Some(id);
+                    self.library_preview = true;
+                }
+                None => {}
+            }
+            self.sync_selection();
+            self.playhead = if self.library_preview {
+                0.0
+            } else {
+                self.selected_clip().map_or(0.0, |c| c.timeline_start)
+            };
             self.update_dirty();
             self.request_key.clear();
         }
+    }
+    fn current_view(&self) -> Option<ViewSelection> {
+        if self.library_preview {
+            self.library_selected.map(ViewSelection::Recording)
+        } else {
+            self.selected.map(ViewSelection::Clip)
+        }
+    }
+    fn sync_selection(&mut self) {
+        if self
+            .selected
+            .is_none_or(|id| !self.editor.timeline().clips().iter().any(|c| c.id == id))
+        {
+            self.selected = preview_at(
+                self.editor.timeline(),
+                self.editor.metadata(),
+                self.playhead,
+            )
+            .map(|(id, _, _)| id)
+            .or_else(|| self.editor.timeline().clips().first().map(|c| c.id));
+        }
+        if self
+            .library_selected
+            .is_none_or(|id| !self.editor.metadata().sources.iter().any(|s| s.id == id))
+        {
+            self.library_selected = self.editor.metadata().sources.first().map(|s| s.id);
+        }
+        if self.editor.timeline().clips().is_empty() {
+            self.library_preview = self.library_selected.is_some();
+        }
+        if self.library_preview && self.library_selected.is_none() {
+            self.library_preview = false;
+        }
+        if !self.library_preview
+            && let Some(clip) = self.selected_clip()
+        {
+            self.library_selected = Some(clip.source);
+        }
+        self.playhead = self.playhead.clamp(0.0, self.preview_duration());
     }
     fn discard(&mut self) -> bool {
         self.playing = false;
@@ -189,6 +280,33 @@ impl EditorApp {
     }
     fn fail(&mut self, message: impl ToString) {
         self.message = message.to_string();
+    }
+    fn new_project(&mut self) {
+        if self.busy || !self.discard() {
+            return;
+        }
+        self.cancel.store(true, Ordering::Release);
+        self.cancel = uncancelled();
+        self.editor =
+            Editor::with_metadata(Timeline::default(), ProjectMetadata::default()).unwrap();
+        self.saved = SavedProject::capture(&self.editor);
+        self.update_dirty();
+        self.path = None;
+        self.playhead = 0.0;
+        self.selected = None;
+        self.library_selected = None;
+        self.library_preview = false;
+        self.search.clear();
+        self.request_key.clear();
+        self.waveforms.clear();
+        self.thumbnails.clear();
+        self.scrub = None;
+        self.settling = None;
+        self.stepping = None;
+        self.drag = None;
+        self.preview_timeline = None;
+        self.recovery.clear();
+        self.recovery_saved = None;
     }
     fn open_failed(&mut self, message: impl ToString) {
         if self.restoring.is_some() {
@@ -205,19 +323,65 @@ impl EditorApp {
         if self.busy && !self.exporting {
             return;
         }
+        self.editor.metadata_mut().view = self.current_view();
+        let select_new = matches!(
+            &command,
+            Command::Split { .. } | Command::Duplicate { .. } | Command::Append { .. }
+        );
+        let previous: std::collections::BTreeSet<_> = if select_new {
+            self.editor
+                .timeline()
+                .clips()
+                .iter()
+                .map(|c| c.id)
+                .collect()
+        } else {
+            Default::default()
+        };
         match edit_project(&mut self.editor, command) {
             Ok(()) => {
+                self.playing = false;
+                self.scrub = None;
+                self.settling = None;
+                self.stepping = None;
+                self.library_preview = false;
+                if select_new
+                    && let Some(clip) = self
+                        .editor
+                        .timeline()
+                        .clips()
+                        .iter()
+                        .find(|c| !previous.contains(&c.id))
+                {
+                    self.selected = Some(clip.id);
+                    self.playhead = clip.timeline_start;
+                }
+                self.sync_selection();
                 self.update_dirty();
                 self.request_key.clear();
-                self.library_preview = false;
             }
             Err(error) => self.fail(error),
         }
     }
-    fn metadata(&mut self, metadata: ProjectMetadata) {
+    fn metadata(&mut self, mut metadata: ProjectMetadata) {
         if self.busy && !self.exporting {
             return;
         }
+        self.stepping = None;
+        let view = self.current_view();
+        self.editor.metadata_mut().view = view;
+        metadata.view = view;
+        let changed: Vec<_> = self
+            .editor
+            .metadata()
+            .sources
+            .iter()
+            .filter(|s| {
+                self.editor.metadata().interpretations.get(&s.id)
+                    != metadata.interpretations.get(&s.id)
+            })
+            .map(|s| s.id)
+            .collect();
         let document = SavedProject {
             metadata: metadata.clone(),
             ..SavedProject::capture(&self.editor)
@@ -237,8 +401,22 @@ impl EditorApp {
             Err(e) => self.fail(e),
         }
         self.update_dirty();
+        if !changed.is_empty() {
+            for id in changed {
+                self.waveforms.remove(&id);
+                self.thumbnails.remove(&id);
+            }
+            self.start_waveforms();
+        }
     }
     fn add(&mut self, ids: Vec<SourceId>) {
+        let previous: std::collections::BTreeSet<_> = self
+            .editor
+            .timeline()
+            .clips()
+            .iter()
+            .map(|c| c.id)
+            .collect();
         let sections = ids
             .iter()
             .filter_map(|id| self.editor.metadata().sources.iter().find(|s| s.id == *id))
@@ -251,10 +429,135 @@ impl EditorApp {
             })
             .collect();
         self.apply(Command::Append { sections });
+        if let Some(clip) = self
+            .editor
+            .timeline()
+            .clips()
+            .iter()
+            .find(|c| !previous.contains(&c.id))
+            .cloned()
+        {
+            self.selected = Some(clip.id);
+            self.library_preview = false;
+            self.seek(clip.timeline_start);
+        }
     }
     fn seek(&mut self, time: f64) {
+        self.stepping = None;
         self.playhead = time.clamp(0.0, self.preview_duration());
+        if !self.library_preview
+            && let Some((id, source, _)) =
+                preview_at(self.timeline(), self.editor.metadata(), self.playhead)
+        {
+            self.selected = Some(id);
+            self.library_selected = Some(source);
+        }
         self.request_key.clear();
+    }
+    fn step_frame(&mut self, direction: i32) {
+        self.playing = false;
+        self.scrub = None;
+        self.settling = None;
+        if !self.library_preview
+            && direction < 0
+            && let Some((id, source, time)) =
+                preview_at(self.timeline(), self.editor.metadata(), self.playhead)
+            && let (Some(clip), Some(source)) = (
+                self.timeline().clips().iter().find(|c| c.id == id),
+                self.editor
+                    .metadata()
+                    .sources
+                    .iter()
+                    .find(|s| s.id == source),
+            )
+            && time <= clip.source_in + 0.000001
+        {
+            self.seek(self.playhead - source.rate.frame_seconds());
+            return;
+        }
+        if !self.library_preview && self.timeline().source_at(self.playhead).is_none() {
+            self.seek(
+                self.playhead
+                    + f64::from(direction) * self.editor.metadata().output.rate.frame_seconds(),
+            );
+            return;
+        }
+        let count = (self
+            .stepping
+            .as_ref()
+            .filter(|s| s.trim_after.is_none())
+            .map_or(0, |s| s.count)
+            + direction)
+            .clamp(-120, 120);
+        self.stepping = Some(Stepping {
+            generation: None,
+            count,
+            trim_after: None,
+        });
+        self.request_key.clear();
+    }
+    fn play_intent(&self) -> bool {
+        self.scrub
+            .as_ref()
+            .map(|s| s.resume)
+            .or_else(|| self.settling.as_ref().map(|s| s.resume))
+            .unwrap_or(self.playing)
+    }
+    fn toggle_playback(&mut self) {
+        if self.stepping.take().is_some() {
+            self.request_key.clear();
+        }
+        if let Some(scrub) = &mut self.scrub {
+            scrub.resume = !scrub.resume;
+            return;
+        }
+        if let Some(settling) = &mut self.settling {
+            settling.resume = !settling.resume;
+            return;
+        }
+        if self.playhead >= self.preview_duration() {
+            self.seek(0.0);
+        }
+        if self
+            .playback
+            .as_ref()
+            .is_some_and(|p| p.status().error.is_some())
+        {
+            self.request_key.clear();
+        }
+        self.playing = !self.playing && self.preview_duration() > 0.0;
+    }
+    fn begin_scrub(&mut self, owner: u8) {
+        if self.ignore_scrub_until_release || self.scrub.is_some() {
+            return;
+        }
+        let resume = self.play_intent();
+        self.stepping = None;
+        self.request_key.clear();
+        self.settling = None;
+        self.scrub = Some(Scrub { owner, resume });
+        self.playing = false;
+    }
+    fn end_scrub(&mut self, resume: Option<bool>) {
+        if let Some(scrub) = self.scrub.take() {
+            let time = settle_preview_time(
+                self.timeline(),
+                self.editor.metadata(),
+                self.playhead,
+                if self.library_preview {
+                    self.library_selected
+                } else {
+                    None
+                },
+            );
+            self.seek(time);
+            self.settling = Some(Settling {
+                generation: None,
+                resume: resume.unwrap_or(scrub.resume),
+                started: Instant::now(),
+            });
+            self.request_key.clear();
+        }
     }
     fn preview_duration(&self) -> f64 {
         if self.library_preview {
@@ -265,12 +568,32 @@ impl EditorApp {
             self.timeline().duration()
         }
     }
+    fn preview_output(&self) -> OutputSettings {
+        let mut output = self.editor.metadata().output.clone();
+        if self.library_preview
+            && let Some(source) = self
+                .library_selected
+                .and_then(|id| self.editor.metadata().sources.iter().find(|s| s.id == id))
+        {
+            let scale = (16384.0 / source.display_width.max(source.display_height)).min(1.0);
+            output.width = ((source.display_width * scale).round() as u32)
+                .max(2)
+                .next_multiple_of(2);
+            output.height = ((source.display_height * scale).round() as u32)
+                .max(2)
+                .next_multiple_of(2);
+        }
+        output
+    }
     fn selected_clip(&self) -> Option<Clip> {
         self.selected
             .and_then(|id| self.editor.timeline().clips().iter().find(|c| c.id == id))
             .cloned()
     }
     fn split(&mut self) {
+        if self.library_preview {
+            return;
+        }
         if let Some((id, source, time)) = self.timeline().source_at(self.playhead)
             && let Some(rate) = self
                 .editor
@@ -289,6 +612,47 @@ impl EditorApp {
         }
     }
     fn trim(&mut self, start: Option<f64>, end: Option<f64>) {
+        if self.library_preview {
+            return;
+        }
+        if let Some(clip) = self.selected_clip()
+            && let Some(source) = self
+                .editor
+                .metadata()
+                .sources
+                .iter()
+                .find(|s| s.id == clip.source)
+                .cloned()
+        {
+            let retained = clip.source_in + self.playhead - clip.timeline_start;
+            self.apply(Command::Trim {
+                clip: clip.id,
+                start: start.unwrap_or(clip.source_in),
+                end: end.unwrap_or(clip.source_out),
+                source_duration: source.duration,
+                rate: source.rate,
+            });
+            if let Some(updated) = self
+                .editor
+                .timeline()
+                .clips()
+                .iter()
+                .find(|c| c.id == clip.id)
+            {
+                let time = updated.timeline_start
+                    + retained.clamp(
+                        updated.source_in,
+                        (updated.source_out - source.rate.frame_seconds()).max(updated.source_in),
+                    )
+                    - updated.source_in;
+                self.seek(time);
+            }
+        }
+    }
+    fn quick_trim(&mut self, before: bool) {
+        if self.library_preview {
+            return;
+        }
         if let Some(clip) = self.selected_clip()
             && let Some(source) = self
                 .editor
@@ -297,13 +661,39 @@ impl EditorApp {
                 .iter()
                 .find(|s| s.id == clip.source)
         {
-            self.apply(Command::Trim {
-                clip: clip.id,
-                start: start.unwrap_or(clip.source_in),
-                end: end.unwrap_or(clip.source_out),
-                source_duration: source.duration,
-                rate: source.rate,
-            });
+            let frame = source.rate.frame_seconds();
+            let relative = self.playhead - clip.timeline_start;
+            if relative < 0.0 || relative >= clip.duration() {
+                return;
+            }
+            let current = (clip.source_in + (relative / frame).round_ties_even() * frame)
+                .min((clip.source_out - frame).max(clip.source_in));
+            let status = self
+                .playback
+                .as_ref()
+                .map(|p| p.status())
+                .unwrap_or_default();
+            let current = if status.ready && status.generation == self.generation && !self.playing {
+                status.position.clamp(
+                    clip.source_in,
+                    (clip.source_out - 0.000001).max(clip.source_in),
+                )
+            } else {
+                current
+            };
+            if before {
+                self.trim(Some(current), None);
+            } else {
+                self.playing = false;
+                self.scrub = None;
+                self.settling = None;
+                self.seek(clip.timeline_start + current - clip.source_in);
+                self.stepping = Some(Stepping {
+                    generation: None,
+                    count: 1,
+                    trim_after: Some((clip.id, current)),
+                });
+            }
         }
     }
     fn import(&mut self, paths: Vec<PathBuf>) {
@@ -490,7 +880,16 @@ impl EditorApp {
             .sources
             .iter()
             .filter(|s| !self.waveforms.contains_key(&s.id))
-            .cloned()
+            .map(|s| {
+                s.interpreted(
+                    self.editor
+                        .metadata()
+                        .interpretations
+                        .get(&s.id)
+                        .copied()
+                        .unwrap_or_default(),
+                )
+            })
             .collect();
         for source in &sources {
             self.waveforms.insert(source.id, Arc::new(Vec::new()));
@@ -503,18 +902,15 @@ impl EditorApp {
                     break;
                 }
                 if let Ok(peaks) = tools.waveform(&source, &cancel) {
-                    let _ = tx.send(Event::Waveform(source.id, source.path.clone(), peaks));
+                    let _ = tx.send(Event::Waveform(source.clone(), peaks));
                 }
-                if let Ok(image) = tools
-                    .thumbnail(&source, &cancel)
-                    .and_then(|path| image::open(path).map_err(Into::into))
-                {
+                if let Ok(image) = tools.thumbnail(&source, &cancel).and_then(read_thumbnail) {
                     let image = image.to_rgba8();
                     let color = egui::ColorImage::from_rgba_unmultiplied(
                         [image.width() as usize, image.height() as usize],
                         image.as_raw(),
                     );
-                    let _ = tx.send(Event::Thumbnail(source.id, source.path.clone(), color));
+                    let _ = tx.send(Event::Thumbnail(source, color));
                 }
             }
         }));
@@ -529,7 +925,11 @@ impl EditorApp {
                 }
                 Event::Tools(result) => match result {
                     Ok(tools) => {
-                        self.playback = Some(Playback::new(tools.clone(), self.video.handle()));
+                        self.playback = Some(Playback::new(
+                            tools.clone(),
+                            self.video.handle(),
+                            self.software_preview,
+                        ));
                         self.tools = Some(tools);
                         self.message = "Import recordings to begin".into();
                     }
@@ -563,6 +963,13 @@ impl EditorApp {
                         };
                     }
                     self.metadata(metadata);
+                    if self.library_selected.is_none() {
+                        self.library_selected =
+                            self.editor.metadata().sources.first().map(|s| s.id);
+                        self.library_preview = self.library_selected.is_some();
+                        self.playhead = 0.0;
+                        self.request_key.clear();
+                    }
                     self.start_waveforms();
                     self.message = if errors.is_empty() {
                         "Recordings ready · double-click to add a linked section".into()
@@ -598,9 +1005,15 @@ impl EditorApp {
                                 self.playhead = 0.0;
                                 self.request_key.clear();
                                 self.waveforms.clear();
+                                self.thumbnails.clear();
+                                self.scrub = None;
+                                self.settling = None;
+                                self.playing = false;
+                                self.library_selected = None;
+                                self.sync_selection();
                                 self.start_waveforms();
                                 self.message = if legacy {
-                                    "Legacy project opened · Save creates a 1.1 project".into()
+                                    "Legacy project opened · Save a new copy; 1.0.x cannot read 1.1 projects".into()
                                 } else {
                                     "Project opened".into()
                                 };
@@ -622,29 +1035,37 @@ impl EditorApp {
                         Err(e) => self.fail(e),
                     }
                 }
-                Event::Waveform(id, path, peaks) => {
-                    if self
-                        .editor
-                        .metadata()
-                        .sources
-                        .iter()
-                        .any(|s| s.id == id && s.path == path)
-                    {
-                        self.waveforms.insert(id, Arc::new(peaks));
+                Event::Waveform(source, peaks) => {
+                    if self.editor.metadata().sources.iter().any(|s| {
+                        s.id == source.id
+                            && s.interpreted(
+                                self.editor
+                                    .metadata()
+                                    .interpretations
+                                    .get(&s.id)
+                                    .copied()
+                                    .unwrap_or_default(),
+                            ) == source
+                    }) {
+                        self.waveforms.insert(source.id, Arc::new(peaks));
                     }
                 }
-                Event::Thumbnail(id, path, image) => {
-                    if self
-                        .editor
-                        .metadata()
-                        .sources
-                        .iter()
-                        .any(|s| s.id == id && s.path == path)
-                    {
+                Event::Thumbnail(source, image) => {
+                    if self.editor.metadata().sources.iter().any(|s| {
+                        s.id == source.id
+                            && s.interpreted(
+                                self.editor
+                                    .metadata()
+                                    .interpretations
+                                    .get(&s.id)
+                                    .copied()
+                                    .unwrap_or_default(),
+                            ) == source
+                    }) {
                         self.thumbnails.insert(
-                            id,
+                            source.id,
                             ctx.load_texture(
-                                format!("thumbnail-{}", id.0),
+                                format!("thumbnail-{}", source.id.0),
                                 image,
                                 egui::TextureOptions::LINEAR,
                             ),
@@ -695,7 +1116,7 @@ impl EditorApp {
                         .size(17.0)
                         .color(MINT),
                 );
-                ui.label("1.1");
+                ui.label(env!("CARGO_PKG_VERSION"));
                 ui.separator();
                 ui.label(format!(
                     "{}{}",
@@ -717,7 +1138,10 @@ impl EditorApp {
                         self.export();
                     }
                     if ui
-                        .add_enabled(!self.busy, egui::Button::new("Save"))
+                        .add_enabled(
+                            !self.busy && !self.editor.timeline().clips().is_empty(),
+                            egui::Button::new("Save"),
+                        )
                         .clicked()
                     {
                         self.save(false);
@@ -736,21 +1160,8 @@ impl EditorApp {
                     if ui
                         .add_enabled(!self.busy, egui::Button::new("New"))
                         .clicked()
-                        && self.discard()
                     {
-                        self.editor =
-                            Editor::with_metadata(Timeline::default(), ProjectMetadata::default())
-                                .unwrap();
-                        self.saved = SavedProject::capture(&self.editor);
-                        self.update_dirty();
-                        self.path = None;
-                        self.playhead = 0.0;
-                        self.selected = None;
-                        self.library_preview = false;
-                        self.request_key.clear();
-                        self.waveforms.clear();
-                        self.recovery.clear();
-                        self.recovery_saved = None;
+                        self.new_project();
                     }
                     if ui.button("Output").clicked() {
                         self.settings = !self.settings;
@@ -775,28 +1186,57 @@ impl EditorApp {
         });
     }
     fn library(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::left("recordings").resizable(true).default_width(280.0).width_range(220.0..=460.0).show(ctx,|ui| {
+        egui::SidePanel::left("recordings").resizable(true).default_width(350.0).width_range(300.0..=460.0).show(ctx,|ui| {
+            if self.busy && !self.exporting{ui.disable();}
             ui.horizontal(|ui| {
                 ui.heading("Recordings");ui.label(self.editor.metadata().sources.len().to_string());
                 if ui.add_enabled(!self.busy && self.tools.is_some(),egui::Button::new("Cache")).on_hover_text("Clear generated thumbnails and waveforms").clicked() && let Some(tools)=self.tools.clone(){
-                    self.busy=true;let tx=self.tx.clone();self.jobs.push(std::thread::spawn(move ||{let _=tx.send(Event::Cache(tools.clear_cache().map_err(|e|e.to_string())));}));
+                    self.busy=true;let protected=self.editor.metadata().sources.iter().map(|s|PathBuf::from(&s.path)).collect::<Vec<_>>();let tx=self.tx.clone();self.jobs.push(std::thread::spawn(move ||{let _=tx.send(Event::Cache(tools.clear_cache(&protected).map_err(|e|e.to_string())));}));
                 }
             });
             if ui.add_enabled(!self.busy && self.tools.is_some(),egui::Button::new("+ Import recordings").min_size(Vec2::new(ui.available_width(),32.0))).clicked() && let Ok(paths)=platform_windows::choose_files(self.owner,false,false) { self.import(paths); }
-            ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Search recordings").desired_width(f32::INFINITY));
+            ui.horizontal(|ui|{
+                let response=ui.add(egui::TextEdit::singleline(&mut self.search).id(egui::Id::new("recording-search-input")).hint_text("Search recordings").desired_width((ui.available_width()-45.0).max(1.0)));
+                self.controls.insert("recording-search",response.rect);
+                if response.has_focus() && ui.input_mut(|i|i.consume_key(egui::Modifiers::NONE,egui::Key::Escape)){self.search.clear();response.surrender_focus();}
+                if ui.add_enabled(!self.search.is_empty(),egui::Button::new("×")).on_hover_text("Clear search").clicked(){self.search.clear();}
+            });
             let sources=self.editor.metadata().sources.clone();
-            if ui.add_enabled(!sources.is_empty(),egui::Button::new("Add all to timeline")).on_hover_text("Adds the complete library as one undoable edit").clicked() { self.add(sources.iter().map(|s|s.id).collect()); }
-            ui.separator();let search=self.search.to_lowercase();
+            let search=self.search.to_lowercase();
+            let visible:Vec<_>=sources.iter().filter(|s|s.name().to_lowercase().contains(&search)).collect();
+            ui.horizontal(|ui|{
+                let response=ui.add_enabled(!self.busy && visible.iter().any(|s|Some(s.id)==self.library_selected),egui::Button::new("Add to timeline"));self.controls.insert("add-selected",response.rect);if response.clicked() && let Some(id)=self.library_selected{self.add(vec![id]);}
+                if sources.len()>1{let response=ui.add_enabled(!self.busy,egui::Button::new("Add all")).on_hover_text("Adds the complete library, including hidden search results, as one undoable edit");self.controls.insert("add-all",response.rect);if response.clicked(){self.add(sources.iter().map(|s|s.id).collect());}}
+            });
+            if !search.is_empty(){ui.label(format!("{} of {} recordings",visible.len(),sources.len()));}
+            ui.separator();
             egui::ScrollArea::vertical().show(ui,|ui| {
                 if sources.is_empty() { ui.add_space(32.0);ui.label("Drop recordings here or import files. Your original recordings stay untouched."); }
-                for source in sources.iter().filter(|s|s.name().to_lowercase().contains(&search)) {
-                    let label=format!("{}\n{} · {} × {} · {}",source.name(),time(source.duration),source.width,source.height,if source.hdr(){"HDR"}else{"SDR"});
-                    let button=if let Some(texture)=self.thumbnails.get(&source.id) { egui::Button::image_and_text(egui::Image::new((texture.id(),Vec2::new(80.0,45.0))),label) }else{egui::Button::new(label)};
-                    let response=ui.add(button.selected(self.library_selected==Some(source.id)).min_size(Vec2::new(ui.available_width(),64.0)).sense(Sense::click_and_drag()));
+                else if visible.is_empty(){ui.label("No recordings match your search.");}
+                for source in visible {
+                    let details=format!("{} · {} × {} · {}",time(source.duration),source.width,source.height,if source.hdr(){"HDR"}else{"SDR"});
+                    let (rect,response)=ui.push_id(("recording",source.id.0),|ui|ui.allocate_exact_size(Vec2::new(ui.available_width(),64.0),Sense::click_and_drag())).inner;
+                    let selected=self.library_selected==Some(source.id);
+                    response.widget_info(||egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel,ui.is_enabled(),selected,format!("{}, {details}",source.name())));
+                    ui.painter().rect_filled(rect,4.0,if selected{Color32::from_rgb(35,82,72)}else if response.hovered(){Color32::from_rgb(55,60,65)}else{Color32::from_rgb(39,43,48)});
+                    let thumbnail=Rect::from_min_size(rect.min+Vec2::new(8.0,9.0),Vec2::new(80.0,45.0));
+                    if let Some(texture)=self.thumbnails.get(&source.id){ui.painter().image(texture.id(),thumbnail,Rect::from_min_max(Pos2::ZERO,Pos2::new(1.0,1.0)),Color32::WHITE);}
+                    let text=Rect::from_min_max(Pos2::new(thumbnail.right()+10.0,rect.top()+9.0),rect.max-Vec2::splat(8.0));
+                    let painter=ui.painter().with_clip_rect(text);
+                    painter.text(text.min,Align2::LEFT_TOP,source.name(),FontId::proportional(13.0),Color32::WHITE);
+                    painter.text(text.min+Vec2::new(0.0,24.0),Align2::LEFT_TOP,&details,FontId::proportional(11.0),Color32::LIGHT_GRAY);
+                    let response=response.on_hover_text(format!("{}\n{details}",source.path));
                     response.dnd_set_drag_payload(source.id);
-                    if response.clicked() { self.library_selected=Some(source.id);self.library_preview=true;self.playing=false;self.playhead=0.0;self.request_key.clear(); }
+                    if response.clicked() { self.library_selected=Some(source.id);self.library_preview=true;self.playing=false;self.seek(0.0); }
                     if response.double_clicked() { self.add(vec![source.id]); }
-                    response.context_menu(|ui| { if ui.button("Add to timeline").clicked() { self.add(vec![source.id]);ui.close(); } });
+                    response.context_menu(|ui| {
+                        if ui.button("Add to timeline").clicked() { self.add(vec![source.id]);ui.close(); }
+                        if ui.button("Remove from project").on_hover_text("Removes this recording and its timeline sections; the original file stays unchanged").clicked(){
+                            self.editor.metadata_mut().view=self.current_view();
+                            match remove_source(&mut self.editor,source.id){Ok(())=>{self.playing=false;self.stepping=None;self.selected=None;self.library_selected=None;self.library_preview=false;self.playhead=0.0;self.sync_selection();self.update_dirty();self.request_key.clear();},Err(error)=>self.fail(error)}
+                            ui.close();
+                        }
+                    });
                 }
             });
         });
@@ -828,11 +1268,21 @@ impl EditorApp {
                         self.history(true);
                         self.request_key.clear();
                     }
-                    if ui.button("Split [S]").clicked() {
+                    if ui
+                        .add_enabled(
+                            !self.library_preview
+                                && self.timeline().source_at(self.playhead).is_some(),
+                            egui::Button::new("Split [S]"),
+                        )
+                        .clicked()
+                    {
                         self.split();
                     }
                     if ui
-                        .add_enabled(self.selected.is_some(), egui::Button::new("Delete"))
+                        .add_enabled(
+                            self.selected.is_some() && !self.library_preview,
+                            egui::Button::new("Delete"),
+                        )
                         .clicked()
                         && let Some(clip) = self.selected
                     {
@@ -1004,23 +1454,47 @@ impl EditorApp {
                                 ui.id().with(("clip", clip.id.0)),
                                 Sense::click_and_drag(),
                             );
+                            interaction.widget_info(|| {
+                                egui::WidgetInfo::selected(
+                                    egui::WidgetType::SelectableLabel,
+                                    ui.is_enabled(),
+                                    self.selected == Some(clip.id),
+                                    format!(
+                                        "{}, linked video and audio, {} on timeline, in {}, out {}",
+                                        source
+                                            .as_ref()
+                                            .map_or_else(|| "Recording".into(), |s| s.name()),
+                                        time(clip.timeline_start),
+                                        time(clip.source_in),
+                                        time(clip.source_out)
+                                    ),
+                                )
+                            });
                             over_clip |= interaction.hovered();
                             if interaction.clicked() {
                                 self.selected = Some(clip.id);
                                 self.library_preview = false;
                                 self.playing = false;
-                                self.seek(clip.timeline_start);
+                                let position = interaction.interact_pointer_pos().map_or(
+                                    clip.timeline_start,
+                                    |p| {
+                                        clip.timeline_start + f64::from((p.x - video.left()) / zoom)
+                                    },
+                                );
+                                self.seek(position.min(clip.timeline_end()));
                             }
                             if interaction.drag_started() {
+                                self.stepping = None;
                                 self.selected = Some(clip.id);
                                 self.library_preview = false;
                                 self.playing = false;
                                 let px = ui
                                     .input(|i| i.pointer.press_origin())
                                     .map_or(linked.center().x, |p| p.x);
-                                let mode = if px - video.left() < 8.0 {
+                                let edge = 8.0_f32.min(video.width() / 3.0);
+                                let mode = if px - video.left() < edge {
                                     1
-                                } else if video.right() - px < 8.0 {
+                                } else if video.right() - px < edge {
                                     2
                                 } else {
                                     0
@@ -1033,6 +1507,9 @@ impl EditorApp {
                                     source_in: clip.source_in,
                                     source_out: clip.source_out,
                                     pointer_x: px,
+                                    playhead: self.playhead,
+                                    preview_source: clip.source_in + self.playhead
+                                        - clip.timeline_start,
                                 });
                             }
                             if interaction.dragged()
@@ -1048,19 +1525,21 @@ impl EditorApp {
                                 let frame = source.rate.frame_seconds();
                                 let mut preview = Editor::new(drag.base.clone()).unwrap();
                                 let command = match drag.mode {
-                                    1 => Command::Trim {
+                                    1 => Command::PreviewTrim {
                                         clip: drag.clip,
-                                        start: ((drag.source_in + delta) / frame).round_ties_even()
-                                            * frame,
+                                        start: (drag.source_in
+                                            + (delta / frame).round_ties_even() * frame)
+                                            .clamp(0.0, drag.source_out - frame),
                                         end: drag.source_out,
                                         source_duration: source.duration,
                                         rate: source.rate,
                                     },
-                                    2 => Command::Trim {
+                                    2 => Command::PreviewTrim {
                                         clip: drag.clip,
                                         start: drag.source_in,
-                                        end: ((drag.source_out + delta) / frame).round_ties_even()
-                                            * frame,
+                                        end: (drag.source_out
+                                            + (delta / frame).round_ties_even() * frame)
+                                            .clamp(drag.source_in + frame, source.duration),
                                         source_duration: source.duration,
                                         rate: source.rate,
                                     },
@@ -1072,19 +1551,82 @@ impl EditorApp {
                                     },
                                 };
                                 if preview.apply(command).is_ok() {
+                                    let retained = preview
+                                        .timeline()
+                                        .clips()
+                                        .iter()
+                                        .find(|c| c.id == drag.clip)
+                                        .unwrap();
+                                    self.playhead = retained.timeline_start
+                                        + drag.preview_source.clamp(
+                                            retained.source_in,
+                                            (retained.source_out - frame).max(retained.source_in),
+                                        )
+                                        - retained.source_in;
                                     self.preview_timeline = Some(preview.timeline().clone());
                                     self.request_key.clear();
                                 }
                             }
                             if interaction.drag_stopped() {
-                                if let Some(preview) = self.preview_timeline.take() {
-                                    self.apply(Command::Replace {
-                                        clips: preview.clips().to_vec(),
-                                    });
+                                if let (Some(preview), Some(drag), Some(source)) = (
+                                    self.preview_timeline.take(),
+                                    self.drag.take(),
+                                    source.as_ref(),
+                                ) && preview != drag.base
+                                {
+                                    let retained =
+                                        preview.clips().iter().find(|c| c.id == drag.clip).unwrap();
+                                    let command = if drag.mode == 0 {
+                                        Command::Replace {
+                                            clips: preview.clips().to_vec(),
+                                        }
+                                    } else {
+                                        Command::Trim {
+                                            clip: drag.clip,
+                                            start: retained.source_in,
+                                            end: retained.source_out,
+                                            source_duration: source.duration,
+                                            rate: source.rate,
+                                        }
+                                    };
+                                    self.apply(command);
+                                    if let Some(retained) = self
+                                        .editor
+                                        .timeline()
+                                        .clips()
+                                        .iter()
+                                        .find(|c| c.id == drag.clip)
+                                    {
+                                        self.playhead = retained.timeline_start
+                                            + drag.preview_source.clamp(
+                                                retained.source_in,
+                                                (retained.source_out - source.rate.frame_seconds())
+                                                    .max(retained.source_in),
+                                            )
+                                            - retained.source_in;
+                                        self.request_key.clear();
+                                    }
                                 }
                                 self.drag = None;
                             }
-                            interaction.context_menu(|ui| {
+                            if interaction.secondary_clicked()
+                                && (self.selected != Some(clip.id) || self.library_preview)
+                            {
+                                self.library_preview = false;
+                                self.playing = false;
+                                self.seek(clip.timeline_start);
+                            }
+                            let mut menu = egui::Popup::context_menu(&interaction);
+                            if self.selected == Some(clip.id)
+                                && !self.library_preview
+                                && !ctx.wants_keyboard_input()
+                                && ctx.input(|i| i.modifiers.shift && i.key_pressed(egui::Key::F10))
+                            {
+                                menu = menu
+                                    .open_memory(Some(egui::SetOpenCommand::Bool(true)))
+                                    .at_position(interaction.rect.center());
+                            }
+                            menu.show(|ui| {
                                 self.selected = Some(clip.id);
                                 if ui.button("Duplicate").clicked() {
                                     if let Some(source) = &source {
@@ -1116,14 +1658,33 @@ impl EditorApp {
                             });
                         }
                         if !over_clip
-                            && (response.clicked() || response.dragged())
+                            && !self.ignore_scrub_until_release
+                            && (response.clicked()
+                                || response.dragged()
+                                || response.is_pointer_button_down_on())
                             && self.drag.is_none()
                             && let Some(p) = response.interact_pointer_pos()
                         {
                             self.library_preview = false;
-                            self.playing = false;
-                            self.seek(f64::from((p.x - origin) / zoom).max(0.0));
+                            self.begin_scrub(2);
+                            let target = f64::from((p.x - origin) / zoom)
+                                .clamp(0.0, self.timeline().duration());
+                            if target != self.playhead {
+                                self.seek(target);
+                            }
                         }
+                        if self.scrub.as_ref().is_some_and(|s| s.owner == 2)
+                            && !ui.input(|i| i.pointer.primary_down())
+                        {
+                            self.end_scrub(None);
+                        }
+                        self.controls.insert(
+                            "ruler",
+                            Rect::from_min_size(
+                                Pos2::new(origin, rect.top()),
+                                Vec2::new(rect.width() - 65.0, 24.0),
+                            ),
+                        );
                         let x = origin + self.playhead as f32 * zoom;
                         painter.line_segment(
                             [Pos2::new(x, rect.top()), Pos2::new(x, rect.bottom())],
@@ -1142,7 +1703,10 @@ impl EditorApp {
             });
     }
     fn inspector(&mut self, ctx: &egui::Context) {
-        if !self.settings && self.selected_clip().is_none() {
+        if !self.settings
+            && self.selected_clip().is_none()
+            && !(self.library_preview && self.library_selected.is_some())
+        {
             return;
         }
         egui::SidePanel::right("inspector")
@@ -1154,10 +1718,22 @@ impl EditorApp {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let mut metadata = self.editor.metadata().clone();
                     let before = metadata.clone();
+                    let recording=if self.library_preview{self.library_selected}else{self.selected_clip().map(|c|c.source)};
+                    if let Some(source)=recording.and_then(|id|metadata.sources.iter().find(|s|s.id==id)){
+                        ui.heading("Recording color");ui.small(format!("{} · {} · {}",source.transfer,source.primaries,source.matrix));
+                        if source.transfer=="unknown" || source.primaries=="unknown" || source.matrix=="unknown"{ui.label("Unspecified metadata uses SDR Rec.709 for YUV or sRGB for RGB. Choose an interpretation if the recording was made differently.");}
+                        if source.hdr() && source.primaries!="bt2020"{ui.label("HDR transfer and color primaries disagree. Confirm the intended interpretation.");}
+                        let mut interpretation=metadata.interpretations.get(&source.id).copied().unwrap_or_default();
+                        egui::ComboBox::from_label("Interpretation").selected_text(format!("{interpretation:?}")).show_ui(ui,|ui|{for (value,label) in [(SourceInterpretation::Auto,"From recording"),(SourceInterpretation::Sdr709,"SDR Rec.709"),(SourceInterpretation::Srgb,"SDR sRGB"),(SourceInterpretation::Pq2020,"HDR PQ / Rec.2020"),(SourceInterpretation::Hlg2020,"HDR HLG / Rec.2020")]{ui.selectable_value(&mut interpretation,value,label);}});
+                        if interpretation!=SourceInterpretation::Auto || metadata.interpretations.contains_key(&source.id){metadata.interpretations.insert(source.id,interpretation);}ui.separator();
+                    }
                     if self.settings {
                         ui.heading("Output");
                         ui.label("Choose the format for your finished video.");
-                        if metadata.output.profile==ColorProfile::Hdr10{ui.checkbox(&mut self.hdr_preview,"Use HDR display preview").on_hover_text("Requires Windows HDR and a compatible display. Leave off for the SDR reference preview.");}else{self.hdr_preview=false;}
+                        if metadata.output.profile==ColorProfile::Hdr10{
+                            ui.checkbox(&mut self.hdr_preview,"Use HDR when the display supports it").on_hover_text("Automatically uses tone-mapped SDR when Windows HDR is inactive or the preview uses software rendering.");
+                            if let Some(display)=self.playback.as_ref().and_then(|p|p.status().display){ui.small(if display.hdr_active{"Windows HDR is active on the preview display"}else if display.state_known{"Windows HDR is inactive on the preview display"}else{"Display HDR state unavailable · SDR preview"});}
+                        }
                         ui.horizontal(|ui| {
                             ui.label("Size");
                             ui.add(
@@ -1232,7 +1808,7 @@ impl EditorApp {
                         ui.small("Lower values preserve more detail and create larger files.");
                         ui.separator();
                     }
-                    if let Some(clip) = self.selected_clip() {
+                    if !self.library_preview && let Some(clip) = self.selected_clip() {
                         ui.heading("Selected section");
                         ui.label(format!("{} on timeline", time(clip.timeline_start)));
                         let mut start = clip.source_in;
@@ -1243,6 +1819,7 @@ impl EditorApp {
                                 .add(
                                     egui::DragValue::new(&mut start)
                                         .speed(0.01)
+                                        .custom_parser(editor_core::parse_timecode)
                                         .fixed_decimals(3)
                                         .suffix(" s"),
                                 )
@@ -1257,6 +1834,7 @@ impl EditorApp {
                                 .add(
                                     egui::DragValue::new(&mut end)
                                         .speed(0.01)
+                                        .custom_parser(editor_core::parse_timecode)
                                         .fixed_decimals(3)
                                         .suffix(" s"),
                                 )
@@ -1266,17 +1844,11 @@ impl EditorApp {
                             }
                         });
                         ui.horizontal(|ui| {
-                            if ui.button("Set in [Q]").clicked() {
-                                self.trim(
-                                    Some(clip.source_in + self.playhead - clip.timeline_start),
-                                    None,
-                                );
+                            if ui.button("Trim before [Q]").clicked() {
+                                self.quick_trim(true);
                             }
-                            if ui.button("Set out [W]").clicked() {
-                                self.trim(
-                                    None,
-                                    Some(clip.source_in + self.playhead - clip.timeline_start),
-                                );
+                            if ui.button("Trim after [W]").clicked() {
+                                self.quick_trim(false);
                             }
                         });
                         if ui.button("Reset trim").clicked()
@@ -1384,20 +1956,34 @@ impl EditorApp {
                         .unwrap_or_default();
                     ui.small(if status.software {
                         "SDR software preview"
-                    } else if self.hdr_preview && status.gamma.as_deref() == Some("pq") {
-                        "HDR display preview"
+                    } else if self.hdr_preview
+                        && status.display.as_ref().is_some_and(|d| d.hdr_active)
+                        && status.gamma.as_deref() == Some("pq")
+                    {
+                        "Windows HDR preview"
                     } else if self.hdr_preview {
-                        "SDR display fallback"
+                        "SDR tone-mapped preview"
                     } else {
                         "SDR reference"
                     });
                 });
             });
+            let software=ui.checkbox(&mut self.software_preview,"Software SDR preview").on_hover_text("Uses CPU-rendered, tone-mapped video. Try this if native preview or capture compatibility causes problems.");
+            self.controls.insert("software-preview",software.rect);
+            if software.changed() && let Some(tools)=self.tools.clone(){
+                self.stepping=None;drop(self.playback.take());self.playback=Some(Playback::new(tools,self.video.handle(),self.software_preview));self.request_key.clear();
+            }
             let available = Vec2::new(
                 ui.available_width(),
-                (ui.available_height() - 100.0).max(100.0),
+                (ui.available_height() - 140.0).max(1.0),
             );
-            let (rect, _) = ui.allocate_exact_size(available, Sense::hover());
+            let (viewport, _) = ui.allocate_exact_size(available, Sense::hover());
+            let output = self.preview_output();
+            let aspect = output.width as f32 / output.height as f32;
+            let width = available.x.min(available.y * aspect);
+            let rect = Rect::from_center_size(viewport.center(), Vec2::new(width, width / aspect));
+            self.controls.insert("preview", rect);
+            self.controls.insert("preview-viewport", viewport);
             ui.painter().rect_filled(rect, 4.0, Color32::BLACK);
             let status = self
                 .playback
@@ -1407,12 +1993,13 @@ impl EditorApp {
             let has_source = if self.library_preview {
                 self.library_selected.is_some()
             } else {
-                self.timeline().source_at(self.playhead).is_some()
+                preview_at(self.timeline(), self.editor.metadata(), self.playhead).is_some()
             };
             let visible = has_source
                 && status.ready
                 && status.generation == self.generation
                 && status.error.is_none()
+                && !self.request_key.is_empty()
                 && self.startup_recovery.is_none()
                 && !ctx.is_popup_open();
             let visible = visible && self.relink.is_none();
@@ -1475,38 +2062,57 @@ impl EditorApp {
             }
             let duration = self.preview_duration();
             let mut position = self.playhead;
+            let slider_width = ui.spacing().slider_width;
             ui.spacing_mut().slider_width = ui.available_width() - 16.0;
-            if ui
-                .add(
-                    egui::Slider::new(&mut position, 0.0..=duration.max(0.001))
-                        .show_value(false)
-                        .trailing_fill(true),
-                )
-                .changed()
+            let scrubber = ui.add(
+                egui::Slider::new(&mut position, 0.0..=duration.max(0.001))
+                    .show_value(false)
+                    .trailing_fill(true),
+            );
+            ui.spacing_mut().slider_width = slider_width;
+            self.controls.insert("scrubber", scrubber.rect);
+            if !self.ignore_scrub_until_release
+                && (scrubber.drag_started()
+                    || scrubber.is_pointer_button_down_on()
+                    || scrubber.changed())
             {
-                self.playing = false;
-                self.seek(position);
+                self.begin_scrub(1);
+                if position != self.playhead {
+                    self.seek(position);
+                }
+            }
+            if self.scrub.as_ref().is_some_and(|s| s.owner == 1)
+                && !ui.input(|i| i.pointer.primary_down())
+            {
+                self.end_scrub(None);
             }
             ui.horizontal(|ui| {
                 if ui
-                    .button(if self.playing { "Pause" } else { "Play" })
+                    .button(if self.play_intent() { "Pause" } else { "Play" })
                     .clicked()
                 {
-                    if self.playhead >= duration {
-                        self.seek(0.0);
-                    }
-                    self.playing = !self.playing;
+                    self.toggle_playback();
                 }
-                let frame = self.editor.metadata().output.rate.frame_seconds();
-                if ui.button("◀ Frame").clicked() {
-                    self.playing = false;
-                    self.seek(self.playhead - frame);
+                let back = ui.button("◀ Frame");
+                self.controls.insert("frame-back", back.rect);
+                if back.clicked() {
+                    self.step_frame(-1);
                 }
-                if ui.button("Frame ▶").clicked() {
-                    self.playing = false;
-                    self.seek(self.playhead + frame);
+                let next = ui.button("Frame ▶");
+                self.controls.insert("frame-forward", next.rect);
+                if next.clicked() {
+                    self.step_frame(1);
                 }
-                ui.monospace(format!("{} / {}", time(self.playhead), time(duration)));
+            });
+            ui.horizontal(|ui| {
+                let response = ui.label(
+                    egui::RichText::new(format!("{} / {}", time(self.playhead), time(duration)))
+                        .monospace()
+                        .size(11.0),
+                );
+                self.controls.insert("position-label", response.rect);
+            });
+            ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.add(
                         egui::Slider::new(&mut self.volume, 0.0..=100.0)
@@ -1525,9 +2131,89 @@ impl EditorApp {
             .as_ref()
             .map(|p| p.status())
             .unwrap_or_default();
-        if let Some(error) = status.error {
+        if let Some(error) = &status.error {
+            self.stepping = None;
             self.playing = false;
-            self.message = error;
+            self.message = error.clone();
+        }
+        if self
+            .stepping
+            .as_ref()
+            .is_some_and(|s| s.generation == Some(status.generation) && status.ready)
+        {
+            let stepping = self.stepping.take().unwrap();
+            if let Some((id, current)) = stepping.trim_after {
+                if let Some(clip) = self
+                    .editor
+                    .timeline()
+                    .clips()
+                    .iter()
+                    .find(|c| c.id == id)
+                    .cloned()
+                {
+                    self.selected = Some(id);
+                    self.playhead = clip.timeline_start + current - clip.source_in;
+                    let end = if status.ended {
+                        clip.source_out
+                    } else {
+                        status.position.min(clip.source_out)
+                    };
+                    if end > current + 0.000001 && end < clip.source_out - 0.000001 {
+                        self.trim(None, Some(end));
+                    } else {
+                        self.seek(self.playhead);
+                    }
+                }
+            } else {
+                let outside_retained = !self.library_preview
+                    && preview_at(self.timeline(), self.editor.metadata(), self.playhead)
+                        .and_then(|(id, _, _)| self.timeline().clips().iter().find(|c| c.id == id))
+                        .is_some_and(|c| {
+                            status.position < c.source_in || status.position >= c.source_out
+                        });
+                let position = if self.library_preview {
+                    status.position
+                } else {
+                    preview_at(self.timeline(), self.editor.metadata(), self.playhead)
+                        .and_then(|(id, _, _)| self.timeline().clips().iter().find(|c| c.id == id))
+                        .map_or(self.playhead, |clip| {
+                            if status.ended {
+                                clip.timeline_end()
+                            } else {
+                                clip.timeline_start
+                                    + (status.position - clip.source_in).clamp(0.0, clip.duration())
+                            }
+                        })
+                };
+                if outside_retained
+                    || !self.library_preview
+                        && preview_at(self.timeline(), self.editor.metadata(), position)
+                            .map(|(id, _, _)| id)
+                            != preview_at(self.timeline(), self.editor.metadata(), self.playhead)
+                                .map(|(id, _, _)| id)
+                {
+                    self.seek(position);
+                } else {
+                    self.playhead = position.clamp(0.0, self.preview_duration());
+                }
+            }
+        }
+        if self
+            .settling
+            .as_ref()
+            .is_some_and(|s| s.generation == Some(status.generation) && status.ready)
+        {
+            let settling = self.settling.take().unwrap();
+            self.playing = settling.resume && self.playhead < self.preview_duration();
+        }
+        if self
+            .settling
+            .as_ref()
+            .is_some_and(|s| s.started.elapsed() > Duration::from_secs(20))
+        {
+            self.settling = None;
+            self.playing = false;
+            self.message = "Preview seek timed out · scrub again to retry".into();
         }
         let gap = !self.library_preview && self.timeline().source_at(self.playhead).is_none();
         if self.playing && (gap || status.ready && status.generation == self.generation) {
@@ -1556,28 +2242,80 @@ impl EditorApp {
         }
         let mapped = if self.library_preview {
             self.library_selected
-                .map(|id| (ClipId(0), id, self.playhead))
+                .and_then(|id| self.editor.metadata().sources.iter().find(|s| s.id == id))
+                .map(|s| {
+                    (
+                        ClipId(0),
+                        s.id,
+                        self.playhead
+                            .min((s.duration - s.rate.frame_seconds()).max(0.0)),
+                    )
+                })
         } else {
-            self.timeline().source_at(self.playhead)
+            preview_at(self.timeline(), self.editor.metadata(), self.playhead)
         };
         let source = mapped
             .and_then(|(_, id, _)| self.editor.metadata().sources.iter().find(|s| s.id == id))
-            .cloned();
+            .map(|s| {
+                s.interpreted(
+                    self.editor
+                        .metadata()
+                        .interpretations
+                        .get(&s.id)
+                        .copied()
+                        .unwrap_or_default(),
+                )
+            });
+        if self.playing
+            && !self.library_preview
+            && let Some((id, source, _)) = mapped
+        {
+            self.selected = Some(id);
+            self.library_selected = Some(source);
+        }
         let adjustment = mapped
             .and_then(|(id, _, _)| self.editor.metadata().adjustments.get(&id))
             .cloned()
             .unwrap_or_default();
+        let hdr_preview = self.hdr_preview
+            && self.editor.metadata().output.profile == ColorProfile::Hdr10
+            && !status.software
+            && status.display.as_ref().is_some_and(|d| d.hdr_active);
         let key = format!(
             "{:?}|{:?}|{:?}|{}|{}",
             mapped.map(|(id, source, _)| (id, source)),
             adjustment,
             self.editor.metadata().output,
             self.library_preview,
-            self.hdr_preview
+            hdr_preview
         );
         if self.request_key != key {
+            if self
+                .stepping
+                .as_ref()
+                .is_some_and(|s| s.generation.is_some())
+            {
+                self.stepping = None;
+            }
             self.generation += 1;
             self.request_key = key;
+        }
+        if let Some(settling) = &mut self.settling {
+            settling.generation.get_or_insert(self.generation);
+        }
+        if let Some(stepping) = &mut self.stepping {
+            stepping.generation.get_or_insert(self.generation);
+        }
+        if status.error.is_some()
+            && status.generation != self.generation
+            && let Some(tools) = self.tools.clone()
+        {
+            drop(self.playback.take());
+            self.playback = Some(Playback::new(
+                tools,
+                self.video.handle(),
+                self.software_preview,
+            ));
         }
         if let Some(playback) = &self.playback {
             let end = mapped
@@ -1594,7 +2332,7 @@ impl EditorApp {
                 generation: self.generation,
                 source,
                 adjustment,
-                output: self.editor.metadata().output.clone(),
+                output: self.preview_output(),
                 position: mapped.map_or(0.0, |(_, _, time)| time),
                 start: mapped
                     .and_then(|(id, _, _)| {
@@ -1608,229 +2346,57 @@ impl EditorApp {
                 end,
                 playing: self.playing,
                 volume: self.volume,
-                hdr_preview: self.hdr_preview,
+                hdr_preview,
+                steps: self.stepping.as_ref().map_or(0, |s| s.count),
             });
         }
     }
-    fn verify(&mut self, ctx: &egui::Context) {
-        let Some(mut test) = self.verification.take() else {
-            return;
-        };
-        let result = (|| -> media_engine::Result<()> {
-            if test.started.elapsed() > Duration::from_secs(45) {
-                return Err(format!(
-                    "Desktop verification timed out at phase {}: {}",
-                    test.phase, self.message
-                )
-                .into());
-            }
-            if let Some(error) = self.playback.as_ref().and_then(|p| p.status().error) {
-                return Err(error.into());
-            }
-            match test.phase {
-                0 if self.tools.is_some() => {
-                    self.import(vec![test.source.clone()]);
-                    test.phase = 1;
-                }
-                1 if !self.busy => {
-                    let id = self
-                        .editor
-                        .metadata()
-                        .sources
-                        .first()
-                        .ok_or("Fixture failed to import")?
-                        .id;
-                    self.add(vec![id]);
-                    self.selected = self.editor.timeline().clips().first().map(|c| c.id);
-                    self.seek(0.5);
-                    test.checks
-                        .push("Recording import and linked append".into());
-                    test.phase = 2;
-                }
-                2 if self.playback.as_ref().is_some_and(|p| {
-                    let status = p.status();
-                    status.ready
-                        && status.generation == self.generation
-                        && (!status.software || status.frame.is_some())
-                }) =>
-                {
-                    test.checks
-                        .push("Embedded D3D11 source load and shared preview filter".into());
-                    test.key(egui::Key::S, false);
-                    test.phase = 3;
-                }
-                3 => {
-                    if self.editor.timeline().clips().len() != 2 {
-                        return Err(
-                            "Split keyboard input did not create two linked sections".into()
-                        );
-                    }
-                    test.checks
-                        .push("Split through actual egui keyboard input".into());
-                    test.key(egui::Key::Z, true);
-                    test.phase = 4;
-                }
-                4 => {
-                    if self.editor.timeline().clips().len() != 1 {
-                        return Err("Undo keyboard input failed".into());
-                    }
-                    test.key(egui::Key::Y, true);
-                    test.phase = 5;
-                }
-                5 => {
-                    if self.editor.timeline().clips().len() != 2 {
-                        return Err("Redo keyboard input failed".into());
-                    }
-                    test.checks
-                        .push("Undo and redo through actual keyboard input".into());
-                    let document = SavedProject::capture(&self.editor);
-                    let path = test.directory.join("roundtrip.sveproject");
-                    save_document(&path, &document)?;
-                    let loaded = self
-                        .tools
-                        .as_ref()
-                        .unwrap()
-                        .load_project(&path, &uncancelled())?;
-                    if document != loaded {
-                        return Err("Saved project changed on reload".into());
-                    }
-                    test.checks
-                        .push("Atomic save, media re-probe and exact project roundtrip".into());
-                    self.settings = true;
-                    test.phase = 8;
-                }
-                8..=12 => {
-                    let target = [0.2, 1.7, 0.8, 2.1, 1.25][(test.phase - 8) as usize];
-                    self.seek(target);
-                    test.phase += 1;
-                }
-                13 if self.playback.as_ref().is_some_and(|p| {
-                    let status = p.status();
-                    status.ready
-                        && status.generation == self.generation
-                        && (status.position - 1.25).abs() < 0.06
-                        && (!status.software || status.frame.is_some())
-                }) =>
-                {
-                    let status = self.playback.as_ref().unwrap().status();
-                    if status.software {
-                        let frame = status.frame.unwrap();
-                        if !frame.pixels.iter().any(|b| *b > 32) {
-                            return Err("Software preview produced no visible frame".into());
-                        }
-                        if matches!(status.gamma.as_deref(), Some("pq" | "hlg")) {
-                            return Err(
-                                "Software fallback retained an HDR transfer function".into()
-                            );
-                        }
-                        test.checks.push(
-                            "HDR-capable import rendered into a nonblack SDR software frame".into(),
-                        );
-                    }
-                    test.checks
-                        .push("Latest rapid seek wins and settles within one frame".into());
-                    test.key(egui::Key::Space, false);
-                    test.phase = 14;
-                }
-                14 if self.playhead > 1.4 => {
-                    test.key(egui::Key::Space, false);
-                    test.phase = 15;
-                }
-                15 if !self.playing => {
-                    test.checks.push(
-                        "Playback uses the media clock and pauses through keyboard input".into(),
-                    );
-                    test.expected = Some(self.editor.timeline().clips().to_vec());
-                    let anchor = self
-                        .controls
-                        .get("first-clip")
-                        .ok_or("Missing timeline interaction rectangle")?
-                        .center();
-                    test.anchor = Some(anchor);
-                    test.pointer(anchor, Some(true));
-                    test.phase = 16;
-                }
-                16 => {
-                    test.pointer(test.anchor.unwrap() + Vec2::new(300.0, 0.0), None);
-                    test.phase = 17;
-                }
-                17 => {
-                    test.pointer(test.anchor.unwrap() + Vec2::new(300.0, 0.0), Some(false));
-                    test.phase = 18;
-                }
-                18 => {
-                    let clip = self
-                        .editor
-                        .timeline()
-                        .clips()
-                        .iter()
-                        .find(|c| c.id == ClipId(1))
-                        .unwrap();
-                    if clip.timeline_start < 3.0 {
-                        return Err(
-                            "Pointer drag did not move the linked section into free space".into(),
-                        );
-                    }
-                    test.key(egui::Key::Z, true);
-                    test.phase = 19;
-                }
-                19 => {
-                    if self.editor.timeline().clips() != test.expected.as_ref().unwrap() {
-                        return Err("Pointer move did not undo in one step".into());
-                    }
-                    test.checks
-                        .push("Linked pointer drag commits one undoable move".into());
-                    test.pointer(test.anchor.unwrap(), Some(true));
-                    test.phase = 20;
-                }
-                20 => {
-                    test.pointer(test.anchor.unwrap() + Vec2::new(300.0, 0.0), None);
-                    test.phase = 21;
-                }
-                21 => {
-                    test.key(egui::Key::Escape, false);
-                    test.phase = 22;
-                }
-                22 => {
-                    test.pointer(test.anchor.unwrap() + Vec2::new(300.0, 0.0), Some(false));
-                    test.phase = 23;
-                }
-                23 => {
-                    if self.editor.timeline().clips() != test.expected.as_ref().unwrap()
-                        || self.preview_timeline.is_some()
-                    {
-                        return Err("Escape failed to cancel the pointer gesture".into());
-                    }
-                    test.checks
-                        .push("Escape restores the complete pre-drag timeline".into());
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
-                    test.phase = 6;
-                }
-                6 => {
-                    for event in ctx.input(|i| i.events.clone()) {
-                        if let egui::Event::Screenshot { image, .. } = event {
-                            test.screenshot(&image)?;
-                            test.checks.push("Actual desktop layout captured".into());
-                            test.report();
-                            self.close_approved = true;
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                            test.phase = 7;
-                        }
-                    }
-                }
-                _ => {}
-            }
-            Ok(())
-        })();
-        if let Err(e) = result {
-            test.failure = Some(e.to_string());
-            test.report();
-            self.close_approved = true;
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-        }
-        self.verification = Some(test);
-    }
     fn shortcuts(&mut self, ctx: &egui::Context) {
+        if self.busy && !self.exporting {
+            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.cancel.store(true, Ordering::Release);
+            }
+            return;
+        }
+        if self.relink.is_some() || self.startup_recovery.is_some() {
+            return;
+        }
+        if ctx.input(|i| i.modifiers.command) {
+            if ctx.input(|i| i.key_pressed(egui::Key::F)) {
+                ctx.memory_mut(|m| m.request_focus(egui::Id::new("recording-search-input")));
+                return;
+            }
+            if ctx.input(|i| i.key_pressed(egui::Key::I)) {
+                if let Ok(paths) = platform_windows::choose_files(self.owner, false, false) {
+                    self.import(paths);
+                }
+                return;
+            }
+            if ctx.input(|i| i.key_pressed(egui::Key::O)) {
+                if let Ok(paths) = platform_windows::choose_files(self.owner, false, true)
+                    && let Some(path) = paths.into_iter().next()
+                {
+                    self.open(path);
+                }
+                return;
+            }
+            if ctx.input(|i| i.key_pressed(egui::Key::N)) {
+                self.new_project();
+                return;
+            }
+            if ctx.input(|i| i.key_pressed(egui::Key::S)) {
+                self.save(ctx.input(|i| i.modifiers.shift));
+                return;
+            }
+        }
+        let search = egui::Id::new("recording-search-input");
+        if ctx.memory(|m| m.had_focus_last_frame(search))
+            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+        {
+            self.search.clear();
+            ctx.memory_mut(|m| m.surrender_focus(search));
+            return;
+        }
         if ctx.wants_keyboard_input()
             || self.busy && !self.exporting
             || self.relink.is_some()
@@ -1840,15 +2406,22 @@ impl EditorApp {
         }
         ctx.input(|input| {
             if input.key_pressed(egui::Key::Escape) {
-                self.drag = None;
+                self.end_scrub(Some(false));
+                self.ignore_scrub_until_release = input.pointer.primary_down();
+                if let Some(drag) = self.drag.take() {
+                    self.playhead = drag.playhead;
+                }
                 self.preview_timeline = None;
                 self.playing = false;
                 self.request_key.clear();
             }
             if input.key_pressed(egui::Key::Space) {
-                self.playing = !self.playing;
+                self.toggle_playback();
             }
             if input.modifiers.command {
+                if input.key_pressed(egui::Key::B) {
+                    self.split();
+                }
                 if input.key_pressed(egui::Key::Z) {
                     if input.modifiers.shift {
                         self.history(true);
@@ -1869,25 +2442,45 @@ impl EditorApp {
                     self.split();
                 }
                 if input.key_pressed(egui::Key::Delete)
+                    && !self.library_preview
                     && let Some(clip) = self.selected
                 {
                     self.apply(Command::Delete { clip });
                     self.selected = None;
                 }
+                if input.modifiers.alt
+                    && !self.library_preview
+                    && let Some(clip) = self.selected
+                {
+                    if input.key_pressed(egui::Key::ArrowLeft) {
+                        self.apply(Command::Swap {
+                            clip,
+                            direction: -1,
+                        });
+                    }
+                    if input.key_pressed(egui::Key::ArrowRight) {
+                        self.apply(Command::Swap { clip, direction: 1 });
+                    }
+                    return;
+                }
                 if input.key_pressed(egui::Key::ArrowLeft) {
-                    self.playing = false;
-                    self.seek(self.playhead - self.editor.metadata().output.rate.frame_seconds());
+                    self.step_frame(-1);
                 }
                 if input.key_pressed(egui::Key::ArrowRight) {
-                    self.playing = false;
-                    self.seek(self.playhead + self.editor.metadata().output.rate.frame_seconds());
+                    self.step_frame(1);
                 }
                 if let Some(clip) = self.selected_clip() {
                     let time = clip.source_in + self.playhead - clip.timeline_start;
                     if input.key_pressed(egui::Key::Q) {
-                        self.trim(Some(time), None);
+                        self.quick_trim(true);
                     }
                     if input.key_pressed(egui::Key::W) {
+                        self.quick_trim(false);
+                    }
+                    if input.key_pressed(egui::Key::I) {
+                        self.trim(Some(time), None);
+                    }
+                    if input.key_pressed(egui::Key::O) {
                         self.trim(None, Some(time));
                     }
                 }
@@ -1905,6 +2498,9 @@ impl eframe::App for EditorApp {
         }
     }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if !ctx.input(|i| i.pointer.primary_down()) {
+            self.ignore_scrub_until_release = false;
+        }
         self.events(ctx);
         self.shortcuts(ctx);
         self.top(ctx);
@@ -1942,7 +2538,12 @@ impl eframe::App for EditorApp {
                 .collect()
         });
         if !dropped.is_empty() && self.relink.is_none() && self.startup_recovery.is_none() {
-            if dropped.len() == 1 && dropped[0].extension().is_some_and(|s| s == "sveproject") {
+            if dropped.len() == 1
+                && dropped[0]
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|s| s.eq_ignore_ascii_case("sveproject"))
+            {
                 self.open(dropped[0].clone());
             } else {
                 self.import(dropped);
@@ -1994,8 +2595,9 @@ impl eframe::App for EditorApp {
             }
         }
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
-            "{}Simple Video Editor 1.1",
-            if self.dirty() { "• " } else { "" }
+            "{}Simple Video Editor {}",
+            if self.dirty() { "• " } else { "" },
+            env!("CARGO_PKG_VERSION")
         )));
         ctx.request_repaint_after(Duration::from_millis(if self.playing || self.busy {
             16
@@ -2015,6 +2617,18 @@ impl Drop for EditorApp {
             self.recovery.clear();
         }
     }
+}
+fn read_thumbnail(path: PathBuf) -> media_engine::Result<image::DynamicImage> {
+    if std::fs::metadata(&path)?.len() > 128_000 {
+        return Err("Cached thumbnail exceeds its limit".into());
+    }
+    let mut reader = image::ImageReader::open(path)?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(160);
+    limits.max_image_height = Some(90);
+    limits.max_alloc = Some(1024 * 1024);
+    reader.limits(limits);
+    Ok(reader.decode()?)
 }
 fn time(seconds: f64) -> String {
     let ms = (seconds.max(0.0) * 1000.0).round() as u64;

@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 $editorRoot = Split-Path -Parent $PSScriptRoot
-$editorAssets = Join-Path $editorRoot 'src\SimpleVideoEditor\Assets'
+$editorAssets = Join-Path $editorRoot 'assets'
 $editorImage = [Drawing.Bitmap]::FromFile((Join-Path $editorAssets 'app-icon.png'))
 $editorSizes = @(16,20,24,32,40,48,64,96,128,256)
 $editorFrames = @()

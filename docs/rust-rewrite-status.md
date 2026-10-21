@@ -1,75 +1,47 @@
 # Rust rewrite status
 
-Target: **1.1.0**. Started 2026-10-20. This is an incremental migration record,
-not a claim that the rewrite has completed its cutover and HDR release gates.
+Target **1.1.0**. Started 2026-10-20. Production source/build cutover is implemented on the PR branch. This is an unreleased candidate: physical HDR, display/DPI/accessibility and game-capture acceptance still prevent declaring the full rewrite/release verified. No merge, tag or publication is authorized or performed.
 
 ## Current implementation — 2026-10-21
 
-The Rust application now has a real egui/eframe desktop entry point with an
-embedded libmpv video surface, a recordings library, linked timeline lanes,
-split/delete/move/trim/duplicate/swap, history, project persistence, recovery,
-relinking, generated previews, audio controls, framing and output settings.
-Media probing, playback control, cache generation and export run on workers.
-There is no C# runtime bridge in the Rust candidate.
+Rust owns the desktop, timeline commands/history, persistence/recovery/relinking, source authorization, native playback coordination, shared color/framing transforms, cache and export. The normal build now packages the Rust executable. `Development/rust/crates/desktop-ui/Cargo.toml` is the sole application-version authority; project metadata and Windows resources derive from it. Private core/tool crates retain version 0.1.0.
 
-`desktop-ui/Cargo.toml` identifies the **1.1.0 test candidate**. The shipping
-application and release metadata remain **1.0.4**, owned by the existing C#
-project, until the verified cutover. `build-rust.ps1 -Zip` writes a separate
-`App-Rust-Candidate` and ignored candidate ZIP/checksum. It does not replace App,
-the current Releases pair, a running editor, or a published release.
+The superseded C#/WPF production tree and old production UI harness are removed. The optional C# reader oracle restores v1.0.4 source from Git commit `dd65df13a41490e8168a624b65fcff6a27956940` into ignored verification output, compiles it with the pinned SDK, and compares legacy import semantics. It is excluded from production and portable packages. Git and the exact previous release retain rollback. The authored icon source moved to Development/assets.
 
-The UI candidate uses eframe 0.32.3 with Glow and AccessKit. Slint was examined;
-the egui integration was selected for this candidate after checking its pinned
-source and licenses. Rust 1.90.0 remains pinned. A checksum-pinned LLVM-MinGW
-20260616 supplies dlltool, LLD and Windows resource tools. LLD plus Rust's
-self-contained CRT avoids unresolved mixed-generation Windows import tables;
-an actual startup crash under GNU ld was reproduced and corrected. Build tools
-stay outside the portable bundle. Windows version and icon resources identify
-the candidate as 1.1.0.0.
+The selected UI is egui/eframe 0.32.3 with Glow and AccessKit. Pinned Rust 1.90.0 uses checksum-pinned LLVM-MinGW 20260616 tools and LLD with the self-contained CRT. A real GNU-ld startup failure from mixed Windows import tables was reproduced and corrected. Native FFmpeg/FFprobe/libmpv pins and MediaMirrorTag are unchanged. Dependency/font/runtime notices accompany the package.
 
-Current verification includes:
+## Current contract and ownership evidence
 
-- Pure tests for connected/free trim placement, duplicate/swap, bounded history,
-  metadata inheritance and rollback, legacy parsing, UTF-8/16/32 documents,
-  atomic saves, recovery leases and cancellation of obsolete recovery writes.
-- Actual egui input tests for split, undo/redo, play/pause, linked pointer moves,
-  one-step move undo and Escape cancellation. Native and software cases cover
-  generated SDR, PQ and HLG: 63 checks across six desktop runs.
-- Coalesced latest-request playback tests: rapid seeks settle at the final
-  position; the UI follows the media clock and freezes while preparing media.
-- Mixed SDR/PQ/HLG exports through CPU and NVIDIA H.264/AV1 and HDR10 HEVC/AV1.
-  The strengthened CPU checks decode black/silent gaps, verify exact frame counts
-  and gain-adjusted audio, roundtrip settings, relink moved recordings, and
-  preserve prior output when canceled before or during encoding.
-- Delayed opposite-phase stereo peaks retain their timing and amplitude. Cache
-  cleanup deletes only recognized generated files, preserving unrelated files
-  and recovery data.
+| Contracts | Authoritative owner | Verification |
+| --- | --- | --- |
+| Exact legacy trims, gaps, ordered/unused library and repeated recordings | project-store + editor-core | Frozen C# differential oracle, encoding/parser fixtures and exact schema-2 roundtrips |
+| Linked split/delete/move/trim/swap/duplicate and bounded history | editor-core | Pure command tests, actual desktop keys/pointer drags, one-step undo/redo and Escape |
+| Trim pointer anchoring and retained preview frame | editor-core + desktop-ui | Left edge preview holds right edge/followers; commit ripples once; removed preview frames clamp; Escape restores bounds/frame |
+| Search focus, hidden selection, Add all library order | desktop-ui | Actual text/pointer input; hidden selection disabled; Add all includes filtered sources as one undo step |
+| Scrub ownership, pause intent, endpoint and native clock | desktop-ui playback actor | Held cross-recording ruler, interleaved rapid seeks, final-generation settling, playing/paused cases and last retained frame |
+| Source timestamps and video selection | native-mpv + media-engine | Known VFR PTS forward/reverse steps; multiple-video/default-track fixture; explicit stream mapping in preview, thumbnails and export |
+| Source safety and local-only paths | media-path + platform-windows | Namespace/reparse checks, source hashes, save/export identity rejection, cancel preservation and hard-link-aware cache protection |
+| Atomic persistence, recovery, relinking | project-store + media-engine | UTF-8/16/32, schema rejection, exclusive live-session leases, revision cancellation, recovery claim ownership and immutable relink/load |
+| SDR/PQ/HLG, source interpretation, geometry | shared media-engine graph | CPU/NVIDIA exports, tagged 10-bit HDR10 decode, rotation/SAR/RGB pixel comparisons, deliberate SDR software transform |
+| Preview delivery and lifecycle | native-mpv + playback actor | Bounded latest-request/frame mailboxes, post-seek software render serials, narrow FFI, render-thread join before core/window destruction |
+| Display-aware HDR fallback | platform-windows + playback actor | Read-only active-monitor queries and SDK-layout tests; HDR requires active HDR mode, not WCG; unsupported/unknown state chooses SDR |
+| Portable artifact and rollback | build.ps1 + portable verifier | Exact native hashes, PE/version/no-CLR checks, Unicode/space relocation, actual packaged persistence/export/playback; previous release SHA retained |
 
-The editor's software fallback deliberately converts HDR to SDR before rendering;
-the diagnostic lab's original raw software mode still rejects unconverted HDR.
-Native HDR display preview is selectable for HDR10 output. Negotiated target
-metadata and screenshots do **not** prove physical HDR brightness/color accuracy.
-Physical HDR, display changes, game/Shadowplay coexistence, the full interaction
-and accessibility matrix, and remaining geometry/parity checks are still open.
+The latest expanded desktop matrix passed **274 checks across 14 runs** (native/software SDR, PQ, HLG, rotated, anamorphic, RGB and multiple-video fixtures), with four window sizes per run. Further restored shortcuts, frame-inclusive quick trim and transport-overlap checks are being verified after that matrix. Strict Clippy and workspace tests pass. CPU and available NVIDIA media paths pass, including exact frame counts, black/silent gaps, gain, atomic cancellation, relinking and source preservation. Pixel comparisons cover both software preview and decoded exports; VFR tests verify known presentation timestamps in both directions.
 
-The Rust candidate owns its own full workflow, but C# production owners have not
-been deleted: packaged parity and the remaining release gates must justify that
-cutover first. No merge, release tag or publication has occurred. Continue the
-rewrite to those gates; this candidate is not the completed rewrite.
+A relocated Rust ZIP passed native pins, embedded version, absence of a CLR header/.NET runtime, atomic project roundtrip, CPU export and software playback. The final production-build ZIP and CI are rechecked after the cutover; generated reports remain under ignored Development/artifacts. The shipping App folder and any running user editor are preserved by using a separate App-* output. Local generated package pruning follows verified version/layout/checksum replacement; published assets remain unchanged.
 
-Portable verification extracted the candidate ZIP into a relocated folder,
-checked its layout/checksum/version/native pins and absence of a CLR header or
-.NET runtime, then ran persistence, export, software playback and all six
-desktop cases from that packaged executable. Current Rust source/test inventory
-is 23 modules and approximately 6,900 nonblank lines; the largest module is the
-desktop coordinator/views (about 2,000 lines). The candidate executable is about
-15.9 MB and the ZIP about 146 MB. Temporary source growth includes retained C#
-owners, the native/OS boundaries and new HDR/audio/persistence tests. Delete the
-superseded production tree only after the remaining parity gates are covered.
+## Outstanding acceptance gates
 
-The following sections retain the dated foundation evidence and its original
-deletion gates. Statements about missing desktop/persistence paths below describe
-the 2026-10-20 foundation, superseded by the current implementation above.
+- Physical HDR display luminance/color accuracy, real display movement and Windows HDR toggles. An OS HDR flag, PQ target or ordinary screenshot is insufficient proof.
+- Game/Shadowplay coexistence with a running game. No user game or capture session was opened or stopped.
+- Full 100–200% DPI and assistive-technology navigation matrix. Automated window sizing and AccessKit integration are partial evidence.
+- Representative long-GOP/4K performance measurements and unavailable AMD/Intel encoder combinations. Generated CPU/NVIDIA fixtures do not justify universal latency claims.
+- User testing and explicit merge/release approval. Keep PR #8 open; do not tag or publish.
+
+Hard cuts remain the default. Transitions/audio crossfades follow after rewrite/HDR verification. Proxy editing, markers, export queues, independent music tracks and other platforms are outside the accepted parity scope.
+
+The dated foundation record below preserves original measurements and migration decisions. Its future-owner language and missing-feature statements describe the old foundation, not the current Rust production implementation.
 
 ## Historical foundation record — 2026-10-20
 
@@ -235,3 +207,19 @@ workspace packages and twenty Windows registry dependencies (additional target
 dependencies remain in Cargo.lock). The optimized playback lab is about 1.74 MB.
 The original production source/tests and native pins are unchanged. Package
 size growth is limited to documentation because Rust is not bundled in App.
+
+## Bounded seek measurements
+
+The post-acknowledgement lab run on this desktop used generated 320x180 FFV1 recordings, CPU decoding, three player lifecycles and four local seeks per lifecycle. These 12-sample summaries measure native seek completion, not pointer latency or physical HDR presentation. Concurrent verification was active; cache was not flushed. They are diagnostic observations rather than a controlled comparison with 1.0.4.
+
+| Lab mode | Median ms | p95 / max ms |
+| --- | --- | --- |
+| software-sdr | 2.55 | 28.09 |
+| native-sdr-sdr | 248.93 | 500.27 |
+| native-sdr-pq | 247.12 | 497.96 |
+| native-sdr-hlg | 245.44 | 511.25 |
+| native-auto-pq | 247.31 | 510.68 |
+| native-auto-hlg | 247.11 | 501.03 |
+
+Native completion varied into the hundreds of milliseconds on these small fixtures, so no universal seek-speed improvement is claimed. The UI keeps pointer ownership while decoding and offers Software SDR preview as an explicit option. Long-GOP/4K, physical display and game-capture performance acceptance remain open.
+

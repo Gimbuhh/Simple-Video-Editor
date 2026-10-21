@@ -18,8 +18,14 @@ pub struct MediaSource {
     pub height: u32,
     pub display_width: f64,
     pub display_height: f64,
+    #[serde(default)]
+    pub rotation: f64,
+    #[serde(default = "square_pixels")]
+    pub sample_aspect_ratio: f64,
     pub rate: FrameRate,
     pub codec: String,
+    #[serde(default)]
+    pub video_stream: u32,
     pub audio: Vec<AudioStream>,
     pub transfer: String,
     pub primaries: String,
@@ -27,7 +33,43 @@ pub struct MediaSource {
     pub range: String,
     pub pixel_format: String,
 }
+fn square_pixels() -> f64 {
+    1.0
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SourceInterpretation {
+    #[default]
+    Auto,
+    Sdr709,
+    Srgb,
+    Pq2020,
+    Hlg2020,
+}
 impl MediaSource {
+    pub fn interpreted(&self, interpretation: SourceInterpretation) -> Self {
+        let mut source = self.clone();
+        let (transfer, primaries) = match interpretation {
+            SourceInterpretation::Auto => return source,
+            SourceInterpretation::Sdr709 => ("bt709", "bt709"),
+            SourceInterpretation::Srgb => ("iec61966-2-1", "bt709"),
+            SourceInterpretation::Pq2020 => ("smpte2084", "bt2020"),
+            SourceInterpretation::Hlg2020 => ("arib-std-b67", "bt2020"),
+        };
+        source.transfer = transfer.into();
+        source.primaries = primaries.into();
+        source.matrix = if source.pixel_format.starts_with("gbr")
+            || source.pixel_format.starts_with("rgb")
+            || source.pixel_format.starts_with("bgr")
+        {
+            "gbr"
+        } else if primaries == "bt2020" {
+            "bt2020nc"
+        } else {
+            "bt709"
+        }
+        .into();
+        source
+    }
     pub fn hdr(&self) -> bool {
         matches!(self.transfer.as_str(), "smpte2084" | "arib-std-b67")
     }
@@ -115,6 +157,15 @@ pub struct ProjectMetadata {
     pub sources: Vec<MediaSource>,
     pub output: OutputSettings,
     pub adjustments: BTreeMap<ClipId, ClipSettings>,
+    pub interpretations: BTreeMap<SourceId, SourceInterpretation>,
+    /// Captured with undo/redo; never written into project or recovery files.
+    #[serde(skip)]
+    pub view: Option<ViewSelection>,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ViewSelection {
+    Clip(ClipId),
+    Recording(SourceId),
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SavedProject {
@@ -126,6 +177,54 @@ pub struct SavedProject {
     pub metadata: ProjectMetadata,
 }
 pub type ProjectEditor = Editor<ProjectMetadata>;
+/// Preview the final retained frame at the sequence endpoint. Timeline source
+/// intervals themselves remain exclusive for edits and export planning.
+pub fn preview_at(
+    timeline: &Timeline,
+    metadata: &ProjectMetadata,
+    time: f64,
+) -> Option<(ClipId, SourceId, f64)> {
+    if let Some(at) = timeline.source_at(time) {
+        return Some(at);
+    }
+    if time.is_finite() && time >= timeline.duration() && timeline.duration() > 0.0 {
+        let clip = timeline.clips().last()?;
+        let rate = metadata.sources.iter().find(|s| s.id == clip.source)?.rate;
+        return Some((
+            clip.id,
+            clip.source,
+            (clip.source_out - rate.frame_seconds()).max(clip.source_in),
+        ));
+    }
+    None
+}
+pub fn settle_preview_time(
+    timeline: &Timeline,
+    metadata: &ProjectMetadata,
+    time: f64,
+    recording: Option<SourceId>,
+) -> f64 {
+    if let Some(source) = recording.and_then(|id| metadata.sources.iter().find(|s| s.id == id)) {
+        let fps = source.rate.fps();
+        return ((time * fps).round_ties_even() / fps).clamp(
+            0.0,
+            (source.duration - source.rate.frame_seconds()).max(0.0),
+        );
+    }
+    if let Some((id, source, position)) = preview_at(timeline, metadata, time)
+        && let Some(clip) = timeline.clips().iter().find(|c| c.id == id)
+        && let Some(source) = metadata.sources.iter().find(|s| s.id == source)
+    {
+        let fps = source.rate.fps();
+        let position =
+            (clip.source_in + ((position - clip.source_in) * fps).round_ties_even() / fps).clamp(
+                clip.source_in,
+                (clip.source_out - source.rate.frame_seconds()).max(clip.source_in),
+            );
+        return clip.timeline_start + position - clip.source_in;
+    }
+    time
+}
 /// Timeline and clip settings commit together, including inherited settings for
 /// new split/duplicate identities. A rejected edit preserves history and state.
 pub fn edit_project(
@@ -159,7 +258,7 @@ pub fn edit_project(
             }
             SavedProject {
                 version: 2,
-                application_version: "1.1.0".into(),
+                application_version: env!("SVE_APPLICATION_VERSION").into(),
                 clips: timeline.clips().to_vec(),
                 metadata: metadata.clone(),
             }
@@ -172,13 +271,37 @@ pub fn edit_project(
         })
         .map_err(|e| error(e.to_string()))
 }
+/// Remove a library identity and all of its placements in one history step.
+/// Remaining placements retain their original timeline positions and gaps.
+pub fn remove_source(editor: &mut ProjectEditor, id: SourceId) -> Result<(), ProjectError> {
+    let mut document = SavedProject::capture(editor);
+    document.metadata.view = editor.metadata().view;
+    document.metadata.sources.retain(|s| s.id != id);
+    document.metadata.interpretations.remove(&id);
+    document.clips.retain(|c| c.source != id);
+    document
+        .metadata
+        .adjustments
+        .retain(|id, _| document.clips.iter().any(|c| c.id == *id));
+    document.validate()?;
+    editor
+        .apply_with_metadata(
+            editor_core::Command::Replace {
+                clips: document.clips,
+            },
+            document.metadata,
+        )
+        .map_err(|e| error(e.to_string()))
+}
 impl SavedProject {
     pub fn capture(editor: &ProjectEditor) -> Self {
+        let mut metadata = editor.metadata().clone();
+        metadata.view = None;
         Self {
             version: 2,
-            application_version: "1.1.0".into(),
+            application_version: env!("SVE_APPLICATION_VERSION").into(),
             clips: editor.timeline().clips().to_vec(),
-            metadata: editor.metadata().clone(),
+            metadata,
         }
     }
     pub fn editor(self) -> Result<ProjectEditor, ProjectError> {
@@ -230,11 +353,19 @@ impl SavedProject {
                 || !source.display_height.is_finite()
                 || source.display_width <= 0.0
                 || source.display_height <= 0.0
+                || !source.rotation.is_finite()
+                || !(0.0..360.0).contains(&source.rotation)
+                || !source.sample_aspect_ratio.is_finite()
+                || source.sample_aspect_ratio <= 0.0
+                || source.sample_aspect_ratio > 100.0
             {
                 return Err(error("Invalid recording metadata"));
             }
         }
         for clip in &self.clips {
+            if clip.id.0 == 0 || clip.id.0 == u64::MAX {
+                return Err(error("Invalid section identity"));
+            }
             let source = self
                 .metadata
                 .sources

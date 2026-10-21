@@ -43,8 +43,28 @@ fn waveform_delays_phase_cache_and_safe_cleanup() {
     std::fs::write(&unrelated, b"original").unwrap();
     let recovery = tools.cache.join("recovery.sveproject");
     std::fs::write(&recovery, b"saved recovery").unwrap();
-    let (deleted, _) = tools.clear_cache().unwrap();
+    let protected = tools
+        .cache
+        .join("thumbnails")
+        .join(format!("{}.bmp", "a".repeat(64)));
+    std::fs::write(&protected, b"original with a cache-shaped name").unwrap();
+    let linked = tools
+        .cache
+        .join("thumbnails")
+        .join(format!("{}.bmp", "b".repeat(64)));
+    if linked.exists() {
+        std::fs::remove_file(&linked).unwrap();
+    }
+    std::fs::hard_link(&protected, &linked).unwrap();
+    let (deleted, _) = tools.clear_cache(std::slice::from_ref(&protected)).unwrap();
     assert_eq!(deleted, 2);
     assert_eq!(std::fs::read(unrelated).unwrap(), b"original");
     assert_eq!(std::fs::read(recovery).unwrap(), b"saved recovery");
+    assert_eq!(
+        std::fs::read(&protected).unwrap(),
+        b"original with a cache-shaped name"
+    );
+    assert!(linked.exists());
+    std::fs::remove_file(linked).unwrap();
+    std::fs::remove_file(protected).unwrap();
 }
