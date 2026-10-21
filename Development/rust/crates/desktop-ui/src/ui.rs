@@ -1210,10 +1210,10 @@ impl EditorApp {
             });
             if !search.is_empty(){ui.label(format!("{} of {} recordings",visible.len(),sources.len()));}
             ui.separator();
-            egui::ScrollArea::vertical().show(ui,|ui| {
+            egui::ScrollArea::vertical().show_rows(ui,64.0,visible.len().max(1),|ui,rows| {
                 if sources.is_empty() { ui.add_space(32.0);ui.label("Drop recordings here or import files. Your original recordings stay untouched."); }
                 else if visible.is_empty(){ui.label("No recordings match your search.");}
-                for source in visible {
+                for source in visible.iter().skip(rows.start).take(rows.end-rows.start) {
                     let details=format!("{} · {} × {} · {}",time(source.duration),source.width,source.height,if source.hdr(){"HDR"}else{"SDR"});
                     let (rect,response)=ui.push_id(("recording",source.id.0),|ui|ui.allocate_exact_size(Vec2::new(ui.available_width(),64.0),Sense::click_and_drag())).inner;
                     let selected=self.library_selected==Some(source.id);

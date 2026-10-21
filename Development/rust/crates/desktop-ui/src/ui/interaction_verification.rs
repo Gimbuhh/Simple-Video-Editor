@@ -48,7 +48,7 @@ impl EditorApp {
                     }) =>
                     {
                         test.checks
-                            .push("Embedded D3D11 source load and shared preview filter".into());
+                            .push("Source load and shared preview filter".into());
                         test.key(egui::Key::S, false);
                         test.phase = 3;
                     }
