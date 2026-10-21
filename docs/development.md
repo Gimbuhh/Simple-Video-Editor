@@ -19,6 +19,8 @@ Use `. ./Development/scripts/rust-environment.ps1` before direct Cargo commands.
 
 For desktop startup failures, `test-rust-startup.ps1 -AppPath <candidate-exe> -Cycles 100` repeats generated PQ import, exact seek, split, undo/redo and shutdown. Add `-GraphicsOnly` to isolate initial rendered frames without importing media. These isolated `--verify-desktop` processes write their phase and native exception/module addresses on failure; ordinary app sessions do not install the diagnostic handler. Reports remain in ignored artifacts, and the runner closes or times out only its own helper process.
 
+`benchmark-rust-playback.ps1 -Gpu` generates twelve-second 3840×2160 SDR/PQ HEVC fixtures, verifies actual keyframes at zero and ten seconds, then records 24 exact seeks per backend/profile through three native lifecycles. Omit `-Gpu` to generate fixtures with libx265, or use `-ReuseFixturesFrom <previous-report-directory>` to reuse those generated files without rewriting them. Reports record CPU decoding, hardware/driver inventory, hashes, startup/load time, seek targets and median/p95/max acknowledgement times. Filesystem caching is uncontrolled. This backend diagnostic excludes desktop input and the shared project transform graph; it is not a latency guarantee for real recordings. Run it after other automated desktop checks finish for an isolated comparison.
+
 ## Frozen legacy oracle
 
 The old implementation is removed from production source. Optional differential tests restore only its source from Git commit `dd65df13a41490e8168a624b65fcff6a27956940` into ignored `Development/artifacts/rewrite-baseline/source`. The Rust application never loads it.

@@ -6,6 +6,8 @@ A portable Windows editor for trimming and combining local recordings. Edits lea
 
 Version 1.1.0 is the Rust release candidate on this branch. The latest published 1.0.x release remains available for rollback. This PR stays open for user testing; physical HDR accuracy and game/Shadowplay coexistence still need acceptance testing.
 
+An intermittent desktop startup crash is still under investigation. Repeated automated startup checks have passed without reproducing it; this candidate is not ready for release. Details and verification evidence are in the [rewrite status](docs/rust-rewrite-status.md).
+
 ## Run
 
 Extract the complete portable ZIP and open **Simple Video Editor.exe**. Keep **bin** and **docs** beside it. The Rust app needs no installer, account, .NET runtime, or separately installed FFmpeg.

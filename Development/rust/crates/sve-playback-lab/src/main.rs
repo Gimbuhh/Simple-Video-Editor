@@ -8,8 +8,9 @@ use std::{
 
 fn run() -> Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
-    if args.len() != 3 {
-        return Err("Usage: sve-playback-lab <software|native-sdr|native-auto> <absolute-libmpv.dll> <absolute-recording>".into());
+    let benchmark = args.len() == 4 && args[3] == "--benchmark";
+    if args.len() != 3 && !benchmark {
+        return Err("Usage: sve-playback-lab <software|native-sdr|native-auto> <absolute-libmpv.dll> <absolute-recording> [--benchmark]".into());
     }
     let mode = match args[0].to_str() {
         Some("software") => Mode::SoftwareSdr,
@@ -21,8 +22,10 @@ fn run() -> Result<()> {
     let mut cycles = Vec::new();
     // Repeated create/load/play/seek/drop exercises real ownership and cleanup.
     for _ in 0..3 {
+        let load_started = Instant::now();
         let player = Player::open(Path::new(&args[1]), mode)?;
         player.load(&recording)?;
+        let load_ms = load_started.elapsed().as_secs_f64() * 1000.0;
         // A second same-source load must wait for its own file-loaded event,
         // not return using the previous recording's still-readable properties.
         player.load(&recording)?;
@@ -34,13 +37,24 @@ fn run() -> Result<()> {
                 .is_some_and(|t| t >= 0.2)
         })?;
         player.set_paused(true)?;
-        for time in [f64::NAN, f64::INFINITY, -1.0, 1000.0] {
+        let duration: f64 = player
+            .property("duration")
+            .ok_or("Missing duration")?
+            .parse()?;
+        for time in [f64::NAN, f64::INFINITY, -1.0, duration] {
             if player.seek(time).is_ok() {
                 return Err("Invalid seek was accepted".into());
             }
         }
         let mut seek_ms = Vec::new();
-        for time in [1.0, 0.25, 1.5, 0.5] {
+        let seek_targets = if benchmark {
+            [0.82, 0.07, 0.62, 0.22, 0.91, 0.12, 0.73, 0.37]
+                .map(|fraction| fraction * duration)
+                .to_vec()
+        } else {
+            vec![1.0, 0.25, 1.5, 0.5]
+        };
+        for &time in &seek_targets {
             let seek_start = Instant::now();
             player.seek(time)?;
             seek_ms.push(seek_start.elapsed().as_secs_f64() * 1000.0);
@@ -103,14 +117,14 @@ fn run() -> Result<()> {
             );
         }
         cycles.push(serde_json::json!({"mode":mode.label(), "elapsedMs":started.elapsed().as_secs_f64() * 1000.0,
-            "seekMs":seek_ms, "softwareFrame":frame_summary, "properties":report}));
+            "openAndFirstLoadMs":load_ms,"seekTargetsSeconds":seek_targets,"seekMs":seek_ms, "softwareFrame":frame_summary, "properties":report}));
         // Quit while actively playing to exercise teardown without a stop bridge.
         player.set_paused(false)?;
     }
     println!(
         "{}",
         serde_json::to_string_pretty(&serde_json::json!({"cycles":cycles,
-        "hdrPresentationVerified":false, "captureCompatibilityVerified":false, "toolkitSelected":false}))?
+        "benchmark":benchmark,"filesystemCache":"uncontrolled","hdrPresentationVerified":false, "captureCompatibilityVerified":false, "toolkitSelected":false}))?
     );
     Ok(())
 }

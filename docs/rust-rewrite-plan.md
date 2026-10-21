@@ -1,10 +1,10 @@
 # Simple Video Editor 1.1 — Rust Rewrite Plan
 
-Updated: 2026-10-20 (original proposal: 2026-10-09)
+Updated: 2026-10-21 (original proposal: 2026-10-09)
 
 Target application version: **1.1.0**
 
-Status: implementation authorized on 2026-10-20; UI/framework selection remains subject to the prototype gate, and merge/publication require separate approval.
+Status: Rust production cutover is implemented on PR #8. The provisional UI is egui/eframe with native D3D11 playback and an SDR software fallback. Physical HDR/capture acceptance and an intermittent startup-crash investigation remain open; merge/publication require separate approval. Current ownership and measured evidence are in the [status ledger](rust-rewrite-status.md).
 
 ## 1. Goal and release definition
 
@@ -29,8 +29,8 @@ Before implementation:
 - [x] Select the latest approved, merged 1.0.x commit and identify its exact release artifact and SHA-256.
 - [x] Record toolchain versions, native dependency pins, source inventory, build commands, fixtures, and known limitations.
 - [x] Reproduce the baseline build and relevant checks. Compare repeated builds only if reproducible binary output is claimed.
-- [ ] Record each retained behavior in a contract ledger, with its current evidence, new owner, and test.
-- [ ] Keep original recordings untouched. Obtain explicit consent before adding private recordings to any shared fixture collection.
+- [x] Record each retained behavior in a contract ledger, with its current evidence, new owner, and test.
+- [x] Keep original recordings untouched. Automated verification uses generated fixtures; no private recordings were added to shared fixtures.
 
 If the baseline cannot be reproduced, resolve that gate before dependent migration work. Planning and investigation can continue.
 
@@ -200,12 +200,12 @@ Open old projects without rewriting them. Save upgraded projects to a new filena
 
 Migration requirements:
 
-- [ ] Fixture-based import and semantic round-trip comparison against 1.x.
-- [ ] Finite/range/size validation before filesystem or media access.
-- [ ] Clear rejection of unsupported future schemas.
-- [ ] Atomic saves and recoverable failure during replacement.
-- [ ] Independent recovery-session ownership, with safe upgrade behavior.
-- [ ] Cache namespace/version migration that never treats original media as disposable.
+- [x] Fixture-based import and semantic round-trip comparison against 1.x.
+- [x] Finite/range/size validation before filesystem or media access.
+- [x] Clear rejection of unsupported future schemas.
+- [x] Atomic saves and recoverable failure during replacement.
+- [x] Independent recovery-session ownership, with safe upgrade behavior.
+- [x] Cache namespace/version migration that never treats original media as disposable.
 
 A return to 1.0.x uses the preserved original project. Do not promise a downgrade export until a tested conversion can explain which 1.1 features would be lost.
 
@@ -294,17 +294,17 @@ Follow the existing repository policy throughout implementation:
 
 ## 15. Definition of done
 
-- [ ] Rust owns all planned production responsibilities; no released C#/.NET dependency or expired bridge remains.
-- [ ] Retained 1.x editing behavior and project compatibility have evidence.
+- [x] Rust owns all planned production responsibilities; no C#/.NET dependency or expired bridge remains in the candidate package.
+- [x] Retained 1.x editing behavior and project compatibility have evidence.
 - [ ] HDR import, true HDR preview where supported, labeled SDR fallback, mixed projects, and HDR/SDR exports meet the agreed scope.
-- [ ] Selected additional features behave consistently across persistence, undo, preview, and export.
+- [x] Selected additional features behave consistently across persistence, undo, preview, and export.
 - [ ] Smooth scrubbing, async cancellation, source protection, recovery, and safe native shutdown pass.
 - [ ] Performance measurements and the supported hardware/format matrix are documented.
 - [ ] Dependency pins, licenses, security review, and package checks are complete.
-- [ ] Version, changelog, release notes, user guide, shortcuts, and portable artifacts agree.
+- [x] Version, changelog, release notes, user guide, shortcuts, and portable artifacts agree.
 - [ ] The user has tested the release candidate and approved merge.
 - [ ] The merged commit is tagged and the verified draft is published only when authorized.
-- [ ] Rollback remains possible with preserved 1.x releases and original project files.
+- [x] Rollback remains possible with preserved 1.x releases and original project files.
 
 ## 16. Decisions to settle at kickoff
 
