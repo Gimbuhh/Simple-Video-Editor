@@ -45,11 +45,18 @@ fn full_and_limited_range_av1_pq_keep_colors_in_preview_thumbnail_and_export() {
     let cancel = uncancelled();
     let gpu = std::env::var_os("SVE_MEDIA_GPU").is_some();
     let chart_path = root.join("chart.png");
-    let chart = image::RgbImage::from_fn(320, 180, |x, y| {
-        image::Rgb(if y < 90 {
-            [[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 255]][x as usize / 80]
+    // Exercise the reported capture's resolution/rate on NVIDIA hardware;
+    // retain a small CPU fixture so the same color assertions stay cheap in CI.
+    let (width, height, rate) = if gpu {
+        (2560, 1440, "60000/1001")
+    } else {
+        (320, 180, "30")
+    };
+    let chart = image::RgbImage::from_fn(width, height, |x, y| {
+        image::Rgb(if y < height / 2 {
+            [[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 255]][(x * 4 / width) as usize]
         } else {
-            let gray = [16, 48, 80, 112, 144, 176, 208, 240][x as usize / 40];
+            let gray = [16, 48, 80, 112, 144, 176, 208, 240][(x * 8 / width) as usize];
             [gray, gray, gray]
         })
     });
@@ -67,9 +74,19 @@ fn full_and_limited_range_av1_pq_keep_colors_in_preview_thumbnail_and_export() {
         let directory = root.join(format!("{label}-{}", if gpu { "gpu" } else { "cpu" }));
         std::fs::create_dir_all(&directory).unwrap();
         let source_path = directory.join("pq-av1.mp4");
-        let mut arguments: Vec<String> = ["-v", "error", "-nostdin", "-y", "-loop", "1", "-i"]
-            .map(str::to_owned)
-            .to_vec();
+        let mut arguments: Vec<String> = [
+            "-v",
+            "error",
+            "-nostdin",
+            "-y",
+            "-loop",
+            "1",
+            "-framerate",
+            rate,
+            "-i",
+        ]
+        .map(str::to_owned)
+        .to_vec();
         arguments.push(chart_path.to_string_lossy().into_owned());
         arguments.extend(["-t".into(),"3".into(),"-vf".into(),format!("format=gbrpf32le,zscale=pin=bt709:tin=iec61966-2-1:min=gbr:rin=full:p=bt2020:t=smpte2084:m=bt2020nc:r={range}:npl=100,format=yuv420p10le")]);
         arguments.extend(["-c:v", if gpu { "av1_nvenc" } else { "libaom-av1" }].map(str::to_owned));
