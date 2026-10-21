@@ -105,6 +105,14 @@ These are successful bounded capture checks on this game/driver/session with the
 
 The same final executable passed strict formatting/Clippy, 32 workspace/executable tests, both frozen C# import comparisons, all five GPU-enabled media integrations and nine packaging safeguards. Its actual ZIP passed native-pin/version/no-.NET checks, relocation, persistence/export/playback and **129 desktop checks across six native/software SDR/PQ/HLG runs**. Reports: rust-package-verification/5363c645dec74437993fbf6b27d63ca5 and rust-desktop/ffd97f0442ee4509ac96d0318fead00e. The prior extended geometry/VFR matrix remains recorded above; the capture harness adds no normal-session input or rendering alternative. The final documentation refresh is verified separately with the identical executable.
 
+### Ordinary-session replay follow-up — 2026-10-22
+
+The user confirmed that the healthy clip's colors and brightness look correct in the ordinary candidate with Windows HDR preview active. This is acceptance of that clip on the current display, not measured luminance, monitor/HDR-toggle coverage or merge approval. The user's editor remains running and is not replaced by capture tests.
+
+With the ordinary editor still open, additional manual recording samples show the actual game's map and live scene without rainbow/block corruption. The live-scene report is shadowplay/3dec700135694aa1b48c35e49556e291. A fresh Instant Replay buffer also produces healthy early and late live-scene samples with valid AV1/PQ tags. The earlier three-minute replay spans a game/desktop transition, so only its game tail is used as game evidence. Desktop control is ended before capture. Instant Replay was found off after desktop control; a save attempt was refused and is excluded. It was re-enabled to its initial state before collecting the fresh replay.
+
+Capture acceptance remains **open**: the user reported a different, severely red-clipped replay from another game while the ordinary HDR editor was open. Its HDR/PQ interpretation produces the problem through both the shared SDR graph and an independent libplacebo BT.2390/perceptual-gamut conversion. A forced SDR interpretation gives plausible colors, that game's current configuration disables HDR output, and an earlier recording has SDR/BT.709 tags. These observations suggest a capture color-interpretation mismatch; they do not establish that the editor caused it, that the file is irreparably damaged, or that overriding all HDR inputs is correct. A matched ordinary-editor native/software comparison with that game is still required. No production color heuristic or original-media rewrite has been applied. Private paths, frames and source hashes remain ignored.
+
 ### Completion audit
 
 | Gate | Evidence / remaining work |
