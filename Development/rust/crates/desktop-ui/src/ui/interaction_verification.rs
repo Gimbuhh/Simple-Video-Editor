@@ -569,10 +569,7 @@ impl EditorApp {
                         if (clip.source_out - 0.2 - frame).abs() > 0.002
                             || (self.playhead - 0.2).abs() > 0.002
                         {
-                            return Err(
-                            "Trim after did not retain the current frame and its source preview"
-                                .into(),
-                        );
+                            return Err(format!("Trim after a pending seek used out={} preview={} instead of out={} preview=0.2",clip.source_out,self.playhead,0.2+frame).into());
                         }
                         test.key(egui::Key::Z, true);
                         test.phase = 58;
@@ -826,7 +823,7 @@ impl EditorApp {
                 self.seek(0.2);
                 test.phase = 9;
             }
-            9 if ready => {
+            9 => {
                 test.key(egui::Key::Q, false);
                 test.phase = 10;
             }

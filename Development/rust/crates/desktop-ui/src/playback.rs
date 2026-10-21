@@ -31,6 +31,9 @@ pub struct Status {
     pub ready: bool,
     pub position: f64,
     pub ended: bool,
+    // Actual frame timestamp before an optional step; keep it distinct from
+    // the requested seek and the next frame's exclusive trim boundary.
+    pub seek_position: f64,
     pub paused: bool,
     pub software: bool,
     pub frame: Option<Arc<native_mpv::Frame>>,
@@ -273,6 +276,7 @@ impl Playback {
                                     .and_then(|p| p.parse::<f64>().ok())
                                     .filter(|p| p.is_finite())
                                     .unwrap_or(next.position);
+                                state.lock().unwrap().seek_position = position;
                                 if next.steps != 0 && next.source.is_some() {
                                     player.wait_for(5.0, |p| {
                                         p.property("seeking").as_deref() == Some("no")

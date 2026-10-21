@@ -49,7 +49,7 @@ struct Settling {
 struct Stepping {
     generation: Option<u64>,
     count: i32,
-    trim_after: Option<(ClipId, f64)>,
+    trim: Option<(ClipId, bool)>,
 }
 pub struct EditorApp {
     // The actor must be destroyed before its native child window.
@@ -486,14 +486,14 @@ impl EditorApp {
         let count = (self
             .stepping
             .as_ref()
-            .filter(|s| s.trim_after.is_none())
+            .filter(|s| s.trim.is_none())
             .map_or(0, |s| s.count)
             + direction)
             .clamp(-120, 120);
         self.stepping = Some(Stepping {
             generation: None,
             count,
-            trim_after: None,
+            trim: None,
         });
         self.request_key.clear();
     }
@@ -654,27 +654,24 @@ impl EditorApp {
         if self.library_preview {
             return;
         }
-        if let Some(clip) = self.selected_clip()
-            && let Some(source) = self
-                .editor
-                .metadata()
-                .sources
-                .iter()
-                .find(|s| s.id == clip.source)
-        {
-            let frame = source.rate.frame_seconds();
+        if let Some(clip) = self.selected_clip() {
             let relative = self.playhead - clip.timeline_start;
             if relative < 0.0 || relative >= clip.duration() {
                 return;
             }
-            let current = (clip.source_in + (relative / frame).round_ties_even() * frame)
-                .min((clip.source_out - frame).max(clip.source_in));
+            let current = clip.source_in + relative;
             let status = self
                 .playback
                 .as_ref()
                 .map(|p| p.status())
                 .unwrap_or_default();
-            let current = if status.ready && status.generation == self.generation && !self.playing {
+            // seek() invalidates the request key before the next UI tick
+            // assigns a generation. An old ready status cannot acknowledge it.
+            let current = if status.ready
+                && status.generation == self.generation
+                && !self.playing
+                && !self.request_key.is_empty()
+            {
                 status.position.clamp(
                     clip.source_in,
                     (clip.source_out - 0.000001).max(clip.source_in),
@@ -682,19 +679,15 @@ impl EditorApp {
             } else {
                 current
             };
-            if before {
-                self.trim(Some(current), None);
-            } else {
-                self.playing = false;
-                self.scrub = None;
-                self.settling = None;
-                self.seek(clip.timeline_start + current - clip.source_in);
-                self.stepping = Some(Stepping {
-                    generation: None,
-                    count: 1,
-                    trim_after: Some((clip.id, current)),
-                });
-            }
+            self.playing = false;
+            self.scrub = None;
+            self.settling = None;
+            self.seek(clip.timeline_start + current - clip.source_in);
+            self.stepping = Some(Stepping {
+                generation: None,
+                count: if before { 0 } else { 1 },
+                trim: Some((clip.id, before)),
+            });
         }
     }
     fn import(&mut self, paths: Vec<PathBuf>) {
@@ -2153,7 +2146,7 @@ impl EditorApp {
             .is_some_and(|s| s.generation == Some(status.generation) && status.ready)
         {
             let stepping = self.stepping.take().unwrap();
-            if let Some((id, current)) = stepping.trim_after {
+            if let Some((id, before)) = stepping.trim {
                 if let Some(clip) = self
                     .editor
                     .timeline()
@@ -2162,6 +2155,10 @@ impl EditorApp {
                     .find(|c| c.id == id)
                     .cloned()
                 {
+                    let current = status.seek_position.clamp(
+                        clip.source_in,
+                        (clip.source_out - 0.000001).max(clip.source_in),
+                    );
                     self.selected = Some(id);
                     self.playhead = clip.timeline_start + current - clip.source_in;
                     let end = if status.ended {
@@ -2169,7 +2166,9 @@ impl EditorApp {
                     } else {
                         status.position.min(clip.source_out)
                     };
-                    if end > current + 0.000001 && end < clip.source_out - 0.000001 {
+                    if before {
+                        self.trim(Some(current), None);
+                    } else if end > current + 0.000001 && end < clip.source_out - 0.000001 {
                         self.trim(None, Some(end));
                     } else {
                         self.seek(self.playhead);

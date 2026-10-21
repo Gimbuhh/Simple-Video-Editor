@@ -2,6 +2,7 @@ use super::*;
 use editor_core::{Editor, FrameRate};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, path::Path};
+pub const APPLICATION_VERSION: &str = env!("SVE_APPLICATION_VERSION");
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AudioStream {
@@ -258,7 +259,7 @@ pub fn edit_project(
             }
             SavedProject {
                 version: 2,
-                application_version: env!("SVE_APPLICATION_VERSION").into(),
+                application_version: APPLICATION_VERSION.into(),
                 clips: timeline.clips().to_vec(),
                 metadata: metadata.clone(),
             }
@@ -299,7 +300,7 @@ impl SavedProject {
         metadata.view = None;
         Self {
             version: 2,
-            application_version: env!("SVE_APPLICATION_VERSION").into(),
+            application_version: APPLICATION_VERSION.into(),
             clips: editor.timeline().clips().to_vec(),
             metadata,
         }

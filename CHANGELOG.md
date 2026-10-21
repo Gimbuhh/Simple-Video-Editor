@@ -8,6 +8,7 @@
 - Adds display-aware native preview with deliberate SDR/software fallback, per-section audio controls and non-destructive framing/rotation.
 - Corrects trim gesture anchoring, retained-frame previews, VFR frame stepping, search focus and multi-video stream selection.
 - Preserves precise trim values when unchanged fields are accepted, retries failed recovery writes during exports, and clears stale recovery after successful saves.
+- Waits for the requested decoded frame before quick trims, including shortcuts pressed while a seek is still pending.
 - Verifies pixel geometry, audio/gaps, cancellation/source protection and relocated portable startup with generated fixtures.
 - Physical HDR, DPI/accessibility and game/Shadowplay acceptance remain required before release. Transitions remain follow-up work.
 

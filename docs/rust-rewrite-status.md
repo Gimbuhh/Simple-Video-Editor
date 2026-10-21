@@ -46,6 +46,14 @@ Current Rust inventory is 28 source/test/build modules, approximately 9,500 nonb
 
 Hard cuts remain the default. Transitions/audio crossfades follow after rewrite/HDR verification. Proxy editing, markers, export queues, independent music tracks and other platforms are outside the accepted parity scope.
 
+### Follow-up correctness and startup investigation
+
+Actual native/software VFR input checks now cover retrying a locked recovery write while export is busy, clearing obsolete recovery after a successful asynchronous save, and accepting unchanged in/out fields without rounding stored timestamps. Selecting a different section for a move anchors its preview to that section's retained start. These checks pass in both preview modes.
+
+A later packaged native HLG run exposed a quick-trim race: a seek clears its request key before the following UI tick advances the generation, so a shortcut could read the previous generation's ready timestamp. Both quick trims now wait for the requested decoded frame. The playback acknowledgement carries its actual pre-step timestamp separately from the next frame used as an exclusive out boundary. Native/software VFR checks include trim-before while a seek is pending, and the normal desktop matrix presses trim-after before its seek completes. The legacy loader also derives application-version metadata from the same authoritative Cargo manifest.
+
+The access violation remains a separate unresolved investigation; the quick-trim failure was a test assertion with a normal exit, not that native crash. The original crash's Windows report identifies execute access violation `0xc0000005`, no usable stack, graphics/capture/overlay modules and no libmpv in its loaded-module list. One hundred startup/load/seek/shutdown cycles, one hundred early split/undo/redo cycles, and two hundred isolated release graphics-startup cycles passed without recurrence. Debug and packaged graphics-startup stress and a fresh packaged matrix are being checked separately. Instrumentation is confined to explicitly requested verification processes and never changes another application's hooks, capture or HDR settings.
+
 The dated foundation record below preserves original measurements and migration decisions. Its future-owner language and missing-feature statements describe the old foundation, not the current Rust production implementation.
 
 ## Historical foundation record — 2026-10-20

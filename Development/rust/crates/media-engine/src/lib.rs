@@ -173,7 +173,7 @@ impl Tools {
             }
             SavedProject {
                 version: 2,
-                application_version: "1.1.0".into(),
+                application_version: project_store::APPLICATION_VERSION.into(),
                 clips: legacy.timeline.clips().to_vec(),
                 metadata,
             }
