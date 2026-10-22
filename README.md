@@ -6,7 +6,7 @@ A portable Windows editor for trimming and combining local recordings. Edits lea
 
 Version 1.1.0 is the Rust release candidate on this branch. The latest published 1.0.x release remains available for rollback. Current-display HDR preview is user-confirmed and local game/Shadowplay controls pass. The user confirmed the separate HDR-to-SDR game-switch recording issue is external to this project. The PR stays open for remaining testing and approval.
 
-An intermittent desktop startup crash is still under investigation. Repeated automated startup checks have passed without reproducing it; this candidate is not ready for release. Details and verification evidence are in the [rewrite status](docs/rust-rewrite-status.md).
+A startup crash from an earlier Glow/OpenGL debug build remains unattributed. Current DX12 startup checks have passed without recurrence; broader display/DPI/accessibility acceptance is also pending before release. Details and verification evidence are in the [rewrite status](docs/rust-rewrite-status.md).
 
 ## Run
 
