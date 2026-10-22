@@ -117,6 +117,10 @@ Fresh same-lobby controls with the second game now pass in the current session: 
 
 These passes do not explain the earlier HDR-tagged failure. An attempted continuous-buffer foreground switch is excluded: desktop control stopped Instant Replay even without requested screenshots, and the helper restarted it after returning to the game. That recording is another fresh-start control, not proof of continuous capture across the switch. The user was asked for one manual editor/game switch with replay already running; analysis requires replay to remain enabled and refuses to restart it for that test. The existing per-recording SDR interpretation also produces plausible colors from the old clip through the production graph, but has not been applied automatically or treated as verified recovery of the intended source colors.
 
+The user then performed the manual switch. The first saved replay was filed as HDR/PQ desktop footage after the return to chat; it contains only a brief foreground-game segment and is not a settled game-capture pass. Leaving the game foreground for the follow-up produced a 32-second actual-gameplay replay with SDR/BT.709 tags. Replay was enabled before and after the wait, no restart action was issued, and both game and HDR editor remained running. Eight samples spanning 0.5–31 seconds show normal game colors without the reported red/rainbow corruption. NVIDIA saved a new game segment after the HDR desktop segment; this is successful target/color recovery while replay remains enabled, not proof that NVIDIA retained one continuous encoded buffer. Current-game PID alone was insufficient to identify what the earlier desktop file captured. Private reports and frames remain local.
+
+Current-display visual HDR and these bounded game/editor capture checks pass for the tested candidate. The historical incorrectly colored replay is still unexplained and has not been reproduced in the matched controls; no new production fix is claimed. Broader monitor/HDR-toggle coverage and the other acceptance gates above remain open.
+
 ### Completion audit
 
 | Gate | Evidence / remaining work |
