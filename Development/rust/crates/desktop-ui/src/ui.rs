@@ -101,6 +101,7 @@ pub struct EditorApp {
     preview_frame: Option<Arc<native_mpv::Frame>>,
     controls: BTreeMap<&'static str, Rect>,
     timeline_focus: Option<(egui::Id, ClipId)>,
+    keyboard_menu: Option<(egui::Id, Pos2)>,
     verification: Option<crate::verification::Verification>,
     relink: Option<RelinkState>,
 }
@@ -192,6 +193,7 @@ impl EditorApp {
             preview_frame: None,
             controls: BTreeMap::new(),
             timeline_focus: None,
+            keyboard_menu: None,
             verification,
             relink: None,
         })
@@ -1657,16 +1659,26 @@ impl EditorApp {
                                 self.playing = false;
                                 self.seek(clip.timeline_start);
                             }
+                            let menu_id = egui::Popup::default_response_id(&interaction);
                             let mut menu = egui::Popup::context_menu(&interaction);
+                            if interaction.secondary_clicked() {
+                                self.keyboard_menu = None;
+                            }
                             if self.selected == Some(clip.id)
                                 && !self.library_preview
-                                && !ctx.wants_keyboard_input()
+                                && (interaction.has_focus() || !ctx.wants_keyboard_input())
                                 && ctx.input(|i| i.modifiers.shift && i.key_pressed(egui::Key::F10))
                             {
-                                menu = menu
-                                    .open_memory(Some(egui::SetOpenCommand::Bool(true)))
-                                    .at_position(interaction.rect.center());
+                                self.keyboard_menu = Some((menu_id, interaction.rect.center()));
+                                menu = menu.open_memory(Some(egui::SetOpenCommand::Bool(true)));
                             }
+                            if let Some((id, position)) = self.keyboard_menu
+                                && id == menu_id
+                            {
+                                menu = menu.at_position(position);
+                            }
+                            let restore_menu_focus = egui::Popup::is_id_open(ctx, menu_id)
+                                && ctx.input(|i| i.key_pressed(egui::Key::Escape));
                             menu.show(|ui| {
                                 self.selected = Some(clip.id);
                                 if ui.button("Duplicate").clicked() {
@@ -1697,6 +1709,14 @@ impl EditorApp {
                                     ui.close();
                                 }
                             });
+                            if restore_menu_focus && !egui::Popup::is_id_open(ctx, menu_id) {
+                                ctx.memory_mut(|m| m.request_focus(interaction.id));
+                            }
+                            if self.keyboard_menu.is_some_and(|(id, _)| id == menu_id)
+                                && !egui::Popup::is_id_open(ctx, menu_id)
+                            {
+                                self.keyboard_menu = None;
+                            }
                         }
                         if !over_clip
                             && !self.ignore_scrub_until_release
@@ -2392,6 +2412,9 @@ impl EditorApp {
         if self.relink.is_some() || self.startup_recovery.is_some() {
             return;
         }
+        if egui::Popup::is_any_open(ctx) {
+            return;
+        }
         if ctx.input(|i| i.modifiers.command) {
             if ctx.input(|i| i.key_pressed(egui::Key::F)) {
                 ctx.memory_mut(|m| m.request_focus(egui::Id::new("recording-search-input")));
@@ -2536,6 +2559,11 @@ impl eframe::App for EditorApp {
             // application has OS focus. Ordinary sessions retain native focus.
             if !test.capture_hold {
                 raw.focused = true;
+                // Keep renderer screenshots, but do not mix the user's native
+                // pointer/keys with the verifier's isolated input sequence.
+                raw.events
+                    .retain(|event| matches!(event, egui::Event::Screenshot { .. }));
+                raw.modifiers = egui::Modifiers::NONE;
             }
             if let Some(egui::Event::Key { modifiers, .. }) = test.input.first() {
                 raw.modifiers = *modifiers;

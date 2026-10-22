@@ -32,7 +32,7 @@ Drag the recording scrubber or timeline ruler to seek. The pointer owns the play
 | Escape while dragging | Cancel the gesture |
 | Escape during import | Cancel import |
 
-Tab moves keyboard focus between controls, including timeline sections; Enter selects the focused section. A white inner outline identifies the focused section. Frame stepping, Split, Delete, Undo and Space playback remain available while a section has focus. Text fields own ordinary editing keys while focused. Use the timeline Zoom slider or Fit to change the visible scale.
+Tab moves keyboard focus between controls, including timeline sections; Enter selects the focused section. A white inner outline identifies the focused section. Frame stepping, Split, Delete, Undo and Space playback remain available while a section has focus. Shift+F10 opens its context menu; Escape closes the menu and restores section focus. Text fields own ordinary editing keys while focused. Use the timeline Zoom slider or Fit to change the visible scale.
 
 ## Audio, framing and color
 

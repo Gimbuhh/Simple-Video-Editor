@@ -8,7 +8,7 @@ Rust owns the desktop, timeline commands/history, persistence/recovery/relinking
 
 The superseded C#/WPF production tree and old production UI harness are removed. The optional C# reader oracle restores v1.0.4 source from Git commit `dd65df13a41490e8168a624b65fcff6a27956940` into ignored verification output, compiles it with the pinned SDK, and compares legacy import semantics. It is excluded from production and portable packages. Git and the exact previous release retain rollback. The authored icon source moved to Development/assets.
 
-The current UI candidate uses egui/eframe 0.32.3 with wgpu 25.0.2 restricted to Direct3D 12, plus AccessKit. It replaces the Glow/OpenGL UI after the capture controls below; capture compatibility is still under evaluation. Pinned Rust 1.90.0 uses checksum-pinned LLVM-MinGW 20260616 tools and LLD with the self-contained CRT. A real GNU-ld startup failure from mixed Windows import tables was reproduced and corrected. Native FFmpeg/FFprobe/libmpv pins and MediaMirrorTag are unchanged. Dependency/font/runtime notices accompany the package.
+The current UI candidate uses egui/eframe 0.32.3 with wgpu 25.0.2 restricted to Direct3D 12, plus AccessKit. It replaces the Glow/OpenGL UI after the capture controls below; current-display HDR and bounded local capture acceptance are recorded below. Pinned Rust 1.90.0 uses checksum-pinned LLVM-MinGW 20260616 tools and LLD with the self-contained CRT. A real GNU-ld startup failure from mixed Windows import tables was reproduced and corrected. Native FFmpeg/FFprobe/libmpv pins and MediaMirrorTag are unchanged. Dependency/font/runtime notices accompany the package.
 
 ## Current contract and ownership evidence
 
@@ -39,10 +39,10 @@ The library-row virtualization follow-up passed 137 targeted desktop checks (exe
 
 ## Outstanding acceptance gates
 
-- Resolve the intermittent graphics/startup access violation observed in a debug desktop verification process. Windows' report lists graphics/capture/overlay modules but no libmpv; it provides no usable stack. Loaded overlays alone do not establish causation. Isolated startup/early-edit stress and opt-in native diagnostics are being used without changing or stopping other apps.
-- Physical HDR display luminance/color accuracy, real display movement and Windows HDR toggles. An OS HDR flag, PQ target or ordinary screenshot is insufficient proof.
+- Diagnose the historical graphics/startup access violation observed in a debug Glow desktop process. The matching executable now resolves its application stacks, and the faulting Windows COM worker made a null callback before libmpv loaded; its owner is still unknown. Current DX12 startup stress has not reproduced it. Loaded overlays alone do not establish causation or a fix.
+- Real display movement and Windows HDR toggles beyond the user-confirmed correct HDR appearance on the current display. Physical luminance has not been measured; an OS HDR flag, PQ target or ordinary screenshot is insufficient proof.
 - Broader capture hardware/driver coverage beyond the passed local controls. The user-confirmed Windows/NVIDIA game-switch recording issue is external and is not a rewrite blocker.
-- Full 100–200% DPI and assistive-technology navigation matrix. Automated window sizing and AccessKit integration are partial evidence.
+- Physical per-monitor 100–200% DPI transitions and assistive-technology navigation. Automated five-scale UI layouts, actual native bounds and keyboard navigation supplement AccessKit integration; they do not replace those physical checks.
 - Representative game-footage/cold-cache performance acceptance and unavailable AMD/Intel encoder combinations. Generated 4K/long-GOP diagnostics below do not establish a universal latency guarantee.
 - User testing and explicit merge/release approval. Keep PR #8 open; do not tag or publish.
 
@@ -145,7 +145,7 @@ The retained original debug executable matches the crash dump's debug identity, 
 | Dead-code and metrics audit | Zero tracked superseded production files; no Rust TODO/unimplemented stubs. Current inventory, largest modules and artifact sizes are recorded above. The permanent native/software render alternatives serve distinct presentation/fallback purposes. |
 | Metadata and publication | Cargo 1.1.0 owns version resources and package naming. README/changelog/guides/release notes describe an unreleased candidate and known blockers. PR #8 stays open; no merge, tag or publication occurred. |
 
-Implementation cutover is present, but full rewrite acceptance is **not complete**: the original startup access violation still needs diagnosis, and physical HDR, display/DPI/accessibility, capture and representative-footage acceptance require the outstanding evidence listed above.
+Implementation cutover is present, but full rewrite acceptance is **not complete**: the historical startup access violation remains unattributed, and monitor/HDR-toggle, physical DPI/accessibility and representative-footage acceptance require the outstanding evidence listed above. Current-display HDR appearance is user-confirmed, bounded capture checks pass, and the independently confirmed Windows/NVIDIA game-switch recording issue is external to this project.
 
 The dated foundation record below preserves original measurements and migration decisions. Its future-owner language and missing-feature statements describe the old foundation, not the current Rust production implementation.
 

@@ -322,8 +322,12 @@ impl EditorApp {
                             || (self.playhead - test.scrub_target).abs() > 0.00001
                         {
                             return Err(format!(
-                                "Held ruler lost pointer ownership: {} versus {}",
-                                self.playhead, test.scrub_target
+                                "Held ruler lost pointer ownership: {} versus {} (pointer {:?}, down {}, owner {:?}, ruler {:?}, zoom {})",
+                                self.playhead, test.scrub_target,
+                                ctx.input(|i| i.pointer.latest_pos()),
+                                ctx.input(|i| i.pointer.primary_down()),
+                                self.scrub.as_ref().map(|s| s.owner),
+                                self.controls.get("ruler"), self.zoom
                             )
                             .into());
                         }
@@ -743,6 +747,36 @@ impl EditorApp {
                             .selected_clip()
                             .ok_or("Keyboard selection has no section")?;
                         self.seek(clip.timeline_start + clip.duration() * 0.5);
+                        test.key(egui::Key::F10, false);
+                        for event in &mut test.input {
+                            if let egui::Event::Key { modifiers, .. } = event {
+                                modifiers.shift = true;
+                            }
+                        }
+                        test.phase = 99;
+                    }
+                    99 => {
+                        if !egui::Popup::is_any_open(ctx) {
+                            return Err("Shift+F10 did not open the focused section menu".into());
+                        }
+                        test.key(egui::Key::S, false);
+                        test.phase = 101;
+                    }
+                    101 => {
+                        if !egui::Popup::is_any_open(ctx)
+                            || self.editor.timeline().clips() != test.expected.as_ref().unwrap()
+                        {
+                            return Err(
+                                "Section menu lost its anchor or leaked a timeline shortcut".into(),
+                            );
+                        }
+                        test.key(egui::Key::Escape, false);
+                        test.phase = 100;
+                    }
+                    100 => {
+                        if egui::Popup::is_any_open(ctx) {
+                            return Err("Escape did not close the section menu".into());
+                        }
                         test.phase = 86;
                     }
                     86 if self.playback.as_ref().is_some_and(|p| {
@@ -867,7 +901,7 @@ impl EditorApp {
                                 "Escape did not release search after keyboard editing".into()
                             );
                         }
-                        test.checks.push("Tab/Enter timeline selection, frame keys, split/undo/delete and Space transport preserve text-entry focus".into());
+                        test.checks.push("Tab/Enter timeline selection, Shift+F10 menu, frame keys, split/undo/delete and Space transport preserve text-entry focus".into());
                         test.phase = 60;
                     }
                     60 => {
