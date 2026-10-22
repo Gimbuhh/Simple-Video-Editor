@@ -1,4 +1,4 @@
-param([string]$AppPath,[switch]$Extended,[string[]]$Fixtures)
+param([string]$AppPath,[switch]$Extended,[string[]]$Fixtures,[switch]$ScaleLayouts)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'rust-environment.ps1')
 if (!$AppPath) {
@@ -7,6 +7,7 @@ if (!$AppPath) {
     $AppPath=Join-Path $env:CARGO_TARGET_DIR 'debug/simple-video-editor.exe'
 }
 $AppPath=[IO.Path]::GetFullPath($AppPath)
+$editorDesktopExeHash=(Get-FileHash -LiteralPath $AppPath -Algorithm SHA256).Hash
 $editorDesktopRoot=Join-Path $editorRustDevelopment ('artifacts/rust-desktop/'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $editorDesktopRoot -Force | Out-Null
 $editorDesktopReports=@()
@@ -20,6 +21,7 @@ foreach ($editorDesktopMode in @('native','software')) {
         $editorDesktopOutput=Join-Path $editorDesktopRoot "$editorDesktopMode-$editorDesktopCase"
         $editorDesktopArguments=@('--verify-desktop', ('"'+$editorDesktopSource+'"'), ('"'+$editorDesktopOutput+'"'))
         if ($editorDesktopMode -eq 'software') {$editorDesktopArguments+='--software-preview'}
+        if ($ScaleLayouts) {$editorDesktopArguments+='--scale-layouts'}
         $editorDesktopSecondary=Join-Path $editorRustDevelopment ('artifacts/rust-playback/'+$(if($editorDesktopCase -eq 'sdr'){'pq.mkv'}else{'sdr.mkv'}))
         $editorDesktopArguments+=@('--second-recording',('"'+$editorDesktopSecondary+'"'))
         $editorDesktopProcess=Start-Process -FilePath $AppPath -ArgumentList $editorDesktopArguments -PassThru -WindowStyle Hidden
@@ -27,7 +29,7 @@ foreach ($editorDesktopMode in @('native','software')) {
         if ($editorDesktopProcess.ExitCode -ne 0) { throw "Desktop crashed: $editorDesktopMode $editorDesktopFixture ($($editorDesktopProcess.ExitCode))" }
         $editorDesktopReport=Get-Content -LiteralPath (Join-Path $editorDesktopOutput 'desktop.json') -Raw | ConvertFrom-Json
         if (!$editorDesktopReport.passed) { throw "Desktop check failed: $editorDesktopMode $editorDesktopFixture · $($editorDesktopReport.failure)" }
-        $editorDesktopReports+=@{mode=$editorDesktopMode;fixture=$editorDesktopFixture;report=$editorDesktopReport}
+        $editorDesktopReports+=@{mode=$editorDesktopMode;fixture=$editorDesktopFixture;report=$editorDesktopReport;executableSha256=$editorDesktopExeHash;scaleLayouts=[bool]$ScaleLayouts}
         Write-Output "Desktop passed: $editorDesktopMode $editorDesktopFixture · $($editorDesktopReport.checks.Count) checks"
     }
 }

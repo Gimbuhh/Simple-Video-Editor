@@ -32,7 +32,7 @@ Drag the recording scrubber or timeline ruler to seek. The pointer owns the play
 | Escape while dragging | Cancel the gesture |
 | Escape during import | Cancel import |
 
-Text fields own ordinary editing keys while focused. Use the timeline Zoom slider or Fit to change the visible scale.
+Tab moves keyboard focus between controls, including timeline sections; Enter selects the focused section. A white inner outline identifies the focused section. Frame stepping, Split, Delete, Undo and Space playback remain available while a section has focus. Text fields own ordinary editing keys while focused. Use the timeline Zoom slider or Fit to change the visible scale.
 
 ## Audio, framing and color
 
@@ -44,7 +44,7 @@ Sources report transfer, primaries, matrix, range and pixel format. PQ and HLG a
 
 Choose SDR Rec.709 or HDR10/PQ output. PQ and HLG sources are deliberately tone-mapped for SDR preview/export and library thumbnails. HDR10 output uses 10-bit Rec.2020/PQ through AV1 or HEVC. H.264 remains SDR. Native HDR preview is requested only when Windows reports active HDR on the preview display; software rendering always uses SDR. The preview label states the active mode. Select Software SDR preview to explicitly use CPU-rendered tone-mapped video if native playback or capture compatibility causes problems. Changing Windows/display state is detected on the playback worker without changing system settings.
 
-Physical HDR accuracy, display switching, DPI/accessibility and game/Shadowplay coexistence remain acceptance gates for this candidate. A negotiated PQ target or ordinary screenshot does not prove physical HDR output.
+Current-display HDR appearance is user-confirmed and local game/Shadowplay controls pass. The user-confirmed Windows/NVIDIA HDR-to-SDR game-switch recording issue is external to the editor. Broader display switching and DPI/assistive-technology combinations remain tracked in the rewrite ledger. A negotiated PQ target or ordinary screenshot alone does not prove physical HDR output.
 
 ## Export
 

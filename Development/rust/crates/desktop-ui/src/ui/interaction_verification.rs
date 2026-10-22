@@ -18,7 +18,13 @@ impl EditorApp {
                 return Ok(());
             }
             if test.started.elapsed()
-                > Duration::from_secs(if test.capture_hold { 300 } else { 90 })
+                > Duration::from_secs(if test.capture_hold {
+                    300
+                } else if test.scale_layouts {
+                    240
+                } else {
+                    90
+                })
             {
                 return Err(format!(
                     "Desktop verification timed out at phase {}: {}",
@@ -707,30 +713,175 @@ impl EditorApp {
                             );
                         }
                         test.checks.push("Preview modes switch and restore through real input without changing the project".into());
+                        test.phase = 84;
+                    }
+                    84 => {
+                        if self.timeline_focus.is_some() {
+                            test.key(egui::Key::Enter, false);
+                            test.phase = 85;
+                        } else {
+                            test.focus_steps += 1;
+                            if test.focus_steps > 80 {
+                                return Err(format!(
+                                    "Tab navigation could not reach a timeline section (window focused: {}, widget: {:?}, busy: {})",
+                                    ctx.input(|i| i.focused), ctx.memory(|m| m.focused()), self.busy
+                                ).into());
+                            }
+                            test.key(egui::Key::Tab, false);
+                        }
+                    }
+                    85 => {
+                        let (_, focused) = self
+                            .timeline_focus
+                            .ok_or("Timeline focus was lost on Enter")?;
+                        if self.library_preview || self.selected != Some(focused) {
+                            return Err(
+                                "Enter did not select the keyboard-focused timeline section".into(),
+                            );
+                        }
+                        let clip = self
+                            .selected_clip()
+                            .ok_or("Keyboard selection has no section")?;
+                        self.seek(clip.timeline_start + clip.duration() * 0.5);
+                        test.phase = 86;
+                    }
+                    86 if self.playback.as_ref().is_some_and(|p| {
+                        let status = p.status();
+                        status.ready && status.generation == self.generation
+                    }) =>
+                    {
+                        test.keyboard_position = self.playhead;
+                        test.key(egui::Key::ArrowRight, false);
+                        test.phase = 97;
+                    }
+                    97 if self.stepping.is_none()
+                        && self.playback.as_ref().is_some_and(|p| {
+                            let status = p.status();
+                            status.ready && status.generation == self.generation
+                        }) =>
+                    {
+                        if self.timeline_focus.is_none() || self.playhead <= test.keyboard_position
+                        {
+                            return Err(
+                                "Right frame key lost timeline focus or failed to advance".into()
+                            );
+                        }
+                        test.key(egui::Key::ArrowLeft, false);
+                        test.phase = 98;
+                    }
+                    98 if self.stepping.is_none()
+                        && self.playback.as_ref().is_some_and(|p| {
+                            let status = p.status();
+                            status.ready && status.generation == self.generation
+                        }) =>
+                    {
+                        let clip = self
+                            .selected_clip()
+                            .ok_or("Frame step lost its selected section")?;
+                        let frame = self
+                            .editor
+                            .metadata()
+                            .sources
+                            .iter()
+                            .find(|s| s.id == clip.source)
+                            .ok_or("Frame step lost its recording")?
+                            .rate
+                            .frame_seconds();
+                        if self.timeline_focus.is_none()
+                            || (self.playhead - test.keyboard_position).abs() > frame + 0.000001
+                        {
+                            return Err(
+                                "Left frame key lost timeline focus or failed to return".into()
+                            );
+                        }
+                        test.key(egui::Key::S, false);
+                        test.phase = 87;
+                    }
+                    87 => {
+                        if self.editor.timeline().clips().len()
+                            != test.expected.as_ref().unwrap().len() + 1
+                        {
+                            return Err(
+                                "Split shortcut was blocked by timeline keyboard focus".into()
+                            );
+                        }
+                        test.key(egui::Key::Z, true);
+                        test.phase = 88;
+                    }
+                    88 => {
+                        if self.editor.timeline().clips() != test.expected.as_ref().unwrap() {
+                            return Err("Undo shortcut failed with timeline keyboard focus".into());
+                        }
+                        test.key(egui::Key::Space, false);
+                        test.phase = 89;
+                    }
+                    89 => {
+                        if !self.playing {
+                            return Err("Space did not play the keyboard-focused timeline".into());
+                        }
+                        test.key(egui::Key::Space, false);
+                        test.phase = 90;
+                    }
+                    90 => {
+                        if self.playing {
+                            return Err("Space did not pause the keyboard-focused timeline".into());
+                        }
+                        test.key(egui::Key::Delete, false);
+                        test.phase = 91;
+                    }
+                    91 => {
+                        if self.editor.timeline().clips().len() + 1
+                            != test.expected.as_ref().unwrap().len()
+                        {
+                            return Err(
+                                "Delete shortcut failed with timeline keyboard focus".into()
+                            );
+                        }
+                        test.key(egui::Key::Z, true);
+                        test.phase = 92;
+                    }
+                    92 => {
+                        if self.editor.timeline().clips() != test.expected.as_ref().unwrap() {
+                            return Err("Keyboard deletion was not restored by one undo".into());
+                        }
+                        test.key(egui::Key::F, true);
+                        test.phase = 93;
+                    }
+                    93 => {
+                        test.key(egui::Key::S, false);
+                        test.input.push(egui::Event::Text("s".into()));
+                        test.phase = 94;
+                    }
+                    94 => {
+                        if self.search != "s"
+                            || self.editor.timeline().clips() != test.expected.as_ref().unwrap()
+                        {
+                            return Err("Search typing triggered a timeline edit".into());
+                        }
+                        test.key(egui::Key::Escape, false);
+                        test.phase = 95;
+                    }
+                    95 => {
+                        if !self.search.is_empty() {
+                            return Err(
+                                "Escape did not release search after keyboard editing".into()
+                            );
+                        }
+                        test.checks.push("Tab/Enter timeline selection, frame keys, split/undo/delete and Space transport preserve text-entry focus".into());
                         test.phase = 60;
                     }
                     60 => {
-                        let sizes = [
-                            Vec2::new(1000.0, 740.0),
-                            Vec2::new(1320.0, 880.0),
-                            Vec2::new(1800.0, 740.0),
-                            Vec2::new(1100.0, 1000.0),
-                        ];
-                        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(sizes[test.layout]));
+                        ctx.set_zoom_factor(test.layout_scale());
+                        // Zoom applies on the next pass. Resize only after its
+                        // new point-to-pixel conversion is active.
+                        test.phase = 96;
+                    }
+                    96 => {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(test.layout_size()));
                         test.phase = 61;
                     }
                     61 => {
-                        let sizes = [
-                            Vec2::new(1000.0, 740.0),
-                            Vec2::new(1320.0, 880.0),
-                            Vec2::new(1800.0, 740.0),
-                            Vec2::new(1100.0, 1000.0),
-                        ];
-                        if ctx.input(|i| {
-                            i.viewport()
-                                .inner_rect
-                                .is_some_and(|r| (r.size() - sizes[test.layout]).length() < 3.0)
-                        }) {
+                        if (ctx.screen_rect().size() - test.layout_size()).length() < 3.0 {
                             test.phase = 62;
                         }
                     }
@@ -739,6 +890,18 @@ impl EditorApp {
                         let viewport = self.controls["preview-viewport"];
                         let screen = ctx.screen_rect();
                         let output = self.preview_output();
+                        let ppp = ctx.pixels_per_point();
+                        let expected_bounds = (
+                            (rect.left() * ppp).round() as i32,
+                            (rect.top() * ppp).round() as i32,
+                            (rect.width() * ppp).round() as i32,
+                            (rect.height() * ppp).round() as i32,
+                        );
+                        if self.video.bounds()? != expected_bounds {
+                            return Err(
+                                "Native child bounds did not match the scaled preview".into()
+                            );
+                        }
                         if rect.width() < 1.0
                             || rect.height() < 1.0
                             || !viewport.expand(0.1).contains_rect(rect)
@@ -752,8 +915,10 @@ impl EditorApp {
                             || self.controls["frame-forward"].right() > viewport.right() + 0.1
                         {
                             return Err(format!(
-                                "Preview or transport escaped its layout at resize {}",
-                                test.layout
+                                "Preview or transport escaped its layout at resize {}, scale {} (screen {:?}, viewport {:?}, preview {:?}, ruler {:?}, scrubber {:?}, label {:?}, next {:?})",
+                                test.layout, test.layout_scale(), screen, viewport, rect,
+                                self.controls["ruler"], self.controls["scrubber"],
+                                self.controls["position-label"], self.controls["frame-forward"]
                             )
                             .into());
                         }
@@ -768,13 +933,25 @@ impl EditorApp {
                                 test.screenshot(&image)?;
                                 std::fs::copy(
                                     test.directory.join("desktop.bmp"),
-                                    test.directory.join(format!("layout-{}.bmp", test.layout)),
+                                    test.directory.join(if test.scale_layouts {
+                                        format!("scale-{}-layout-{}.bmp", test.scale, test.layout)
+                                    } else {
+                                        format!("layout-{}.bmp", test.layout)
+                                    }),
                                 )?;
                                 test.layout += 1;
+                                if test.layout == 4 && test.scale_layouts && test.scale < 4 {
+                                    test.scale += 1;
+                                    test.layout = 0;
+                                }
                                 if test.layout < 4 {
                                     test.phase = 60;
                                 } else {
-                                    test.checks.push("Preview, native surface bounds and transport fit four window sizes with the correct aspect".into());
+                                    test.checks.push(if test.scale_layouts {
+                                        "Preview, actual native bounds and transport fit four sizes at 100/125/150/175/200% UI scale".into()
+                                    } else {
+                                        "Preview, actual native bounds and transport fit four window sizes with the correct aspect".into()
+                                    });
                                     ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(
                                         Default::default(),
                                     ));

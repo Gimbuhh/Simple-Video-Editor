@@ -1,6 +1,6 @@
 # Rust rewrite status
 
-Target **1.1.0**. Started 2026-10-20. Production source/build cutover is implemented on the PR branch. This is an unreleased candidate: an intermittent desktop startup crash is under investigation, and physical HDR, display/DPI/accessibility and game-capture acceptance still prevent declaring the full rewrite/release verified. No merge, tag or publication is authorized or performed.
+Target **1.1.0**. Started 2026-10-20. Production source/build cutover is implemented on the PR branch. Current-display HDR preview and bounded game capture checks pass. The user independently confirmed the HDR-game-to-SDR-game recording problem is external to this project; it no longer blocks the rewrite. The intermittent desktop startup failure and remaining display/DPI/accessibility acceptance still require follow-up. This is an unreleased candidate; no merge, tag or publication is authorized or performed.
 
 ## Current implementation — 2026-10-22
 
@@ -41,7 +41,7 @@ The library-row virtualization follow-up passed 137 targeted desktop checks (exe
 
 - Resolve the intermittent graphics/startup access violation observed in a debug desktop verification process. Windows' report lists graphics/capture/overlay modules but no libmpv; it provides no usable stack. Loaded overlays alone do not establish causation. Isolated startup/early-edit stress and opt-in native diagnostics are being used without changing or stopping other apps.
 - Physical HDR display luminance/color accuracy, real display movement and Windows HDR toggles. An OS HDR flag, PQ target or ordinary screenshot is insufficient proof.
-- Game/Shadowplay coexistence with a running game. Opt-in local API capture now tests the game with isolated editor processes; bounded results and their remaining limits are recorded below.
+- Broader capture hardware/driver coverage beyond the passed local controls. The user-confirmed Windows/NVIDIA game-switch recording issue is external and is not a rewrite blocker.
 - Full 100–200% DPI and assistive-technology navigation matrix. Automated window sizing and AccessKit integration are partial evidence.
 - Representative game-footage/cold-cache performance acceptance and unavailable AMD/Intel encoder combinations. Generated 4K/long-GOP diagnostics below do not establish a universal latency guarantee.
 - User testing and explicit merge/release approval. Keep PR #8 open; do not tag or publish.
@@ -120,6 +120,16 @@ These passes do not explain the earlier HDR-tagged failure. An attempted continu
 The user then performed the manual switch. The first saved replay was filed as HDR/PQ desktop footage after the return to chat; it contains only a brief foreground-game segment and is not a settled game-capture pass. Leaving the game foreground for the follow-up produced a 32-second actual-gameplay replay with SDR/BT.709 tags. Replay was enabled before and after the wait, no restart action was issued, and both game and HDR editor remained running. Eight samples spanning 0.5–31 seconds show normal game colors without the reported red/rainbow corruption. NVIDIA saved a new game segment after the HDR desktop segment; this is successful target/color recovery while replay remains enabled, not proof that NVIDIA retained one continuous encoded buffer. Current-game PID alone was insufficient to identify what the earlier desktop file captured. Private reports and frames remain local.
 
 Current-display visual HDR and these bounded game/editor capture checks pass for the tested candidate. The historical incorrectly colored replay is still unexplained and has not been reproduced in the matched controls; no new production fix is claimed. Broader monitor/HDR-toggle coverage and the other acceptance gates above remain open.
+
+### User-confirmed HDR acceptance and external capture issue
+
+The user independently confirmed that the HDR-game-to-SDR-game recording failure belongs to Windows/NVIDIA and is not a fault of this project, and requested continuation of the rewrite. Together with the prior physical-display confirmation and native/software/manual/replay controls, this closes the local HDR/capture investigation as a rewrite blocker. The classification is user-confirmed; no unperformed reproduction is claimed, and no editor color heuristic or Shadowplay reset is added. The historical observations above are retained. Unmeasured display combinations and the separate startup/DPI/accessibility work remain explicit follow-up.
+
+### Keyboard focus and recovered startup evidence
+
+A new actual-input regression reproduced a blocked split after Tab/Enter selected a timeline section: egui's wants_keyboard_input is true for any focused widget, so the old guard treated focused sections as text fields. Editing shortcuts now remain available for a focused section, Space is consumed once before it can also activate the section, and a visible inner outline marks keyboard focus. Native/software SDR checks pass for split/undo/delete, playback/pause, selection and search typing. Isolated injected-input checks explicitly simulate a focused egui context; ordinary sessions retain native OS focus. This is not a claim of full screen-reader acceptance.
+
+The retained original debug executable matches the crash dump's debug identity, allowing application frames to be resolved. Its main thread was in the removed Glow/OpenGL first-render path while eframe resized its application icon; another application thread was discovering/hashing native tools. The faulting thread made a null call through Windows COM worker code, with no application or libmpv frame on that faulting stack and no libmpv module loaded. This is stronger evidence about the original failure's timing than the earlier unsymbolized report, but it does not identify the callback owner or prove the DX12 candidate fixes it. The historical startup issue remains documented; no speculative library/driver workaround is added.
 
 ### Completion audit
 

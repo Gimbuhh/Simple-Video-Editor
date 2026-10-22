@@ -9,8 +9,9 @@
 - Corrects trim gesture anchoring, retained-frame previews, VFR frame stepping, search focus and multi-video stream selection.
 - Preserves precise trim values when unchanged fields are accepted, retries failed recovery writes during exports, and clears stale recovery after successful saves.
 - Waits for the requested decoded frame before quick trims, including shortcuts pressed while a seek is still pending.
+- Keeps split, delete, undo and Space playback working after keyboard focus enters a timeline section, with a visible focus outline and preserved text-field shortcuts.
 - Verifies pixel geometry, audio/gaps, cancellation/source protection and relocated portable startup with generated fixtures.
-- Physical HDR, DPI/accessibility and game/Shadowplay acceptance remain required before release. Transitions remain follow-up work.
+- Current-display HDR preview is user-confirmed and local game/Shadowplay controls pass; the user-confirmed external game-switch recording issue no longer blocks the rewrite. Broader display, DPI/accessibility and remaining release acceptance are tracked in the rewrite ledger. Transitions remain follow-up work.
 
 ## 1.0.4 — 2026-10-09
 

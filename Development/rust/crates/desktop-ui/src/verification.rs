@@ -138,6 +138,10 @@ pub struct Verification {
     pub anchor: Option<egui::Pos2>,
     pub expected: Option<Vec<editor_core::Clip>>,
     pub layout: usize,
+    pub focus_steps: usize,
+    pub keyboard_position: f64,
+    pub scale_layouts: bool,
+    pub scale: usize,
     pub was_software: bool,
     pub recovery_lock: Option<std::fs::File>,
     pub precision: Option<project_store::SavedProject>,
@@ -176,6 +180,10 @@ impl Verification {
             anchor: None,
             expected: None,
             layout: 0,
+            focus_steps: 0,
+            keyboard_position: 0.0,
+            scale_layouts: args.iter().any(|a| a == "--scale-layouts"),
+            scale: 0,
             was_software: false,
             recovery_lock: None,
             precision: None,
@@ -196,6 +204,21 @@ impl Verification {
                 modifiers,
             });
         }
+    }
+    pub fn layout_scale(&self) -> f32 {
+        if self.scale_layouts {
+            [1.0, 1.25, 1.5, 1.75, 2.0][self.scale]
+        } else {
+            1.0
+        }
+    }
+    pub fn layout_size(&self) -> egui::Vec2 {
+        [
+            egui::vec2(1000.0, 740.0),
+            egui::vec2(1320.0, 880.0),
+            egui::vec2(1800.0, 740.0),
+            egui::vec2(1100.0, 1000.0),
+        ][self.layout]
     }
     pub fn pointer(&mut self, pos: egui::Pos2, pressed: Option<bool>) {
         self.input.push(egui::Event::PointerMoved(pos));

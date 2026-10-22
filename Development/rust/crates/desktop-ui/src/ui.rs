@@ -100,6 +100,7 @@ pub struct EditorApp {
     preview_texture: Option<egui::TextureHandle>,
     preview_frame: Option<Arc<native_mpv::Frame>>,
     controls: BTreeMap<&'static str, Rect>,
+    timeline_focus: Option<(egui::Id, ClipId)>,
     verification: Option<crate::verification::Verification>,
     relink: Option<RelinkState>,
 }
@@ -190,6 +191,7 @@ impl EditorApp {
             preview_texture: None,
             preview_frame: None,
             controls: BTreeMap::new(),
+            timeline_focus: None,
             verification,
             relink: None,
         })
@@ -1253,6 +1255,7 @@ impl EditorApp {
         });
     }
     fn timeline_ui(&mut self, ctx: &egui::Context) {
+        self.timeline_focus = None;
         egui::TopBottomPanel::bottom("timeline")
             .resizable(true)
             .default_height(260.0)
@@ -1465,6 +1468,24 @@ impl EditorApp {
                                 ui.id().with(("clip", clip.id.0)),
                                 Sense::click_and_drag(),
                             );
+                            if interaction.has_focus() {
+                                self.timeline_focus = Some((interaction.id, clip.id));
+                                ui.memory_mut(|m| {
+                                    m.set_focus_lock_filter(
+                                        interaction.id,
+                                        egui::EventFilter {
+                                            horizontal_arrows: true,
+                                            ..Default::default()
+                                        },
+                                    );
+                                });
+                                painter.rect_stroke(
+                                    linked.shrink(3.0),
+                                    2.0,
+                                    Stroke::new(1.5, Color32::WHITE),
+                                    egui::StrokeKind::Inside,
+                                );
+                            }
                             interaction.widget_info(|| {
                                 egui::WidgetInfo::selected(
                                     egui::WidgetType::SelectableLabel,
@@ -2407,12 +2428,22 @@ impl EditorApp {
             ctx.memory_mut(|m| m.surrender_focus(search));
             return;
         }
-        if ctx.wants_keyboard_input()
+        let timeline_focused = self
+            .timeline_focus
+            .is_some_and(|(id, _)| ctx.memory(|m| m.has_focus(id)));
+        if ctx.wants_keyboard_input() && !timeline_focused
             || self.busy && !self.exporting
             || self.relink.is_some()
             || self.startup_recovery.is_some()
         {
             return;
+        }
+        // A focused section owns editing keys, unlike an input field. Consume
+        // Space before the section widget can also interpret it as activation.
+        if timeline_focused
+            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space))
+        {
+            self.toggle_playback();
         }
         ctx.input(|input| {
             if input.key_pressed(egui::Key::Escape) {
@@ -2501,6 +2532,11 @@ impl EditorApp {
 impl eframe::App for EditorApp {
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
         if let Some(test) = &mut self.verification {
+            // Injected events target this isolated context even when another
+            // application has OS focus. Ordinary sessions retain native focus.
+            if !test.capture_hold {
+                raw.focused = true;
+            }
             if let Some(egui::Event::Key { modifiers, .. }) = test.input.first() {
                 raw.modifiers = *modifiers;
             }

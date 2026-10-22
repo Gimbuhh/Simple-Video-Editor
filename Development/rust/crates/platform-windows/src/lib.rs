@@ -89,6 +89,34 @@ impl VideoWindow {
     pub fn handle(&self) -> isize {
         self.handle
     }
+    /// Read this owned child's physical bounds relative to its live parent.
+    pub fn bounds(&self) -> io::Result<(i32, i32, i32, i32)> {
+        // SAFETY: the child and its parent are live on this UI thread. Windows
+        // writes only to the local RECT/POINT buffers during these calls.
+        unsafe {
+            let mut rect: RECT = std::mem::zeroed();
+            if GetWindowRect(self.handle, &mut rect) == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            let mut origin = POINT {
+                x: rect.left,
+                y: rect.top,
+            };
+            if windows_sys::Win32::Graphics::Gdi::ScreenToClient(
+                GetParent(self.handle),
+                &mut origin,
+            ) == 0
+            {
+                return Err(io::Error::last_os_error());
+            }
+            Ok((
+                origin.x,
+                origin.y,
+                rect.right - rect.left,
+                rect.bottom - rect.top,
+            ))
+        }
+    }
     pub fn layout(&self, x: i32, y: i32, width: i32, height: i32, visible: bool) {
         // SAFETY: called on the owning UI thread, with a live child HWND.
         unsafe {

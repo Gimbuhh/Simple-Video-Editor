@@ -2,7 +2,7 @@
 
 This workspace owns the production Simple Video Editor 1.1.0 candidate. The application's Cargo.toml is the version authority. See the [user guide](../../docs/user-guide.md), [development commands](../../docs/development.md) and [contract/cutover ledger](../../docs/rust-rewrite-status.md).
 
-Rust owns all production editor, persistence, media, playback, export and UI responsibilities. No C#/.NET bridge or runtime is packaged. The legacy C# project is restored from an exact Git commit only for isolated differential tests. Physical HDR/display/game-capture and full DPI/accessibility acceptance remain unfinished; the PR stays open for user testing.
+Rust owns all production editor, persistence, media, playback, export and UI responsibilities. No C#/.NET bridge or runtime is packaged. The legacy C# project is restored from an exact Git commit only for isolated differential tests. Current-display HDR preview and local game capture checks pass; the user confirmed the separate game-switch recording issue is external. Broader display/DPI/accessibility and startup follow-up remain tracked in the ledger; the PR stays open for user testing.
 
 ```powershell
 ./Development/scripts/setup.ps1
