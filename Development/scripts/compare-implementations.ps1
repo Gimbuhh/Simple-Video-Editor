@@ -1,6 +1,6 @@
 param(
-    [string]$LegacyApp='App-Rewrite-Release',
-    [string]$RustApp='App-Rust-11-Candidate',
+    [Parameter(Mandatory)][string]$LegacyApp,
+    [string]$RustApp='App',
     [Parameter(Mandatory)][string]$Source,
     [ValidateRange(1,5)][int]$Samples=3,
     [ValidateRange(5,30)][int]$SettleSeconds=10,

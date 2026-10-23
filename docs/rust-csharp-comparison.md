@@ -13,7 +13,7 @@ Compared on 2026-10-23. The improved Rust candidate restores the identified star
 
 The complete portable bundles are approximately 469 MB and 367 MB; their downloads are approximately 199 MB and 149 MB (decimal MB). This is about 22% less extracted storage and 25% less download, rather than the much larger reduction suggested by executable sizes alone. Final ZIP checksums live in their sidecars. All compared media binaries match by SHA-256. Both distributions are portable; C# already bundled its runtime, so neither requires a separate .NET installation.
 
-C# main/history, its original release ZIP and baseline bundles/source are retained. The original ZIP SHA-256 is `5503f27981238c9d38e9e0b31fce8075b0c26511727fdfd16f6c0ef772e86493`. The latest notes-only and packaging changes do not change the tested Rust executable above.
+C# main/history and its original release ZIP are retained. Redundant extracted baseline bundles and cached source were removed during the requested cleanup; extract the ZIP or restore the pinned Git commit when needed. The original ZIP SHA-256 is `5503f27981238c9d38e9e0b31fce8075b0c26511727fdfd16f6c0ef772e86493`. The latest documentation and tooling changes do not change the tested Rust executable above, now in `App`.
 
 ## Restored behavior and performance changes
 
@@ -44,7 +44,7 @@ The final Rust empty-window private commit is about 56% below the earlier Rust c
 
 Final visible evidence: version-comparison/01c3189ec1144935bb10c162aac37f73. Original visible evidence: version-comparison/aeece648de03426088901718272574c3. Excluded hidden diagnostics: version-comparison/a38f18040b5441e7b59c241d3afac4c7 and version-comparison/7fed6a94735d46c7bc924f6d9bfab29e. Intermediate optimization samples are retained privately but are not the final-artifact comparison.
 
-Reproduce with `Development/scripts/compare-implementations.ps1 -RustApp App-Rust-Optimized -Source <generated-SDR-recording> -Visible -OrdinaryStartup`. Visible mode refuses hidden/minimized samples. It closes only its own children and records raw samples, means, hashes and window states. No private recording, desktop-control session or NVIDIA capture API is required.
+Reproduce with `Development/scripts/compare-implementations.ps1 -LegacyApp <extracted-CSharp-1.0.4-bundle> -RustApp App -Source <generated-SDR-recording> -Visible -OrdinaryStartup`. Visible mode refuses hidden/minimized samples. It closes only its own children and records raw samples, means, hashes and window states. No private recording, desktop-control session or NVIDIA capture API is required.
 
 ## Verified advantages and remaining tradeoffs
 
@@ -56,4 +56,4 @@ Separate checks of this exact executable confirm ready 4K SDR preview on the req
 
 Newly saved projects use schema 2; C# reads schema 1 only. Keep original projects for rollback. Broader physical monitor/HDR toggles, real DPI transitions and assistive-technology acceptance remain incomplete. An old Glow debug startup failure is still unattributed; the production UI uses DX12 and current stress runs pass. The user confirmed that the separate Windows/NVIDIA game-switch recording issue is external; that investigation remains closed.
 
-The candidate is more capable and smaller, restores the known interaction gaps and avoids the previous idle polling cost. It is a practical upgrade for the tested HDR/editing workflows, with the memory tradeoff above. Retain C# history/releases/baselines and original projects through user acceptance. Visual refinement and transition effects remain later work. PR #8 stays open; no merge, release tag or publication is performed.
+The candidate is more capable and smaller, restores the known interaction gaps and avoids the previous idle polling cost. It is a practical upgrade for the tested HDR/editing workflows, with the memory tradeoff above. C# history, the original release ZIP, comparison reports and original projects remain available through user acceptance. Visual refinement and transition effects remain later work. PR #8 stays open; no merge, release tag or publication is performed.

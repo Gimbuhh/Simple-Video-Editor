@@ -10,7 +10,7 @@ $editorPinned=@{'libmpv-2.dll'=$editorDependencies.MpvLibrarySha256}
 foreach($editorFile in $editorDependencies.FfmpegFiles.psobject.Properties){$editorPinned[$editorFile.Name]=$editorFile.Value}
 foreach($editorName in $editorPinned.Keys){if((Get-FileHash -LiteralPath (Join-Path $editorApp "bin/$editorName") -Algorithm SHA256).Hash -ine $editorPinned[$editorName]){throw 'App media pins failed; keep development files.'}}
 foreach($editorNotice in @('mpv-LGPL.txt','ffmpeg-GPL.txt','rust-dependencies.md')){if(!(Test-Path -LiteralPath (Join-Path $editorApp "docs/licenses/$editorNotice"))){throw 'App license notices are incomplete.'}}
-$editorTargets=@('rust/target','vendor','tests/RustParityOracle/bin','tests/RustParityOracle/obj')
+$editorTargets=@('rust/target','vendor','tests/RustParityOracle/bin','tests/RustParityOracle/obj','src/SimpleVideoEditor/bin','src/SimpleVideoEditor/obj')
 if($BuildTools){$editorTargets+='.tools'}
 foreach($editorRelative in $editorTargets){
     $editorTarget=[IO.Path]::GetFullPath((Join-Path $editorDevelopment $editorRelative))

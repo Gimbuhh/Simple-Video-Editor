@@ -6,7 +6,7 @@ $ErrorActionPreference='Stop'
 $editorRustVersionFile=Join-Path $editorRustWorkspace 'crates/desktop-ui/Cargo.toml'
 if ((Get-Content $editorRustVersionFile -Raw) -notmatch '(?m)^version = "(\d+\.\d+\.\d+)"$') {throw 'Missing Rust candidate version.'}
 $editorRustVersion=$Matches[1]
-if (!$PackagePath) {$PackagePath=Join-Path $editorRustDevelopment ('artifacts/rust-packages/'+(Get-EditorPackageName $editorRustVersion))}
+if (!$PackagePath) {$PackagePath=Join-Path $editorWorkspace ('Releases/'+(Get-EditorPackageName $editorRustVersion))}
 $PackagePath=[IO.Path]::GetFullPath($PackagePath)
 Assert-EditorPackage $PackagePath $editorRustVersion
 $editorPortableRoot=Join-Path $editorRustDevelopment ('artifacts/rust-package-verification/'+[guid]::NewGuid().ToString('N'))
