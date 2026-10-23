@@ -334,6 +334,7 @@ impl EditorApp {
         self.library_selected = None;
         self.library_preview = false;
         self.search.clear();
+        self.message.clear();
         self.request_key.clear();
         self.waveforms.clear();
         self.thumbnails.clear();
@@ -987,7 +988,7 @@ impl EditorApp {
                 Event::Tools(result) => match result {
                     Ok(tools) => {
                         self.tools = Some(tools);
-                        self.message = "Import recordings to begin".into();
+                        self.message.clear();
                     }
                     Err(e) => self.fail(e),
                 },
@@ -1043,7 +1044,7 @@ impl EditorApp {
                     }
                     self.start_waveforms();
                     self.message = if errors.is_empty() {
-                        "Recordings ready · double-click to add a linked section".into()
+                        String::new()
                     } else {
                         errors.join("\n")
                     };
@@ -1192,14 +1193,6 @@ impl EditorApp {
         egui::TopBottomPanel::top("header").show(ctx, |ui| {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("SIMPLE VIDEO EDITOR")
-                        .strong()
-                        .size(17.0)
-                        .color(MINT),
-                );
-                ui.label(env!("CARGO_PKG_VERSION"));
-                ui.separator();
                 ui.label(format!(
                     "{}{}",
                     self.path
@@ -1252,27 +1245,29 @@ impl EditorApp {
             });
             ui.add_space(4.0);
         });
-        egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                if self.busy {
-                    ui.spinner();
-                }
-                ui.label(&self.message);
-                if self.busy && ui.button("Cancel").clicked() {
-                    self.cancel.store(true, Ordering::Release);
+        if self.busy || self.exporting || !self.message.is_empty() {
+            egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    if self.busy {
+                        ui.spinner();
+                    }
+                    ui.label(&self.message);
+                    if self.busy && ui.button("Cancel").clicked() {
+                        self.cancel.store(true, Ordering::Release);
+                    }
+                });
+                if self.exporting {
+                    ui.add(egui::ProgressBar::new(self.progress as f32).show_percentage());
                 }
             });
-            if self.exporting {
-                ui.add(egui::ProgressBar::new(self.progress as f32).show_percentage());
-            }
-        });
+        }
     }
     fn library(&mut self, ctx: &egui::Context) {
         egui::SidePanel::left("recordings").resizable(true).default_width(350.0).width_range(300.0..=460.0).show(ctx,|ui| {
             if self.busy && !self.exporting{ui.disable();}
             ui.horizontal(|ui| {
                 ui.heading("Recordings");ui.label(self.editor.metadata().sources.len().to_string());
-                if ui.add_enabled(!self.busy && self.tools.is_some(),egui::Button::new("Cache")).on_hover_text("Clear generated thumbnails and waveforms").clicked() && let Some(tools)=self.tools.clone(){
+                if ui.add_enabled(!self.busy && self.tools.is_some(),egui::Button::new("Clear cache")).on_hover_text("Clear generated thumbnails and waveforms").clicked() && let Some(tools)=self.tools.clone(){
                     self.busy=true;let protected=self.editor.metadata().sources.iter().map(|s|PathBuf::from(&s.path)).collect::<Vec<_>>();let tx=self.tx.clone();self.jobs.push(std::thread::spawn(move ||{let _=tx.send(Event::Cache(tools.clear_cache(&protected).map_err(|e|e.to_string())));}));
                 }
             });
@@ -1293,7 +1288,7 @@ impl EditorApp {
             if !search.is_empty(){ui.label(format!("{} of {} recordings",visible.len(),sources.len()));}
             ui.separator();
             egui::ScrollArea::vertical().show_rows(ui,64.0,visible.len().max(1),|ui,rows| {
-                if sources.is_empty() { ui.add_space(32.0);ui.label("Drop recordings here or import files. Your original recordings stay untouched."); }
+                if sources.is_empty() { ui.add_space(32.0);ui.label("Drop recordings here"); }
                 else if visible.is_empty(){ui.label("No recordings match your search.");}
                 for source in visible.iter().skip(rows.start).take(rows.end-rows.start) {
                     let details=format!("{} · {} × {} · {}",time(source.duration),source.width,source.height,if source.hdr(){"HDR"}else{"SDR"});
@@ -1335,7 +1330,6 @@ impl EditorApp {
                 }
                 ui.horizontal(|ui| {
                     ui.heading("Timeline");
-                    ui.label("LINKED VIDEO + AUDIO");
                     ui.separator();
                     if ui
                         .add_enabled(self.editor.can_undo(), egui::Button::new("Undo"))
@@ -1355,8 +1349,9 @@ impl EditorApp {
                         .add_enabled(
                             !self.library_preview
                                 && self.timeline().source_at(self.playhead).is_some(),
-                            egui::Button::new("Split [S]"),
+                            egui::Button::new("Split"),
                         )
+                        .on_hover_text("Split at the playhead (S / Ctrl+B)")
                         .clicked()
                     {
                         self.split();
@@ -1828,7 +1823,7 @@ impl EditorApp {
                             painter.text(
                                 rect.center(),
                                 Align2::CENTER_CENTER,
-                                "Add recordings to build your timeline",
+                                "Drop recordings here",
                                 FontId::proportional(15.0),
                                 Color32::GRAY,
                             );
@@ -1854,19 +1849,19 @@ impl EditorApp {
                     let before = metadata.clone();
                     let recording=if self.library_preview{self.library_selected}else{self.selected_clip().map(|c|c.source)};
                     if let Some(source)=recording.and_then(|id|metadata.sources.iter().find(|s|s.id==id)){
-                        ui.heading("Recording color");ui.small(format!("{} · {} · {}",source.transfer,source.primaries,source.matrix));
-                        if source.transfer=="unknown" || source.primaries=="unknown" || source.matrix=="unknown"{ui.label("Unspecified metadata uses SDR Rec.709 for YUV or sRGB for RGB. Choose an interpretation if the recording was made differently.");}
-                        if source.hdr() && source.primaries!="bt2020"{ui.label("HDR transfer and color primaries disagree. Confirm the intended interpretation.");}
+                        ui.heading("Recording color").on_hover_text(format!("{} · {} · {}",source.transfer,source.primaries,source.matrix));
+                        if source.transfer=="unknown" || source.primaries=="unknown" || source.matrix=="unknown"{ui.label("Color metadata missing").on_hover_text("Unspecified metadata uses SDR Rec.709 for YUV or sRGB for RGB. Choose an interpretation if the recording was made differently.");}
+                        if source.hdr() && source.primaries!="bt2020"{ui.label("Conflicting HDR metadata").on_hover_text("HDR transfer and color primaries disagree. Confirm the intended interpretation.");}
                         let mut interpretation=metadata.interpretations.get(&source.id).copied().unwrap_or_default();
-                        egui::ComboBox::from_label("Interpretation").selected_text(format!("{interpretation:?}")).show_ui(ui,|ui|{for (value,label) in [(SourceInterpretation::Auto,"From recording"),(SourceInterpretation::Sdr709,"SDR Rec.709"),(SourceInterpretation::Srgb,"SDR sRGB"),(SourceInterpretation::Pq2020,"HDR PQ / Rec.2020"),(SourceInterpretation::Hlg2020,"HDR HLG / Rec.2020")]{ui.selectable_value(&mut interpretation,value,label);}});
+                        egui::ComboBox::from_label("Interpretation").selected_text(match interpretation {SourceInterpretation::Auto=>"From recording",SourceInterpretation::Sdr709=>"SDR Rec.709",SourceInterpretation::Srgb=>"SDR sRGB",SourceInterpretation::Pq2020=>"HDR PQ / Rec.2020",SourceInterpretation::Hlg2020=>"HDR HLG / Rec.2020"}).show_ui(ui,|ui|{for (value,label) in [(SourceInterpretation::Auto,"From recording"),(SourceInterpretation::Sdr709,"SDR Rec.709"),(SourceInterpretation::Srgb,"SDR sRGB"),(SourceInterpretation::Pq2020,"HDR PQ / Rec.2020"),(SourceInterpretation::Hlg2020,"HDR HLG / Rec.2020")]{ui.selectable_value(&mut interpretation,value,label);}});
                         if interpretation!=SourceInterpretation::Auto || metadata.interpretations.contains_key(&source.id){metadata.interpretations.insert(source.id,interpretation);}ui.separator();
                     }
                     if self.settings {
                         ui.heading("Output");
-                        ui.label("Choose the format for your finished video.");
                         if metadata.output.profile==ColorProfile::Hdr10{
-                            ui.checkbox(&mut self.hdr_preview,"Use HDR when the display supports it").on_hover_text("Automatically uses tone-mapped SDR when Windows HDR is inactive or the preview uses software rendering.");
-                            if let Some(display)=self.playback.as_ref().and_then(|p|p.status().display){ui.small(if display.hdr_active{"Windows HDR is active on the preview display"}else if display.state_known{"Windows HDR is inactive on the preview display"}else{"Display HDR state unavailable · SDR preview"});}
+                            let display=self.playback.as_ref().and_then(|p|p.status().display);
+                            let state=match display {Some(display) if display.hdr_active=>"Windows HDR is active on the preview display",Some(display) if display.state_known=>"Windows HDR is inactive on the preview display",_=>"Display HDR state unavailable"};
+                            ui.checkbox(&mut self.hdr_preview,"HDR preview").on_hover_text(format!("{state}. Uses tone-mapped SDR when Windows HDR is inactive or the preview uses software rendering."));
                         }
                         ui.horizontal(|ui| {
                             ui.label("Size");
@@ -1900,7 +1895,7 @@ impl EditorApp {
                                 }
                             });
                         egui::ComboBox::from_label("Color")
-                            .selected_text(format!("{:?}", metadata.output.profile))
+                            .selected_text(match metadata.output.profile {ColorProfile::Sdr=>"SDR",ColorProfile::Hdr10=>"HDR10"})
                             .show_ui(ui, |ui| {
                                 ui.selectable_value(
                                     &mut metadata.output.profile,
@@ -1914,7 +1909,7 @@ impl EditorApp {
                                 );
                             });
                         egui::ComboBox::from_label("Codec")
-                            .selected_text(format!("{:?}", metadata.output.codec))
+                            .selected_text(match metadata.output.codec {Codec::Av1=>"AV1",Codec::Hevc=>"HEVC",Codec::H264=>"H.264"})
                             .show_ui(ui, |ui| {
                                 ui.selectable_value(&mut metadata.output.codec, Codec::Av1, "AV1");
                                 ui.selectable_value(
@@ -1938,13 +1933,11 @@ impl EditorApp {
                         ui.checkbox(&mut metadata.output.gpu, "NVIDIA GPU encoding");
                         ui.add(
                             egui::Slider::new(&mut metadata.output.quality, 0..=51).text("Quality"),
-                        );
-                        ui.small("Lower values preserve more detail and create larger files.");
+                        ).on_hover_text("Lower values preserve more detail and create larger files.");
                         ui.separator();
                     }
                     if !self.library_preview && let Some(clip) = self.selected_clip() {
-                        ui.heading("Selected section");
-                        ui.label(format!("{} on timeline", time(clip.timeline_start)));
+                        ui.heading("Section").on_hover_text(format!("Timeline position: {}",time(clip.timeline_start)));
                         let mut start = clip.source_in;
                         let mut end = clip.source_out;
                         ui.horizontal(|ui| {
@@ -1962,10 +1955,10 @@ impl EditorApp {
                             }
                         });
                         ui.horizontal(|ui| {
-                            if ui.button("Trim before [Q]").clicked() {
+                            if ui.button("Trim before").on_hover_text("Trim before the playhead (Q)").clicked() {
                                 self.quick_trim(true);
                             }
-                            if ui.button("Trim after [W]").clicked() {
+                            if ui.button("Trim after").on_hover_text("Trim after the playhead (W)").clicked() {
                                 self.quick_trim(false);
                             }
                         });
@@ -2062,9 +2055,9 @@ impl EditorApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.strong(if self.library_preview {
-                    "Recording preview"
+                    "Recording"
                 } else {
-                    "Timeline preview"
+                    "Timeline"
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let status = self
@@ -2072,21 +2065,22 @@ impl EditorApp {
                         .as_ref()
                         .map(|p| p.status())
                         .unwrap_or_default();
-                    ui.small(if status.software {
-                        "SDR software preview"
+                    let (mode, detail) = if status.software {
+                        ("SDR", "SDR software preview")
                     } else if self.hdr_preview
                         && status.display.as_ref().is_some_and(|d| d.hdr_active)
                         && status.gamma.as_deref() == Some("pq")
                     {
-                        "Windows HDR preview"
+                        ("HDR", "Windows HDR preview")
                     } else if self.hdr_preview {
-                        "SDR tone-mapped preview"
+                        ("SDR", "SDR tone-mapped preview")
                     } else {
-                        "SDR reference"
-                    });
+                        ("SDR", "SDR reference preview")
+                    };
+                    ui.small(mode).on_hover_text(detail);
                 });
             });
-            let software=ui.checkbox(&mut self.software_preview,"Software SDR preview").on_hover_text("Uses CPU-rendered, tone-mapped video. Try this if native preview or capture compatibility causes problems.");
+            let software=ui.checkbox(&mut self.software_preview,"Software preview").on_hover_text("Uses CPU-rendered, tone-mapped video. Try this if native preview or capture compatibility causes problems.");
             self.controls.insert("software-preview",software.rect);
             if software.changed() && let Some(tools)=self.tools.clone(){
                 self.stepping=None;if self.playback.take().is_some(){self.playback=Some(Playback::new(tools,self.video.handle(),self.software_preview,ctx.clone()));}self.request_key.clear();
@@ -2163,17 +2157,11 @@ impl EditorApp {
                         );
                     }
                 }
-            } else if !visible {
+            } else if !visible && has_source {
                 ui.painter().text(
                     rect.center(),
                     Align2::CENTER_CENTER,
-                    if has_source {
-                        "Preparing preview…"
-                    } else if self.timeline().clips().is_empty() {
-                        "Your story starts here"
-                    } else {
-                        "Empty timeline gap"
-                    },
+                    "Preparing preview…",
                     FontId::proportional(19.0),
                     Color32::GRAY,
                 );
@@ -2690,9 +2678,8 @@ impl eframe::App for EditorApp {
             egui::Modal::new(egui::Id::new("relink")).show(ctx,|ui|{
                 ui.heading("Locate missing recordings");
                 let index=replacements.len();ui.label(format!("Recording {} of {}",index+1,missing.len()));ui.label(&missing[index]);
-                ui.label("Choose the same original recording in its new location. The current project stays open until all recordings pass validation.");
                 ui.horizontal(|ui|{
-                    if ui.button("Locate recording…").clicked(){match platform_windows::choose_files(self.owner,false,false){Ok(paths)=>{if let Some(replacement)=paths.into_iter().next(){replacements.push((missing[index].clone(),replacement));if replacements.len()==missing.len(){keep=false;load=true;}}},Err(e)=>self.fail(e)}}
+                    if ui.button("Locate recording…").on_hover_text("Choose the same original recording in its new location. The current project stays open until all recordings pass validation.").clicked(){match platform_windows::choose_files(self.owner,false,false){Ok(paths)=>{if let Some(replacement)=paths.into_iter().next(){replacements.push((missing[index].clone(),replacement));if replacements.len()==missing.len(){keep=false;load=true;}}},Err(e)=>self.fail(e)}}
                     if ui.button("Cancel").clicked(){keep=false;}
                 });
             });
@@ -2754,7 +2741,6 @@ impl eframe::App for EditorApp {
         if self.startup_recovery.is_some() && self.tools.is_some() && !self.busy {
             egui::Modal::new(egui::Id::new("recovery")).show(ctx, |ui| {
                 ui.heading("Recover unsaved project");
-                ui.label("An interrupted editing session has unsaved changes.");
                 ui.horizontal(|ui| {
                     if ui.button("Recover").clicked()
                         && self.discard()

@@ -37,6 +37,10 @@ With NVIDIA App's local MCP server already enabled, run `test-shadowplay.ps1 -Li
 
 For a controlled editor comparison, launch an isolated `--verify-desktop <recording> <new-report-directory> --capture-hold` process. This uses the production import/preview paths and an isolated recovery directory, opens without taking focus from the game, and writes `capture-ready.json` when the preview settles. Add `--software-preview` for the SDR fallback. Add `--capture-hdr` to select HDR10/HEVC output; native verification then requires active display HDR and a PQ output transfer before signaling readiness. The report records the actual output gamma and display HDR state. Create `capture-stop` in that report directory to close the owned helper; it also times out after five minutes. It holds the imported clip without further timeline edits. Keep desktop screenshot/control sessions shut down during Shadowplay recording: NVIDIA reported Protected Content while one was active in the observed setup, and recording succeeded after ending it. Do not disable capture protection to run this check.
 
+## Interface copy
+
+Let layout and control names explain the editor. Avoid repeated headings, secondary descriptions and permanent shortcut legends; put optional technical detail and shortcuts in contextual tooltips. Keep action labels, source identity, active HDR/SDR state, meaningful metadata, warnings, errors and progress visible where they affect a decision. Preserve accessible names and keyboard behavior when simplifying the presentation.
+
 ## Frozen legacy oracle
 
 The old implementation is removed from production source. Optional differential tests restore only its source from Git commit `dd65df13a41490e8168a624b65fcff6a27956940` into ignored `Development/artifacts/rewrite-baseline/source`. The Rust application never loads it.

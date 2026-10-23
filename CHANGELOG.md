@@ -17,6 +17,7 @@ Unreleased Rust candidate.
 
 ### Changed
 
+- The interface uses fewer repeated labels and descriptions; optional details appear in tooltips.
 - The app has a new scissors icon with a blue play symbol.
 - The portable Rust app has a smaller download—about 25% in the compared candidate—and no bundled .NET runtime.
 - Frame stepping and quick trims follow actual frame boundaries in variable-frame-rate recordings.
@@ -24,7 +25,7 @@ Unreleased Rust candidate.
 ### Known limitations
 
 - Some workflows use more memory than 1.0.4. See the [C#/Rust comparison](docs/rust-csharp-comparison.md) for measured results and remaining acceptance checks.
-- Visual refinement is planned for a later pass, with matching or improving on the C# interface as the goal. Transition effects remain follow-up work.
+- Further visual refinement is planned, with matching or improving on the C# interface as the goal. Transition effects remain follow-up work.
 
 ## 1.0.4 — 2026-10-09
 
