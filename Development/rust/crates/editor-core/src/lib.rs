@@ -217,9 +217,8 @@ pub enum Command {
     },
     /// Place a linked batch at the nearest free position to the drop point.
     Insert {
-        sections: Vec<Clip>,
+        sections: Vec<(Clip, FrameRate)>,
         position: f64,
-        rate: FrameRate,
         snap: f64,
     },
 }
@@ -494,24 +493,21 @@ impl<M: Clone> Editor<M> {
                 }
                 clips.remove(index);
             }
-            Command::Append { sections } | Command::Insert { sections, .. }
-                if sections.is_empty() =>
-            {
-                return Ok(());
-            }
             Command::Insert {
                 sections,
                 mut position,
-                rate,
                 snap,
             } => {
+                if sections.is_empty() {
+                    return Ok(());
+                }
                 if !position.is_finite() || !snap.is_finite() || snap < 0.0 {
                     return Err(EditError("Invalid clip position"));
                 }
                 if sections.len() > MAX_CLIPS - clips.len() {
                     return Err(EditError("Too many clips"));
                 }
-                for section in sections {
+                for (section, rate) in sections {
                     let mut added = Clip {
                         id: allocate_id()?,
                         timeline_start: 0.0,
@@ -767,9 +763,8 @@ mod tests {
         let rate = FrameRate::new(60, 1).unwrap();
         editor
             .apply(Command::Insert {
-                sections: vec![trimmed.clone(), trimmed],
+                sections: vec![(trimmed.clone(), rate), (trimmed, rate)],
                 position: 5.0,
-                rate,
                 snap: 0.1,
             })
             .unwrap();
@@ -788,9 +783,8 @@ mod tests {
         assert!(
             editor
                 .apply(Command::Insert {
-                    sections: vec![section(0, 0.0)],
+                    sections: vec![(section(0, 0.0), rate)],
                     position: f64::NAN,
-                    rate,
                     snap: 0.1
                 })
                 .is_err()
@@ -798,9 +792,8 @@ mod tests {
         assert_eq!(editor.timeline, before);
         editor
             .apply(Command::Insert {
-                sections: vec![section(0, 0.0)],
+                sections: vec![(section(0, 0.0), rate)],
                 position: 5.5,
-                rate,
                 snap: 0.1,
             })
             .unwrap();
@@ -813,6 +806,24 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![0.0, 4.0, 5.0, 6.0, 10.0]
         );
+    }
+    #[test]
+    fn mixed_rate_drop_uses_each_sources_grid_and_keeps_joined_edges_exact() {
+        let mut editor = Editor::new(Timeline::default()).unwrap();
+        editor
+            .apply(Command::Insert {
+                sections: vec![
+                    (section(0, 0.0), FrameRate::new(24, 1).unwrap()),
+                    (section(0, 0.0), FrameRate::new(60, 1).unwrap()),
+                ],
+                position: 5.13,
+                snap: 0.1,
+            })
+            .unwrap();
+        assert_eq!(editor.timeline.clips()[0].timeline_start, 5.125);
+        assert_eq!(editor.timeline.clips()[1].timeline_start, 6.125);
+        assert!(editor.undo());
+        assert!(editor.timeline.clips().is_empty());
     }
     #[test]
     fn delete_closes_only_connected_group_and_keeps_existing_gap() {

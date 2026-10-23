@@ -463,23 +463,29 @@ impl EditorApp {
         let sections = ids
             .iter()
             .filter_map(|id| self.editor.metadata().sources.iter().find(|s| s.id == *id))
-            .map(|s| Clip {
-                id: ClipId(0),
-                source: s.id,
-                source_in: 0.0,
-                source_out: s.duration,
-                timeline_start: 0.0,
+            .map(|s| {
+                (
+                    Clip {
+                        id: ClipId(0),
+                        source: s.id,
+                        source_in: 0.0,
+                        source_out: s.duration,
+                        timeline_start: 0.0,
+                    },
+                    s.rate,
+                )
             })
             .collect();
         self.apply(if let Some(position) = position {
             Command::Insert {
                 sections,
                 position,
-                rate: self.editor.metadata().output.rate,
                 snap: 10.0 / f64::from(self.zoom),
             }
         } else {
-            Command::Append { sections }
+            Command::Append {
+                sections: sections.into_iter().map(|(clip, _)| clip).collect(),
+            }
         });
         if let Some(clip) = self
             .editor

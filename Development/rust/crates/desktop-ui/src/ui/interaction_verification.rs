@@ -967,9 +967,19 @@ impl EditorApp {
                     }
                     110 => {
                         self.apply(Command::Replace { clips: Vec::new() });
+                        let source_rate = self.editor.metadata().sources[0].rate;
+                        test.keyboard_position =
+                            (5.0195 * source_rate.fps()).round_ties_even() / source_rate.fps();
+                        let mut metadata = self.editor.metadata().clone();
+                        metadata.output.rate = editor_core::FrameRate::new(
+                            if source_rate.fps() == 30.0 { 24 } else { 30 },
+                            1,
+                        )
+                        .unwrap();
+                        self.metadata(metadata);
                         let (rect, origin, zoom) =
                             self.timeline_drop.ok_or("Timeline drop area is missing")?;
-                        let point = Pos2::new(origin + 5.0 * zoom, rect.center().y);
+                        let point = Pos2::new(origin + 5.0195 * zoom, rect.center().y);
                         if !rect.contains(point) {
                             return Err("Drop fixture escaped the visible timeline".into());
                         }
@@ -979,14 +989,19 @@ impl EditorApp {
                     111 => {
                         egui::DragAndDrop::set_payload(ctx, self.editor.metadata().sources[0].id);
                         let (rect, origin, zoom) = self.timeline_drop.unwrap();
-                        test.pointer(Pos2::new(origin + 5.0 * zoom, rect.center().y), Some(false));
+                        test.pointer(
+                            Pos2::new(origin + 5.0195 * zoom, rect.center().y),
+                            Some(false),
+                        );
                         test.phase = 112;
                     }
                     112 => {
                         let clips = self.editor.timeline().clips();
-                        if clips.len() != 1 || (clips[0].timeline_start - 5.0).abs() > 0.001 {
+                        if clips.len() != 1
+                            || (clips[0].timeline_start - test.keyboard_position).abs() > 0.001
+                        {
                             return Err(
-                                "Library drop did not place its linked section at five seconds"
+                                "Library drop did not use the source frame rate at the pointer"
                                     .into(),
                             );
                         }
@@ -998,7 +1013,7 @@ impl EditorApp {
                             return Err("Library drop was not one undoable edit".into());
                         }
                         let (rect, origin, zoom) = self.timeline_drop.unwrap();
-                        test.pointer(Pos2::new(origin + 5.0 * zoom, rect.center().y), None);
+                        test.pointer(Pos2::new(origin + 5.0195 * zoom, rect.center().y), None);
                         test.dropped_files.push(egui::DroppedFile {
                             path: Some(test.source.clone()),
                             ..Default::default()
@@ -1011,13 +1026,15 @@ impl EditorApp {
                     }
                     115 if !self.busy => {
                         let clips = self.editor.timeline().clips();
-                        if clips.len() != 1 || (clips[0].timeline_start - 5.0).abs() > 0.001 {
+                        if clips.len() != 1
+                            || (clips[0].timeline_start - test.keyboard_position).abs() > 0.001
+                        {
                             return Err(
-                                "External recording drop did not import and place at five seconds"
+                                "External recording drop did not use the source frame rate at the pointer"
                                     .into(),
                             );
                         }
-                        test.checks.push("Library and external recording drops preserve the timeline pointer position and undo".into());
+                        test.checks.push("Library and external recording drops preserve source-frame placement despite a different output rate, and undo".into());
                         test.phase = 60;
                     }
                     60 => {
