@@ -263,7 +263,8 @@ impl Verification {
         let width = image.size[0] as u32;
         let height = image.size[1] as u32;
         let size = width * height * 4;
-        let mut output = std::fs::File::create(self.directory.join("desktop.bmp"))?;
+        let mut output =
+            std::io::BufWriter::new(std::fs::File::create(self.directory.join("desktop.bmp"))?);
         output.write_all(b"BM")?;
         output.write_all(&(54 + size).to_le_bytes())?;
         output.write_all(&[0; 4])?;
@@ -277,6 +278,7 @@ impl Verification {
         for pixel in &image.pixels {
             output.write_all(&[pixel.b(), pixel.g(), pixel.r(), 255])?;
         }
+        output.flush()?;
         Ok(())
     }
 }
