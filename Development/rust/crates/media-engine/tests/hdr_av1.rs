@@ -148,7 +148,7 @@ fn full_and_limited_range_av1_pq_keep_colors_in_preview_thumbnail_and_export() {
                 "vf",
                 &format!(
                     "lavfi=[{}]",
-                    video_filters(&source, &ClipSettings::default(), &output, false)
+                    preview_filters(&source, &ClipSettings::default(), &output)
                 ),
             )
             .unwrap();
@@ -181,6 +181,37 @@ fn full_and_limited_range_av1_pq_keep_colors_in_preview_thumbnail_and_export() {
         check_colors(&preview);
         preview.save(directory.join("preview.bmp")).unwrap();
         drop(player);
+        if gpu {
+            let player = native_mpv::Player::open(&tools.mpv, native_mpv::Mode::NativeSdr).unwrap();
+            player.set("hwdec", "auto-copy").unwrap();
+            player
+                .set(
+                    "vf",
+                    &format!(
+                        "lavfi=[{}]",
+                        preview_filters(&source, &ClipSettings::default(), &output)
+                    ),
+                )
+                .unwrap();
+            player
+                .load(
+                    &media_path::RecordingPath::authorize(std::path::Path::new(&source.path))
+                        .unwrap(),
+                )
+                .unwrap();
+            player.seek(0.5).unwrap();
+            let decoder = player.property("hwdec-current").unwrap();
+            assert_ne!(
+                decoder, "no",
+                "AV1 hardware-copy preview did not use the requested decoder"
+            );
+            let screenshot = directory.join("hardware-copy-preview.png");
+            player
+                .command(&["screenshot-to-file", screenshot.to_str().unwrap(), "video"])
+                .unwrap();
+            check_colors(&image::open(screenshot).unwrap().into_rgb8());
+            std::fs::write(directory.join("hardware-copy-decoder.txt"), decoder).unwrap();
+        }
 
         for profile in [ColorProfile::Sdr, ColorProfile::Hdr10] {
             let settings = OutputSettings {

@@ -8,6 +8,8 @@ Import files or drop them into the window. Click a recording to preview it; doub
 
 Dropping recordings from the library or File Explorer onto the timeline places linked sections at the drop point, choosing the nearest free space if needed. Dropping elsewhere imports into the library. You can also drop a project or recordings onto the executable, or pass filenames when launching it; a project opens with its saved trims and gaps, while recordings import in order.
 
+Recordings keep a floating thumbnail while dragged from the library. Timeline video sections show sampled source frames that follow their trim and zoom; images load in the background.
+
 The video and audio lanes are the same linked section. Moving, splitting, trimming or deleting a section moves both. Repeated sections of one recording have separate identities. Right-click a recording to remove it and all its sections from the project; the original file remains untouched and Undo restores the edit.
 
 Move sections freely; nearby edges snap. Existing gaps separate joined groups. Trimming a left edge follows the pointer while the right edge/following sections stay anchored; releasing closes the temporary gap within a joined group. The preview retains the current source frame or clamps to the nearest retained frame. Escape restores the original gesture state. Delete closes only the connected group, preserving separate gaps.
@@ -16,7 +18,7 @@ Out points exclude the next frame. A split needs at least one retained frame on 
 
 ## Navigation and shortcuts
 
-Drag the recording scrubber or timeline ruler to seek. The pointer owns the playhead during the drag. Release submits the final seek and restores the previous play/pause intent after it settles. The timeline endpoint shows the final retained frame. Playback continues across sections and black/silent gaps.
+Drag the recording scrubber or timeline ruler to seek. The pointer owns the playhead during the drag. Release submits the final seek and restores the previous play/pause intent after it settles. The last valid preview stays visible while a seek completes, and the picture keeps updating during a continuous drag. Releasing submits the exact final position. Native preview can accelerate AV1 decoding on supported hardware; Software preview retains CPU decoding. The timeline endpoint shows the final retained frame. Playback continues across sections and black/silent gaps.
 
 | Shortcut | Action |
 | --- | --- |

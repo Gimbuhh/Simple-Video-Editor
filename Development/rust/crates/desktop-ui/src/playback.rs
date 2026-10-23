@@ -1,4 +1,4 @@
-use media_engine::{Tools, video_filters};
+use media_engine::{Tools, preview_filters};
 use native_mpv::{Mode, Player};
 use project_store::{ClipSettings, MediaSource, OutputSettings};
 use std::{
@@ -14,6 +14,7 @@ use std::{
 #[derive(Clone)]
 pub struct Request {
     pub generation: u64,
+    pub presentation_key: String,
     pub source: Option<MediaSource>,
     pub adjustment: ClipSettings,
     pub output: OutputSettings,
@@ -21,13 +22,26 @@ pub struct Request {
     pub start: f64,
     pub end: f64,
     pub playing: bool,
+    pub scrubbing: bool,
     pub volume: f64,
     pub hdr_preview: bool,
     pub steps: i32,
 }
+impl Request {
+    // Finish a frame during a continuing gesture, then take the newest target.
+    // Release, a different presentation, and frame-step commands interrupt immediately.
+    fn interrupts(&self, active: &Self) -> bool {
+        self.generation != active.generation
+            && (!self.scrubbing
+                || self.presentation_key != active.presentation_key
+                || active.steps != 0)
+    }
+}
 #[derive(Clone, Default)]
 pub struct Status {
     pub generation: u64,
+    pub presentation_key: Option<String>,
+    pub presentation_serial: u64,
     pub ready: bool,
     pub position: f64,
     pub ended: bool,
@@ -38,15 +52,18 @@ pub struct Status {
     pub software: bool,
     pub frame: Option<Arc<native_mpv::Frame>>,
     pub gamma: Option<String>,
+    pub decoder: Option<String>,
     pub error: Option<String>,
     pub display: Option<platform_windows::DisplayColor>,
 }
+type SubmissionKey = (u64, bool, u64, i32, bool);
+
 pub struct Playback {
     request: Arc<Mutex<Option<Request>>>,
     status: Arc<Mutex<Status>>,
     stop: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
-    submitted: Mutex<Option<(u64, bool, u64, i32)>>,
+    submitted: Mutex<Option<SubmissionKey>>,
 }
 impl Playback {
     pub fn new(tools: Tools, window: isize, forced: bool, context: eframe::egui::Context) -> Self {
@@ -99,13 +116,6 @@ impl Playback {
                                 .as_ref()
                                 .is_none_or(|c| c.generation != next.generation);
                             if replace {
-                                *state.lock().unwrap() = Status {
-                                    generation: next.generation,
-                                    software,
-                                    display: display.clone(),
-                                    ..Default::default()
-                                };
-                                player.set_paused(true)?;
                                 let reuse = current.as_ref().is_some_and(|c| {
                                     c.source == next.source
                                         && c.source.is_some()
@@ -115,6 +125,26 @@ impl Playback {
                                         && c.start == next.start
                                         && c.end == next.end
                                 });
+                                *state.lock().unwrap() = Status {
+                                    generation: next.generation,
+                                    presentation_serial: previous.presentation_serial,
+                                    frame: if reuse { previous.frame.clone() } else { None },
+                                    gamma: if reuse { previous.gamma.clone() } else { None },
+                                    decoder: if reuse {
+                                        previous.decoder.clone()
+                                    } else {
+                                        None
+                                    },
+                                    presentation_key: if reuse {
+                                        previous.presentation_key.clone()
+                                    } else {
+                                        None
+                                    },
+                                    software,
+                                    display: display.clone(),
+                                    ..Default::default()
+                                };
+                                player.set_paused(true)?;
                                 if !reuse {
                                     current = None;
                                     player.command(&["stop"])?;
@@ -124,6 +154,16 @@ impl Playback {
                                         }
                                     }
                                     if let Some(source) = &next.source {
+                                        // AV1 benefits from copied hardware frames on the measured capture.
+                                        // Other codecs retain CPU decoding; software preview is always CPU-only.
+                                        player.set(
+                                            "hwdec",
+                                            if !software && source.codec == "av1" {
+                                                "auto-copy"
+                                            } else {
+                                                "no"
+                                            },
+                                        )?;
                                         let path = media_path::RecordingPath::authorize(
                                             Path::new(&source.path),
                                         )?;
@@ -162,12 +202,7 @@ impl Playback {
                                             "vf",
                                             &format!(
                                                 "lavfi=[{}]",
-                                                video_filters(
-                                                    source,
-                                                    &next.adjustment,
-                                                    &output,
-                                                    false
-                                                )
+                                                preview_filters(source, &next.adjustment, &output)
                                             ),
                                         )?;
                                         player.set("start", &next.position.to_string())?;
@@ -188,7 +223,7 @@ impl Playback {
                                                 .lock()
                                                 .unwrap()
                                                 .as_ref()
-                                                .is_some_and(|r| r.generation != next.generation)
+                                                .is_some_and(|r| r.interrupts(&next))
                                             {
                                                 break;
                                             }
@@ -284,7 +319,7 @@ impl Playback {
                                                 .lock()
                                                 .unwrap()
                                                 .as_ref()
-                                                .is_some_and(|r| r.generation != next.generation)
+                                                .is_some_and(|r| r.interrupts(&next))
                                     })?
                                 {
                                     continue;
@@ -300,13 +335,14 @@ impl Playback {
                                         p.property("seeking").as_deref() == Some("no")
                                             && p.property("time-pos").is_some()
                                     })?;
-                                    let Some(stepped) =
-                                        player.step_frames(next.steps, || {
-                                            stopped.load(Ordering::Acquire)
-                                                || requests.lock().unwrap().as_ref().is_some_and(
-                                                    |r| r.generation != next.generation,
-                                                )
-                                        })?
+                                    let Some(stepped) = player.step_frames(next.steps, || {
+                                        stopped.load(Ordering::Acquire)
+                                            || requests
+                                                .lock()
+                                                .unwrap()
+                                                .as_ref()
+                                                .is_some_and(|r| r.interrupts(&next))
+                                    })?
                                     else {
                                         continue;
                                     };
@@ -326,7 +362,7 @@ impl Playback {
                                                 .lock()
                                                 .unwrap()
                                                 .as_ref()
-                                                .is_some_and(|r| r.generation != next.generation)
+                                                .is_some_and(|r| r.interrupts(&next))
                                         {
                                             break;
                                         }
@@ -349,14 +385,19 @@ impl Playback {
                                             .lock()
                                             .unwrap()
                                             .as_ref()
-                                            .is_some_and(|r| r.generation != next.generation)
+                                            .is_some_and(|r| r.interrupts(&next))
                                     {
                                         continue;
                                     }
                                 }
                                 state.lock().unwrap().ended =
                                     player.property("eof-reached").as_deref() == Some("yes");
-                                state.lock().unwrap().ready = true;
+                                let mut updated = state.lock().unwrap();
+                                updated.ready = true;
+                                updated.presentation_serial =
+                                    updated.presentation_serial.wrapping_add(1);
+                                updated.presentation_key =
+                                    next.source.as_ref().map(|_| next.presentation_key.clone());
                             }
                             player.set("volume", &next.volume.to_string())?;
                             player.set_paused(!next.playing || next.source.is_none())?;
@@ -377,6 +418,7 @@ impl Playback {
                             changed = true;
                         }
                         state.lock().unwrap().gamma = player.property("video-out-params/gamma");
+                        state.lock().unwrap().decoder = player.property("hwdec-current");
                         {
                             let updated = state.lock().unwrap();
                             changed |= previous.position != updated.position
@@ -392,6 +434,9 @@ impl Playback {
                         }
                         // Submissions and shutdown unpark immediately. A paused player
                         // needs only a slow display/HDR check, not continuous polling.
+                        if requests.lock().unwrap().is_some() {
+                            continue;
+                        }
                         std::thread::park_timeout(if playing {
                             Duration::from_millis(16)
                         } else {
@@ -434,6 +479,7 @@ impl Playback {
             request.playing,
             request.volume.to_bits(),
             request.steps,
+            request.scrubbing,
         );
         let mut submitted = self.submitted.lock().unwrap();
         if *submitted == Some(key) {

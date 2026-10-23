@@ -57,3 +57,18 @@ Separate checks of this exact executable confirm ready 4K SDR preview on the req
 Newly saved projects use schema 2; C# reads schema 1 only. Keep original projects for rollback. Broader physical monitor/HDR toggles, real DPI transitions and assistive-technology acceptance remain incomplete. An old Glow debug startup failure is still unattributed; the production UI uses DX12 and current stress runs pass. The user confirmed that the separate Windows/NVIDIA game-switch recording issue is external; that investigation remains closed.
 
 The candidate is more capable and smaller, restores the known interaction gaps and avoids the previous idle polling cost. It is a practical upgrade for the tested HDR/editing workflows, with the memory tradeoff above. C# history, the original release ZIP, comparison reports and original projects remain available through user acceptance. Visual refinement and transition effects remain later work. PR #8 stays open; no merge, release tag or publication is performed.
+
+## Timeline and preview follow-up — 2026-10-24
+
+Timeline filmstrips and floating library-drag thumbnails are implemented. Same-presentation seeks retain their image and HDR indicator. Continuous pointer movement now allows frames to finish, coalesces pending targets and seeks the exact final frame on release. Native AV1 can use copied hardware frames; other codecs and Software preview retain CPU decoding after a generated HEVC case regressed with hardware decoding. Preview-only downscaling precedes color processing; full-resolution export stays unchanged.
+
+A separate comparison uses the prior Rust engine at `9edaae1` plus verification-only timing instrumentation (executable SHA-256 `96d75585b5743390a16c1c84617cb7dc0bf042c4eef4542b68cbb56a3748beb6`) and the final executable (`8dfd419ab8266e1bdc777803688f03b77e927e5c2cd525056979654241c65dc5`). These are Rust before/after measurements, not new C# resource or speed results. Isolated runs complete 24 exact seeks each; source/executable hashes are checked. Recordings remain unchanged and are excluded from source and release packages.
+
+| Recording and preview | Prior Rust median / p95 | Updated Rust median / p95 |
+| --- | ---: | ---: |
+| Supplied 2560×1440, approximately 60 fps AV1/HDR, native | 280.9 / 469.4 ms | 100.0 / 150.0 ms |
+| Same recording, Software preview | 278.6 / 468.4 ms | 215.3 / 369.4 ms |
+
+Native AV1 median falls about 64%, with d3d11va-copy reported; Software preview stays CPU-only. Generated 4K HEVC with a ten-second GOP still takes 575.0/916.6 ms median/p95. HEVC timings vary with system load, so no substantial HEVC or universal speedup is established. The new continuous-drag test presents 18/8/4 completed frames during separate two-second native AV1/software AV1/native HEVC gestures and verifies exact release settling. A negative control using the prior cancellation policy completed zero HEVC frames, demonstrating the starvation regression.
+
+The helper times UI request to production playback-ready acknowledgement; Software preview requires a post-seek rendered frame, while native acknowledgement is not a physical presentation measurement. It checks retention during pending seeks. Filesystem caching and system load remain uncontrolled. Use `Development/scripts/benchmark-preview.ps1 -AppPath <bundle-executable> -Source <local-recording>`; add `-Software` for that fallback and run after other desktop/media work finishes. Raw reports and hashes are retained privately under preview-benchmark, indexed by timeline-verification.json. The [rewrite ledger](rust-rewrite-status.md) records final validation. Earlier C# resource measurements and remaining physical acceptance limits above remain applicable.

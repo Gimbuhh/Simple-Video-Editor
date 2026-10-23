@@ -186,7 +186,7 @@ fn rotation_anamorphic_rgb_and_preview_export_agree() {
                 "vf",
                 &format!(
                     "lavfi=[{}]",
-                    video_filters(&source, &ClipSettings::default(), &output, false)
+                    preview_filters(&source, &ClipSettings::default(), &output)
                 ),
             )
             .unwrap();

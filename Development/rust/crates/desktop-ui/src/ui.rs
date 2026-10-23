@@ -1,4 +1,6 @@
 mod interaction_verification;
+mod preview_benchmark;
+mod thumbnails;
 use crate::playback::{Playback, Request};
 use editor_core::{Clip, ClipId, Command, Editor, SourceId, Timeline};
 use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Vec2};
@@ -100,6 +102,7 @@ pub struct EditorApp {
     preview_timeline: Option<Timeline>,
     waveforms: BTreeMap<SourceId, Arc<Vec<f32>>>,
     thumbnails: BTreeMap<SourceId, egui::TextureHandle>,
+    timeline_thumbnails: Option<thumbnails::TimelineThumbnails>,
     recovery: Arc<Recovery>,
     recovery_saved: Option<SavedProject>,
     recovery_tick: Instant,
@@ -206,6 +209,7 @@ impl EditorApp {
             preview_timeline: None,
             waveforms: BTreeMap::new(),
             thumbnails: BTreeMap::new(),
+            timeline_thumbnails: None,
             recovery,
             recovery_saved: None,
             recovery_tick: Instant::now(),
@@ -956,15 +960,26 @@ impl EditorApp {
         for source in &sources {
             self.waveforms.insert(source.id, Arc::new(Vec::new()));
         }
+        let waveform_sources = sources.clone();
+        let waveform_tools = tools.clone();
+        let waveform_tx = self.tx.clone();
+        let waveform_cancel = self.cancel.clone();
+        self.jobs.push(std::thread::spawn(move || {
+            for source in waveform_sources {
+                if waveform_cancel.load(Ordering::Acquire) {
+                    break;
+                }
+                if let Ok(peaks) = waveform_tools.waveform(&source, &waveform_cancel) {
+                    let _ = waveform_tx.send(Event::Waveform(source, peaks));
+                }
+            }
+        }));
         let tx = self.tx.clone();
         let cancel = self.cancel.clone();
         self.jobs.push(std::thread::spawn(move || {
             for source in sources {
                 if cancel.load(Ordering::Acquire) {
                     break;
-                }
-                if let Ok(peaks) = tools.waveform(&source, &cancel) {
-                    let _ = tx.send(Event::Waveform(source.clone(), peaks));
                 }
                 if let Ok(image) = tools.thumbnail(&source, &cancel).and_then(read_thumbnail) {
                     let image = image.to_rgba8();
@@ -1306,6 +1321,7 @@ impl EditorApp {
                 for source in visible.iter().skip(rows.start).take(rows.end-rows.start) {
                     let details=format!("{} · {} × {} · {}",time(source.duration),source.width,source.height,if source.hdr(){"HDR"}else{"SDR"});
                     let (rect,response)=ui.push_id(("recording",source.id.0),|ui|ui.allocate_exact_size(Vec2::new(ui.available_width(),64.0),Sense::click_and_drag())).inner;
+                    if sources.first().is_some_and(|first|first.id==source.id){self.controls.insert("first-recording",rect);}
                     let selected=self.library_selected==Some(source.id);
                     response.widget_info(||egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel,ui.is_enabled(),selected,format!("{}, {details}",source.name())));
                     ui.painter().rect_filled(rect,4.0,if selected{Color32::from_rgb(35,82,72)}else if response.hovered(){Color32::from_rgb(55,60,65)}else{Color32::from_rgb(39,43,48)});
@@ -1507,6 +1523,9 @@ impl EditorApp {
                                     Color32::from_rgb(39, 74, 68)
                                 },
                             );
+                            if let Some(source) = &source {
+                                self.paint_filmstrip(&painter, video, visible, &clip, source, zoom);
+                            }
                             painter.rect_filled(audio, 4.0, Color32::from_rgb(35, 57, 63));
                             if selected {
                                 painter.rect_stroke(
@@ -1516,20 +1535,18 @@ impl EditorApp {
                                     egui::StrokeKind::Inside,
                                 );
                             }
-                            let cp = painter.with_clip_rect(video.intersect(visible).shrink(6.0));
-                            cp.text(
-                                Pos2::new(video.left() + 7.0, video.top() + 12.0),
-                                Align2::LEFT_TOP,
-                                source.as_ref().map(|s| s.name()).unwrap_or_default(),
-                                FontId::proportional(12.0),
-                                Color32::WHITE,
+                            let cp = painter.with_clip_rect(video.intersect(visible));
+                            cp.rect_filled(
+                                Rect::from_min_size(video.min, Vec2::new(video.width(), 18.0)),
+                                0.0,
+                                Color32::from_black_alpha(170),
                             );
                             cp.text(
-                                Pos2::new(video.left() + 7.0, video.top() + 30.0),
+                                video.min + Vec2::new(6.0, 3.0),
                                 Align2::LEFT_TOP,
-                                time(clip.duration()),
-                                FontId::monospace(10.0),
-                                Color32::LIGHT_GRAY,
+                                source.as_ref().map(|s| s.name()).unwrap_or_default(),
+                                FontId::proportional(11.0),
+                                Color32::WHITE,
                             );
                             if let Some(peaks) = self.waveforms.get(&clip.source)
                                 && !peaks.is_empty()
@@ -2124,6 +2141,44 @@ impl EditorApp {
                 });
             });
     }
+    fn preview_key(
+        &self,
+        mapped: Option<(ClipId, SourceId, f64)>,
+        output: &OutputSettings,
+        hdr_preview: bool,
+    ) -> String {
+        let adjustment = mapped
+            .and_then(|(id, _, _)| self.editor.metadata().adjustments.get(&id))
+            .cloned()
+            .unwrap_or_default();
+        let source = mapped
+            .and_then(|(_, id, _)| {
+                self.editor
+                    .metadata()
+                    .sources
+                    .iter()
+                    .find(|source| source.id == id)
+            })
+            .map(|source| {
+                source.interpreted(
+                    self.editor
+                        .metadata()
+                        .interpretations
+                        .get(&source.id)
+                        .copied()
+                        .unwrap_or_default(),
+                )
+            });
+        format!(
+            "{:?}|{:?}|{:?}|{:?}|{}|{}",
+            mapped.map(|(id, source, _)| (id, source)),
+            source,
+            adjustment,
+            output,
+            self.library_preview,
+            hdr_preview
+        )
+    }
     fn preview(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -2175,16 +2230,16 @@ impl EditorApp {
                 .as_ref()
                 .map(|p| p.status())
                 .unwrap_or_default();
-            let has_source = if self.library_preview {
-                self.library_selected.is_some()
-            } else {
-                preview_at(self.timeline(), self.editor.metadata(), self.playhead).is_some()
-            };
+            let mapped = if self.library_preview {
+                self.library_selected.map(|source|(ClipId(0),source,0.0))
+            } else { preview_at(self.timeline(), self.editor.metadata(), self.playhead) };
+            let has_source = mapped.is_some();
+            let preview_output=crate::playback::preview_output(self.preview_output(),rect.width()*ctx.pixels_per_point(),rect.height()*ctx.pixels_per_point(),self.software_preview||status.software);
+            let hdr_preview=self.hdr_preview && self.editor.metadata().output.profile==ColorProfile::Hdr10 && !status.software && status.display.as_ref().is_some_and(|d|d.hdr_active);
+            let expected_key=self.preview_key(mapped,&preview_output,hdr_preview);
             let visible = has_source
-                && status.ready
-                && status.generation == self.generation
+                && status.presentation_key.as_ref() == Some(&expected_key)
                 && status.error.is_none()
-                && !self.request_key.is_empty()
                 && self.startup_recovery.is_none()
                 && !ctx.is_popup_open();
             let visible = visible && self.relink.is_none();
@@ -2194,7 +2249,7 @@ impl EditorApp {
                 (rect.top() * scale).round() as i32,
                 (rect.width() * scale).round() as i32,
                 (rect.height() * scale).round() as i32,
-                visible && !status.software,
+                visible && !status.software && thumbnails::drag_bounds(ctx).is_none_or(|drag|!drag.intersects(rect)),
             );
             if visible && status.software {
                 if let Some(frame) = status.frame {
@@ -2477,14 +2532,7 @@ impl EditorApp {
             rect.height() * ctx.pixels_per_point(),
             self.software_preview || status.software,
         );
-        let key = format!(
-            "{:?}|{:?}|{:?}|{}|{}",
-            mapped.map(|(id, source, _)| (id, source)),
-            adjustment,
-            output,
-            self.library_preview,
-            hdr_preview
-        );
+        let key = self.preview_key(mapped, &output, hdr_preview);
         if self.request_key != key {
             if self
                 .stepping
@@ -2528,6 +2576,7 @@ impl EditorApp {
                 .unwrap_or(0.0);
             playback.submit(Request {
                 generation: self.generation,
+                presentation_key: self.request_key.clone(),
                 source,
                 adjustment,
                 output,
@@ -2543,6 +2592,7 @@ impl EditorApp {
                     .unwrap_or(0.0),
                 end,
                 playing: self.playing,
+                scrubbing: self.scrub.is_some(),
                 volume: self.volume,
                 hdr_preview,
                 steps: self.stepping.as_ref().map_or(0, |s| s.count),
@@ -2738,11 +2788,25 @@ impl eframe::App for EditorApp {
         }
         self.shortcuts(ctx);
         self.top(ctx);
+        self.controls.remove("drag-thumbnail");
+        if self.timeline_thumbnails.is_none()
+            && let Some(tools) = self.tools.clone()
+        {
+            self.timeline_thumbnails =
+                Some(thumbnails::TimelineThumbnails::new(tools, ctx.clone()));
+        }
+        if let Some(cache) = &mut self.timeline_thumbnails {
+            cache.begin(ctx);
+        }
         self.timeline_drop = None;
         self.timeline_ui(ctx);
+        if let Some(cache) = &self.timeline_thumbnails {
+            cache.finish();
+        }
         self.library(ctx);
         self.inspector(ctx);
         self.preview(ctx);
+        self.drag_thumbnail(ctx);
         self.playback(ctx);
         self.verify(ctx);
         if let Some((path, missing, mut replacements)) = self.relink.take() {

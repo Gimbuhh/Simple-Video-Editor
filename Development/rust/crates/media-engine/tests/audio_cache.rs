@@ -39,6 +39,17 @@ fn waveform_delays_phase_cache_and_safe_cleanup() {
     assert_eq!(tools.waveform(&source, &cancel).unwrap(), peaks);
     let thumbnail = tools.thumbnail(&source, &cancel).unwrap();
     assert!(thumbnail.is_file());
+    let first = tools.thumbnail_at(&source, 0.0, &cancel).unwrap();
+    let later = tools.thumbnail_at(&source, 1.5, &cancel).unwrap();
+    assert_ne!(first, later);
+    assert_ne!(
+        std::fs::read(&first).unwrap(),
+        std::fs::read(&later).unwrap()
+    );
+    assert_eq!(tools.thumbnail_at(&source, 1.5, &cancel).unwrap(), later);
+    for time in [f64::NAN, -0.1, source.duration] {
+        assert!(tools.thumbnail_at(&source, time, &cancel).is_err());
+    }
     let unrelated = tools.cache.join("waveforms/keep-my-recording.mkv");
     std::fs::write(&unrelated, b"original").unwrap();
     let recovery = tools.cache.join("recovery.sveproject");
@@ -57,7 +68,7 @@ fn waveform_delays_phase_cache_and_safe_cleanup() {
     }
     std::fs::hard_link(&protected, &linked).unwrap();
     let (deleted, _) = tools.clear_cache(std::slice::from_ref(&protected)).unwrap();
-    assert_eq!(deleted, 2);
+    assert_eq!(deleted, 4);
     assert_eq!(std::fs::read(unrelated).unwrap(), b"original");
     assert_eq!(std::fs::read(recovery).unwrap(), b"saved recovery");
     assert_eq!(

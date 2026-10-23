@@ -99,6 +99,9 @@ impl EditorApp {
                 }
                 return Ok(());
             }
+            if test.preview_benchmark {
+                return self.verify_preview_benchmark(&mut test, ctx);
+            }
             if test.vfr && !test.capture_hold && test.phase != 6 && test.phase != 7 {
                 self.verify_vfr(&mut test, ctx)?;
             } else {
@@ -1153,6 +1156,87 @@ impl EditorApp {
                     }
                     130 => {
                         test.checks.push("Inspector starts with trim only; all advanced groups expand/collapse without editing, and audio mute undoes exactly".into());
+                        test.phase = 131;
+                    }
+                    131 if self
+                        .thumbnails
+                        .contains_key(&self.editor.metadata().sources[0].id)
+                        && self.timeline_thumbnails.as_ref().is_some_and(|cache| {
+                            cache.sample_count(self.editor.metadata().sources[0].id) >= 2
+                        }) =>
+                    {
+                        test.checks.push("Visible timeline filmstrip contains multiple decoded source-time samples".into());
+                        test.expected = Some(self.editor.timeline().clips().to_vec());
+                        test.pointer(self.controls["first-recording"].center(), Some(true));
+                        test.phase = 132;
+                    }
+                    132 => {
+                        test.pointer(
+                            self.controls["first-recording"].center() + Vec2::new(20.0, 20.0),
+                            None,
+                        );
+                        test.phase = 133;
+                    }
+                    133 => {
+                        let (rect, origin, zoom) =
+                            self.timeline_drop.ok_or("Missing timeline drop area")?;
+                        let point = Pos2::new(origin + 0.3 * zoom, rect.center().y);
+                        test.anchor = Some(point);
+                        test.pointer(point, None);
+                        test.phase = 134;
+                    }
+                    134 => {
+                        if !self.controls.contains_key("drag-thumbnail")
+                            || egui::DragAndDrop::payload::<SourceId>(ctx).is_none()
+                        {
+                            return Err("Library drag did not paint its floating thumbnail".into());
+                        }
+                        ctx.send_viewport_cmd(
+                            egui::ViewportCommand::Screenshot(Default::default()),
+                        );
+                        test.phase = 135;
+                    }
+                    135 => {
+                        for event in ctx.input(|i| i.events.clone()) {
+                            if let egui::Event::Screenshot { image, .. } = event {
+                                test.screenshot(&image)?;
+                                std::fs::copy(
+                                    test.directory.join("desktop.bmp"),
+                                    test.directory.join("drag-thumbnail.bmp"),
+                                )?;
+                                test.pointer(test.anchor.unwrap(), Some(false));
+                                test.phase = 136;
+                            }
+                        }
+                    }
+                    136 => {
+                        let previous = test.expected.as_ref().unwrap();
+                        let clips = self.editor.timeline().clips();
+                        if clips.len() != previous.len() + 1
+                            || previous.iter().any(|clip| !clips.contains(clip))
+                        {
+                            return Err(
+                                "Thumbnail drag changed existing sections or failed to insert"
+                                    .into(),
+                            );
+                        }
+                        test.pointer(self.controls["undo"].center(), Some(true));
+                        test.phase = 137;
+                    }
+                    137 => {
+                        test.pointer(self.controls["undo"].center(), Some(false));
+                        test.phase = 138;
+                    }
+                    138 => {
+                        if self.editor.timeline().clips() != test.expected.as_ref().unwrap()
+                            || self.controls.contains_key("drag-thumbnail")
+                        {
+                            return Err(
+                                "Thumbnail drag did not undo cleanly or left a floating preview"
+                                    .into(),
+                            );
+                        }
+                        test.checks.push("Actual library drag paints its thumbnail, inserts one linked section and undoes without moving existing sections".into());
                         test.phase = 60;
                     }
                     60 => {

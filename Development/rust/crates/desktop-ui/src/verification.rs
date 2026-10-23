@@ -149,6 +149,13 @@ pub struct Verification {
     pub dropped_files: Vec<egui::DroppedFile>,
     pub recorded_phase: Option<u8>,
     pub inspector_ready_at: Instant,
+    pub preview_benchmark: bool,
+    pub preview_started: Option<Instant>,
+    pub preview_samples: Vec<serde_json::Value>,
+    pub retained_frame_checks: usize,
+    pub scrub_start_serial: u64,
+    pub scrub_frames: u64,
+    pub scrub_release_ms: f64,
     pub fail_native: bool,
 }
 impl Verification {
@@ -208,6 +215,13 @@ impl Verification {
             dropped_files: Vec::new(),
             recorded_phase: None,
             inspector_ready_at: Instant::now(),
+            preview_benchmark: args.iter().any(|a| a == "--benchmark-preview"),
+            preview_started: None,
+            preview_samples: Vec::new(),
+            retained_frame_checks: 0,
+            scrub_start_serial: 0,
+            scrub_frames: 0,
+            scrub_release_ms: 0.0,
             fail_native: args.iter().any(|a| a == "--fail-native-preview"),
         })
     }

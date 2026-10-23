@@ -193,7 +193,22 @@ impl Tools {
         Ok(document)
     }
     pub fn thumbnail(&self, source: &MediaSource, cancel: &Cancel) -> Result<PathBuf> {
-        let key = self.cache_key(source)?;
+        self.thumbnail_at(source, (source.duration / 4.0).min(5.0), cancel)
+    }
+    /// A source-time sample for timeline filmstrips. Cache entries are immutable.
+    pub fn thumbnail_at(
+        &self,
+        source: &MediaSource,
+        time: f64,
+        cancel: &Cancel,
+    ) -> Result<PathBuf> {
+        if !time.is_finite() || time < 0.0 || time >= source.duration {
+            return Err("Thumbnail timestamp is outside the recording".into());
+        }
+        let key = format!(
+            "{:x}",
+            Sha256::digest(format!("{}|{}", self.cache_key(source)?, time.to_bits()).as_bytes())
+        );
         let root = self.cache_directory("thumbnails")?;
         let output = root.join(format!("{key}.bmp"));
         if output.is_file() {
@@ -217,8 +232,12 @@ impl Tools {
                 "-v".into(),
                 "error".into(),
                 "-nostdin".into(),
+                "-threads".into(),
+                "2".into(),
+                "-filter_threads".into(),
+                "1".into(),
                 "-ss".into(),
-                (source.duration / 4.0).min(5.0).to_string(),
+                time.to_string(),
                 "-noautorotate".into(),
                 "-i".into(),
                 source.path.clone(),
@@ -597,6 +616,27 @@ pub fn color_transform(source: &MediaSource, profile: ColorProfile) -> String {
         ),
     }
 }
+/// Resize preview pixels before color conversion; export retains its full-resolution graph.
+/// Keep enough source detail for normalized crops and preserve SAR until the shared graph normalizes it.
+pub fn preview_filters(
+    source: &MediaSource,
+    adjustment: &ClipSettings,
+    output: &OutputSettings,
+) -> String {
+    let crop = if adjustment.framing == Framing::Crop {
+        adjustment.crop[2].min(adjustment.crop[3]).max(0.001)
+    } else {
+        1.0
+    };
+    let edge = (f64::from(output.width.max(output.height)) / crop)
+        .ceil()
+        .clamp(2.0, 32768.0) as u32;
+    format!(
+        "scale=w='min(iw,{edge})':h='min(ih,{edge})':force_original_aspect_ratio=decrease:force_divisible_by=2,{}",
+        video_filters(source, adjustment, output, false)
+    )
+}
+
 pub fn video_filters(
     source: &MediaSource,
     adjustment: &ClipSettings,
