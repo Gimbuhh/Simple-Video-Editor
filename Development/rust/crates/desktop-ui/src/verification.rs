@@ -148,6 +148,7 @@ pub struct Verification {
     pub launch_files: bool,
     pub dropped_files: Vec<egui::DroppedFile>,
     pub recorded_phase: Option<u8>,
+    pub inspector_ready_at: Instant,
     pub fail_native: bool,
 }
 impl Verification {
@@ -206,6 +207,7 @@ impl Verification {
             launch_files,
             dropped_files: Vec::new(),
             recorded_phase: None,
+            inspector_ready_at: Instant::now(),
             fail_native: args.iter().any(|a| a == "--fail-native-preview"),
         })
     }

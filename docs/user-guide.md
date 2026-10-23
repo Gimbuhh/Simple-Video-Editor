@@ -38,11 +38,13 @@ Tab moves keyboard focus between controls, including timeline sections; Enter se
 
 ## Audio, framing and color
 
-The inspector selects one source audio stream per section; the default uses the first stream. Gain, mute and fades are saved, undoable, previewed and exported. Output audio is stereo AAC at 48 kHz. Video-only sources receive silence. Separate music tracks and arbitrary mixing are later work.
+The inspector keeps In/Out and quick trims visible. Expand Audio, Framing or Recording color when needed; opening these groups does not change the project. Reset beside Trim restores the full recording.
+
+Audio selects one source audio stream per section; the default uses the first stream. Gain, mute and fades are saved, undoable, previewed and exported. Output audio is stereo AAC at 48 kHz. Video-only sources receive silence. Separate music tracks and arbitrary mixing are later work.
 
 Fit adds letterboxing. Fill covers the output frame. Crop uses normalized source coordinates; rotation is non-destructive. Intrinsic display rotation and non-square pixels are normalized before user framing. Export always reads original recordings.
 
-Sources report transfer, primaries, matrix, range and pixel format. PQ and HLG are detected from transfer metadata; a 10-bit pixel format alone does not imply HDR. Unspecified YUV metadata defaults to SDR Rec.709 and unspecified RGB to sRGB. The Interpretation selector overrides incorrect source signaling and persists in the project.
+Sources report transfer, primaries, matrix, range and pixel format. PQ and HLG are detected from transfer metadata; a 10-bit pixel format alone does not imply HDR. Unspecified YUV metadata defaults to SDR Rec.709 and unspecified RGB to sRGB. The selector under Recording color overrides incorrect source signaling and persists in the project.
 
 Choose SDR Rec.709 or HDR10/PQ output. PQ and HLG sources are deliberately tone-mapped for SDR preview/export and library thumbnails. HDR10 output uses 10-bit Rec.2020/PQ through AV1 or HEVC. H.264 remains SDR. Native HDR preview is requested only when Windows reports active HDR on the preview display; software rendering always uses SDR. The preview shows an HDR or SDR indicator; hover it for the rendering mode. Select Software preview to explicitly use CPU-rendered tone-mapped video if native playback or capture compatibility causes problems. Changing Windows/display state is detected on the playback worker without changing system settings.
 

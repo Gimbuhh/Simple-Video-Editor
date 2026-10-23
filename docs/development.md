@@ -41,6 +41,8 @@ For a controlled editor comparison, launch an isolated `--verify-desktop <record
 
 Let layout and control names explain the editor. Avoid repeated headings, secondary descriptions and permanent shortcut legends; put optional technical detail and shortcuts in contextual tooltips. Keep action labels, source identity, active HDR/SDR state, meaningful metadata, warnings, errors and progress visible where they affect a decision. Preserve accessible names and keyboard behavior when simplifying the presentation.
 
+Keep trim boundaries and quick trims visible in the inspector. Audio, framing and source color start collapsed; expanding a group must not create a project edit or hide color warnings. Keep expanded controls within the resizable sidebar.
+
 Enabled buttons, dropdowns and toggles use the pointing hand cursor on hover. Set it on their responses with `on_hover_cursor`: the pinned egui version does not consume `Visuals::interact_cursor`. Keep text-entry and drag cursors specific to their interactions.
 
 ## Frozen legacy oracle

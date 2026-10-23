@@ -1344,11 +1344,11 @@ impl EditorApp {
                 ui.horizontal(|ui| {
                     ui.heading("Timeline");
                     ui.separator();
-                    if ui
+                    let undo = ui
                         .add_enabled(self.editor.can_undo(), egui::Button::new("Undo"))
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .clicked()
-                    {
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                    self.controls.insert("undo", undo.rect);
+                    if undo.clicked() {
                         self.history(false);
                         self.request_key.clear();
                     }
@@ -1869,6 +1869,14 @@ impl EditorApp {
             });
     }
     fn inspector(&mut self, ctx: &egui::Context) {
+        for control in [
+            "audio-mute",
+            "audio-volume",
+            "framing-mode",
+            "recording-interpretation",
+        ] {
+            self.controls.remove(control);
+        }
         if !self.settings
             && self.selected_clip().is_none()
             && !(self.library_preview && self.library_selected.is_some())
@@ -1885,14 +1893,6 @@ impl EditorApp {
                     let mut metadata = self.editor.metadata().clone();
                     let before = metadata.clone();
                     let recording=if self.library_preview{self.library_selected}else{self.selected_clip().map(|c|c.source)};
-                    if let Some(source)=recording.and_then(|id|metadata.sources.iter().find(|s|s.id==id)){
-                        ui.heading("Recording color").on_hover_text(format!("{} · {} · {}",source.transfer,source.primaries,source.matrix));
-                        if source.transfer=="unknown" || source.primaries=="unknown" || source.matrix=="unknown"{ui.label("Color metadata missing").on_hover_text("Unspecified metadata uses SDR Rec.709 for YUV or sRGB for RGB. Choose an interpretation if the recording was made differently.");}
-                        if source.hdr() && source.primaries!="bt2020"{ui.label("Conflicting HDR metadata").on_hover_text("HDR transfer and color primaries disagree. Confirm the intended interpretation.");}
-                        let mut interpretation=metadata.interpretations.get(&source.id).copied().unwrap_or_default();
-                        egui::ComboBox::from_label("Interpretation").selected_text(match interpretation {SourceInterpretation::Auto=>"From recording",SourceInterpretation::Sdr709=>"SDR Rec.709",SourceInterpretation::Srgb=>"SDR sRGB",SourceInterpretation::Pq2020=>"HDR PQ / Rec.2020",SourceInterpretation::Hlg2020=>"HDR HLG / Rec.2020"}).show_ui(ui,|ui|{for (value,label) in [(SourceInterpretation::Auto,"From recording"),(SourceInterpretation::Sdr709,"SDR Rec.709"),(SourceInterpretation::Srgb,"SDR sRGB"),(SourceInterpretation::Pq2020,"HDR PQ / Rec.2020"),(SourceInterpretation::Hlg2020,"HDR HLG / Rec.2020")]{ui.selectable_value(&mut interpretation,value,label).on_hover_cursor(egui::CursorIcon::PointingHand);}}).response.on_hover_cursor(egui::CursorIcon::PointingHand);
-                        if interpretation!=SourceInterpretation::Auto || metadata.interpretations.contains_key(&source.id){metadata.interpretations.insert(source.id,interpretation);}ui.separator();
-                    }
                     if self.settings {
                         ui.heading("Output");
                         if metadata.output.profile==ColorProfile::Hdr10{
@@ -1974,22 +1974,31 @@ impl EditorApp {
                         ui.separator();
                     }
                     if !self.library_preview && let Some(clip) = self.selected_clip() {
-                        ui.heading("Section").on_hover_text(format!("Timeline position: {}",time(clip.timeline_start)));
+                        ui.horizontal(|ui| {
+                            ui.heading("Trim").on_hover_text(format!("Timeline position: {}", time(clip.timeline_start)));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if let Some(source) = metadata.sources.iter().find(|s| s.id == clip.source) {
+                                    let reset = ui.add_enabled(clip.source_in != 0.0 || clip.source_out != source.duration, egui::Button::new("Reset"))
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                        .on_hover_text("Restore the full recording");
+                                    self.controls.insert("trim-reset", reset.rect);
+                                    if reset.clicked() { self.trim(Some(0.0), Some(source.duration)); }
+                                }
+                            });
+                        });
                         let mut start = clip.source_in;
                         let mut end = clip.source_out;
-                        ui.horizontal(|ui| {
+                        egui::Grid::new("trim-fields").show(ui, |ui| {
                             ui.label("In");
-                            let response=trim_input(ui,&mut start,("trim-in",clip.id.0));self.controls.insert("trim-in",response.rect);
-                            if response.changed(){
-                                self.trim(Some(start), None);
-                            }
-                        });
-                        ui.horizontal(|ui| {
+                            let response = trim_input(ui, &mut start, ("trim-in", clip.id.0));
+                            self.controls.insert("trim-in", response.rect);
+                            if response.changed() { self.trim(Some(start), None); }
+                            ui.end_row();
                             ui.label("Out");
-                            let response=trim_input(ui,&mut end,("trim-out",clip.id.0));self.controls.insert("trim-out",response.rect);
-                            if response.changed(){
-                                self.trim(None, Some(end));
-                            }
+                            let response = trim_input(ui, &mut end, ("trim-out", clip.id.0));
+                            self.controls.insert("trim-out", response.rect);
+                            if response.changed() { self.trim(None, Some(end)); }
+                            ui.end_row();
                         });
                         ui.horizontal(|ui| {
                             if ui.button("Trim before").on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Trim before the playhead (Q)").clicked() {
@@ -1999,15 +2008,13 @@ impl EditorApp {
                                 self.quick_trim(false);
                             }
                         });
-                        if ui.button("Reset trim").on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
-                            && let Some(s) = metadata.sources.iter().find(|s| s.id == clip.source)
-                        {
-                            self.trim(Some(0.0), Some(s.duration));
-                        }
                         let mut adjustment = metadata.adjustments.get(&clip.id).cloned().unwrap_or_default();
                         let previous_adjustment=adjustment.clone();
                         ui.separator();
-                        ui.strong("Audio");
+                        let audio = egui::CollapsingHeader::new("Audio")
+                            .id_salt("section-audio")
+                            .default_open(false)
+                            .show_unindented(ui, |ui| {
                         if let Some(source) = metadata.sources.iter().find(|s| s.id == clip.source)
                         {
                             egui::ComboBox::from_label("Track")
@@ -2027,11 +2034,14 @@ impl EditorApp {
                                     }
                                 }).response.on_hover_cursor(egui::CursorIcon::PointingHand);
                         }
-                        ui.checkbox(&mut adjustment.muted, "Mute section").on_hover_cursor(egui::CursorIcon::PointingHand);
-                        ui.add(
-                            egui::Slider::new(&mut adjustment.gain_db, -60.0..=24.0)
-                                .text("Gain dB"),
-                        );
+                        let mute = ui.checkbox(&mut adjustment.muted, "Mute").on_hover_cursor(egui::CursorIcon::PointingHand);
+                        self.controls.insert("audio-mute", mute.rect);
+                        let volume = ui.scope(|ui| {
+                            ui.spacing_mut().slider_width = (ui.available_width() - 140.0).clamp(50.0, 100.0);
+                            ui.add(egui::Slider::new(&mut adjustment.gain_db, -60.0..=24.0)
+                                .text("Volume").suffix(" dB"))
+                        }).inner;
+                        self.controls.insert("audio-volume", volume.rect);
                         ui.horizontal(|ui| {
                             ui.label("Fade in");
                             ui.add(
@@ -2050,15 +2060,21 @@ impl EditorApp {
                                     .suffix(" s"),
                             );
                         });
-                        ui.separator();
-                        ui.strong("Framing");
-                        egui::ComboBox::from_label("Mode")
+                        });
+                        self.controls.insert("inspector-audio", audio.header_response.rect);
+                        audio.header_response.on_hover_cursor(egui::CursorIcon::PointingHand);
+                        let framing = egui::CollapsingHeader::new("Framing")
+                            .id_salt("section-framing")
+                            .default_open(false)
+                            .show_unindented(ui, |ui| {
+                        let mode = egui::ComboBox::from_id_salt("framing-mode")
                             .selected_text(format!("{:?}", adjustment.framing))
                             .show_ui(ui, |ui| {
                                 ui.selectable_value(&mut adjustment.framing, Framing::Fit, "Fit").on_hover_cursor(egui::CursorIcon::PointingHand);
                                 ui.selectable_value(&mut adjustment.framing, Framing::Fill, "Fill").on_hover_cursor(egui::CursorIcon::PointingHand);
                                 ui.selectable_value(&mut adjustment.framing, Framing::Crop, "Crop").on_hover_cursor(egui::CursorIcon::PointingHand);
                             }).response.on_hover_cursor(egui::CursorIcon::PointingHand);
+                        self.controls.insert("framing-mode", mode.rect);
                         egui::ComboBox::from_label("Rotate")
                             .selected_text(format!("{}°", adjustment.rotation))
                             .show_ui(ui, |ui| {
@@ -2080,7 +2096,27 @@ impl EditorApp {
                                 );
                             }
                         }
+                        });
+                        self.controls.insert("inspector-framing", framing.header_response.rect);
+                        framing.header_response.on_hover_cursor(egui::CursorIcon::PointingHand);
                         if adjustment!=previous_adjustment{metadata.adjustments.insert(clip.id,adjustment);}
+                    }
+                    if let Some(source)=recording.and_then(|id|metadata.sources.iter().find(|s|s.id==id)){
+                        let color = egui::CollapsingHeader::new("Recording color")
+                            .id_salt("recording-color")
+                            .default_open(false)
+                            .show_unindented(ui, |ui| {
+                        let mut interpretation=metadata.interpretations.get(&source.id).copied().unwrap_or_default();
+                        let interpretation_response = egui::ComboBox::from_id_salt("source-interpretation").selected_text(match interpretation {SourceInterpretation::Auto=>"From recording",SourceInterpretation::Sdr709=>"SDR Rec.709",SourceInterpretation::Srgb=>"SDR sRGB",SourceInterpretation::Pq2020=>"HDR PQ / Rec.2020",SourceInterpretation::Hlg2020=>"HDR HLG / Rec.2020"}).show_ui(ui,|ui|{for (value,label) in [(SourceInterpretation::Auto,"From recording"),(SourceInterpretation::Sdr709,"SDR Rec.709"),(SourceInterpretation::Srgb,"SDR sRGB"),(SourceInterpretation::Pq2020,"HDR PQ / Rec.2020"),(SourceInterpretation::Hlg2020,"HDR HLG / Rec.2020")]{ui.selectable_value(&mut interpretation,value,label).on_hover_cursor(egui::CursorIcon::PointingHand);}}).response.on_hover_cursor(egui::CursorIcon::PointingHand);
+                        self.controls.insert("recording-interpretation", interpretation_response.rect);
+                        if interpretation!=SourceInterpretation::Auto || metadata.interpretations.contains_key(&source.id){metadata.interpretations.insert(source.id,interpretation);}
+                        });
+                        self.controls.insert("inspector-color", color.header_response.rect);
+                        color.header_response.on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .on_hover_text(format!("{} · {} · {}",source.transfer,source.primaries,source.matrix));
+                        if source.transfer=="unknown" || source.primaries=="unknown" || source.matrix=="unknown"{ui.label("Color metadata missing").on_hover_text("Unspecified metadata uses SDR Rec.709 for YUV or sRGB for RGB. Choose an interpretation if the recording was made differently.");}
+                        if source.hdr() && source.primaries!="bt2020"{ui.label("Conflicting HDR metadata").on_hover_text("HDR transfer and color primaries disagree. Confirm the intended interpretation.");}
+
                     }
                     if metadata != before {
                         self.metadata(metadata);

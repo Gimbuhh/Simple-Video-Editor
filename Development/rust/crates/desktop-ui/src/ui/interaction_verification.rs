@@ -1035,6 +1035,124 @@ impl EditorApp {
                             );
                         }
                         test.checks.push("Library and external recording drops preserve source-frame placement despite a different output rate, and undo".into());
+                        test.phase = 116;
+                    }
+                    116 => {
+                        self.settings = false;
+                        test.precision = Some(SavedProject::capture(&self.editor));
+                        test.phase = 117;
+                    }
+                    117 => {
+                        if ["audio-mute", "framing-mode", "recording-interpretation"]
+                            .iter()
+                            .any(|key| self.controls.contains_key(key))
+                        {
+                            return Err(
+                                "Advanced inspector controls are not collapsed by default".into()
+                            );
+                        }
+                        ctx.send_viewport_cmd(
+                            egui::ViewportCommand::Screenshot(Default::default()),
+                        );
+                        test.phase = 118;
+                    }
+                    118 => {
+                        for event in ctx.input(|i| i.events.clone()) {
+                            if let egui::Event::Screenshot { image, .. } = event {
+                                test.screenshot(&image)?;
+                                std::fs::copy(
+                                    test.directory.join("desktop.bmp"),
+                                    test.directory.join("inspector-collapsed.bmp"),
+                                )?;
+                                test.focus_steps = 0;
+                                test.phase = 119;
+                            }
+                        }
+                    }
+                    119 | 127 => {
+                        let key = ["inspector-audio", "inspector-framing", "inspector-color"]
+                            [test.focus_steps];
+                        test.pointer(self.controls[key].center(), Some(true));
+                        test.phase += 1;
+                    }
+                    120 | 128 => {
+                        let key = ["inspector-audio", "inspector-framing", "inspector-color"]
+                            [test.focus_steps];
+                        test.pointer(self.controls[key].center(), Some(false));
+                        // Let the disclosure animation settle before targeting the next moving header.
+                        test.inspector_ready_at = Instant::now() + Duration::from_millis(300);
+                        test.phase += 1;
+                    }
+                    121 | 129 if Instant::now() >= test.inspector_ready_at => {
+                        let key = ["audio-mute", "framing-mode", "recording-interpretation"]
+                            [test.focus_steps];
+                        if self.controls.contains_key(key) == (test.phase == 121) {
+                            if SavedProject::capture(&self.editor)
+                                != *test.precision.as_ref().unwrap()
+                            {
+                                return Err(
+                                    "Expanding or collapsing inspector groups changed the project"
+                                        .into(),
+                                );
+                            }
+                            test.focus_steps += 1;
+                            test.phase = if test.focus_steps < 3 {
+                                test.phase - 2
+                            } else {
+                                test.phase + 1
+                            };
+                        }
+                    }
+                    122 => {
+                        if ["audio-volume", "trim-reset"]
+                            .iter()
+                            .any(|key| self.controls[key].right() > ctx.screen_rect().right())
+                        {
+                            return Err("Expanded inspector controls overflow the window".into());
+                        }
+                        ctx.send_viewport_cmd(
+                            egui::ViewportCommand::Screenshot(Default::default()),
+                        );
+                        test.phase = 123;
+                    }
+                    123 => {
+                        for event in ctx.input(|i| i.events.clone()) {
+                            if let egui::Event::Screenshot { image, .. } = event {
+                                test.screenshot(&image)?;
+                                std::fs::copy(
+                                    test.directory.join("desktop.bmp"),
+                                    test.directory.join("inspector-expanded.bmp"),
+                                )?;
+                                test.pointer(self.controls["audio-mute"].center(), Some(true));
+                                test.phase = 124;
+                            }
+                        }
+                    }
+                    124 => {
+                        test.pointer(self.controls["audio-mute"].center(), Some(false));
+                        test.phase = 125;
+                    }
+                    125 => {
+                        let clip = self
+                            .selected_clip()
+                            .ok_or("Inspector lost its selected section")?;
+                        let mut expected = test.precision.as_ref().unwrap().clone();
+                        let adjustment = expected.metadata.adjustments.entry(clip.id).or_default();
+                        adjustment.muted = !adjustment.muted;
+                        if SavedProject::capture(&self.editor) != expected {
+                            return Err("Expanded audio controls did not apply only the requested mute edit".into());
+                        }
+                        // Undo through the real toolbar, without changing text/focus shortcut ownership.
+                        test.pointer(self.controls["undo"].center(), Some(true));
+                        test.phase = 126;
+                    }
+                    126 => {
+                        test.pointer(self.controls["undo"].center(), Some(false));
+                        test.focus_steps = 0;
+                        test.phase = 127;
+                    }
+                    130 => {
+                        test.checks.push("Inspector starts with trim only; all advanced groups expand/collapse without editing, and audio mute undoes exactly".into());
                         test.phase = 60;
                     }
                     60 => {
@@ -1080,6 +1198,7 @@ impl EditorApp {
                             || self.controls["position-label"]
                                 .intersects(self.controls["frame-forward"])
                             || self.controls["frame-forward"].right() > viewport.right() + 0.1
+                            || self.controls["trim-reset"].right() > screen.right()
                         {
                             return Err(format!(
                                 "Preview or transport escaped its layout at resize {}, scale {} (screen {:?}, viewport {:?}, preview {:?}, ruler {:?}, scrubber {:?}, label {:?}, next {:?})",
