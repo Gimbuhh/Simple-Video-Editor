@@ -1,18 +1,29 @@
 # Changelog
 
-## 1.1.0 — Unreleased Rust candidate
+## 1.1.0 — 2026-10-23
 
-- Replaces the C#/WPF app and production build with Rust, without a .NET runtime dependency.
-- Retains linked edits, gaps, legacy project precision, bounded undo/redo, recovery and relinking.
-- Adds PQ/HLG import, mixed SDR/HDR profiles, explicit source interpretation and 10-bit HDR10 AV1/HEVC export.
-- Adds display-aware native preview with deliberate SDR/software fallback, per-section audio controls and non-destructive framing/rotation.
-- Corrects trim gesture anchoring, retained-frame previews, VFR frame stepping, search focus and multi-video stream selection.
-- Preserves precise trim values when unchanged fields are accepted, retries failed recovery writes during exports, and clears stale recovery after successful saves.
-- Waits for the requested decoded frame before quick trims, including shortcuts pressed while a seek is still pending.
-- Keeps split, delete, undo and Space playback working after keyboard focus enters a timeline section, with a visible focus outline and preserved text-field shortcuts.
-- Keeps Shift+F10 section menus anchored across frames, restores focus on Escape, and prevents menu input from triggering timeline edits.
-- Verifies pixel geometry, audio/gaps, cancellation/source protection and relocated portable startup with generated fixtures.
-- Current-display HDR preview is user-confirmed and local game/Shadowplay controls pass; the user-confirmed external game-switch recording issue no longer blocks the rewrite. Broader display, DPI/accessibility and remaining release acceptance are tracked in the rewrite ledger. Transitions remain follow-up work.
+Unreleased Rust candidate.
+
+### Breaking Changes
+
+- Newly saved projects use a format that 1.0.x cannot open. Keep original project files for rollback.
+
+### Added
+
+- HDR recordings support native HDR preview, HDR10 export and conversion to SDR.
+- Each section has audio track selection, volume, mute and fade controls.
+- Individual sections support fit, fill, crop and rotation without changing the original recordings.
+- HEVC output joins H.264 and AV1.
+
+### Changed
+
+- The portable Rust app has a smaller download—about 25% in the compared candidate—and no bundled .NET runtime.
+- Frame stepping and quick trims follow actual frame boundaries in variable-frame-rate recordings.
+
+### Known limitations
+
+- The candidate ignores files passed at startup, appends timeline drops to the end and uses more CPU while idle than 1.0.4. See the [C#/Rust comparison](docs/rust-csharp-comparison.md) before replacing it.
+- Visual refinement is planned for a later pass, with matching or improving on the C# interface as the goal. Transition effects remain follow-up work.
 
 ## 1.0.4 — 2026-10-09
 

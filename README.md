@@ -8,6 +8,8 @@ Version 1.1.0 is the Rust release candidate on this branch. The latest published
 
 A startup crash from an earlier Glow/OpenGL debug build remains unattributed. Current DX12 startup checks have passed without recurrence; broader display/DPI/accessibility acceptance is also pending before release. Details and verification evidence are in the [rewrite status](docs/rust-rewrite-status.md).
 
+The [C#/Rust comparison](docs/rust-csharp-comparison.md) found missing launch-filename handling and timeline-drop placement in the current Rust candidate. Keep the C# release and original projects until those parity gaps are resolved; Rust has not yet demonstrated an overall performance advantage.
+
 ## Run
 
 Extract the complete portable ZIP and open **Simple Video Editor.exe**. Keep **bin** and **docs** beside it. The Rust app needs no installer, account, .NET runtime, or separately installed FFmpeg.

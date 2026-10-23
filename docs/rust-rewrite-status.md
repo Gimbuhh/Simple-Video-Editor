@@ -2,6 +2,10 @@
 
 Target **1.1.0**. Started 2026-10-20. Production source/build cutover is implemented on the PR branch. Current-display HDR preview and bounded game capture checks pass. The user independently confirmed the HDR-game-to-SDR-game recording problem is external to this project; it no longer blocks the rewrite. The intermittent desktop startup failure and remaining display/DPI/accessibility acceptance still require follow-up. This is an unreleased candidate; no merge, tag or publication is authorized or performed.
 
+**C# retirement hold — 2026-10-23:** The user requested comparison before removing the non-Rust implementation. The [comparison](rust-csharp-comparison.md) found source-confirmed regressions in launch-filename handling and timeline-drop placement. Rust is more capable and smaller, but not yet an established overall replacement. Preserve the original C# release/bundles, main/history, original projects and frozen oracle. No further legacy cleanup is part of this comparison. Diagnostic resource numbers require the measurement qualifications in that report.
+
+The approved visible comparison completed fifteen normal, non-minimized launches. Normal empty-project Rust startup used more idle CPU and process memory than C# in these bounded samples; preview-mode rows have different rendering paths and remain qualified diagnostics. The user explicitly plans a later visual refinement pass to match or improve on C#; current appearance is not claimed as a Rust advantage and no redesign is part of this comparison. The changelog/release notes summarize verified capabilities and package-size gains, with technical evidence kept in the comparison.
+
 ## Current implementation — 2026-10-22
 
 Rust owns the desktop, timeline commands/history, persistence/recovery/relinking, source authorization, native playback coordination, shared color/framing transforms, cache and export. The normal build now packages the Rust executable. `Development/rust/crates/desktop-ui/Cargo.toml` is the sole application-version authority; project metadata and Windows resources derive from it. Private core/tool crates retain version 0.1.0.
