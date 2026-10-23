@@ -1,4 +1,4 @@
-param([string]$AppPath,[switch]$Extended,[string[]]$Fixtures,[switch]$ScaleLayouts)
+param([string]$AppPath,[switch]$Extended,[string[]]$Fixtures,[switch]$ScaleLayouts,[switch]$NativeFallback)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'rust-environment.ps1')
 if (!$AppPath) {
@@ -22,6 +22,7 @@ foreach ($editorDesktopMode in @('native','software')) {
         $editorDesktopArguments=@('--verify-desktop', ('"'+$editorDesktopSource+'"'), ('"'+$editorDesktopOutput+'"'))
         if ($editorDesktopMode -eq 'software') {$editorDesktopArguments+='--software-preview'}
         if ($ScaleLayouts) {$editorDesktopArguments+='--scale-layouts'}
+        if ($NativeFallback) {$editorDesktopArguments+='--fail-native-preview'}
         $editorDesktopSecondary=Join-Path $editorRustDevelopment ('artifacts/rust-playback/'+$(if($editorDesktopCase -eq 'sdr'){'pq.mkv'}else{'sdr.mkv'}))
         $editorDesktopArguments+=@('--second-recording',('"'+$editorDesktopSecondary+'"'))
         $editorDesktopProcess=Start-Process -FilePath $AppPath -ArgumentList $editorDesktopArguments -PassThru -WindowStyle Hidden

@@ -5,7 +5,60 @@ impl EditorApp {
             return;
         };
         let result = (|| -> media_engine::Result<()> {
-            std::fs::write(test.directory.join("phase.txt"), test.phase.to_string())?;
+            if test.recorded_phase != Some(test.phase) {
+                std::fs::write(test.directory.join("phase.txt"), test.phase.to_string())?;
+                test.recorded_phase = Some(test.phase);
+            }
+            if test.launch_files {
+                if test.started.elapsed() > Duration::from_secs(30) {
+                    return Err(format!("Filename startup timed out: {}", self.message).into());
+                }
+                if self.tools.is_none()
+                    || self.busy
+                    || !self.startup_paths.is_empty()
+                    || test.phase == 7
+                {
+                    return Ok(());
+                }
+                if crate::startup::is_project(&test.source) {
+                    let expected = self
+                        .tools
+                        .as_ref()
+                        .unwrap()
+                        .load_project(&test.source, &uncancelled())?;
+                    if SavedProject::capture(&self.editor) != expected {
+                        return Err("Filename startup changed the project, trims or gaps".into());
+                    }
+                    test.checks.push("Normal project filename startup preserves recordings, trims, gaps and settings".into());
+                } else {
+                    let paths = crate::startup::paths(std::env::args_os().skip(1));
+                    if paths.len() != self.editor.metadata().sources.len()
+                        || paths.iter().zip(&self.editor.metadata().sources).any(
+                            |(path, source)| {
+                                !platform_windows::same_file(
+                                    path,
+                                    std::path::Path::new(&source.path),
+                                )
+                                .unwrap_or(false)
+                            },
+                        )
+                    {
+                        return Err(format!(
+                            "Normal media filename startup failed: {}",
+                            self.message
+                        )
+                        .into());
+                    }
+                    test.checks.push(
+                        "Normal media filename startup imports every recording in order".into(),
+                    );
+                }
+                test.report();
+                test.phase = 7;
+                self.close_approved = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                return Ok(());
+            }
             if test.graphics_only {
                 if test.started.elapsed() > Duration::from_millis(500) && test.phase != 7 {
                     test.checks
@@ -84,6 +137,14 @@ impl EditorApp {
                     }) =>
                     {
                         let status = self.playback.as_ref().unwrap().status();
+                        if test.fail_native {
+                            if !status.software {
+                                return Err(
+                                    "Injected native failure did not fall back to software".into(),
+                                );
+                            }
+                            test.checks.push("Dequeued preview request survives native failure and reaches software fallback".into());
+                        }
                         if test.capture_hold && test.capture_hdr && !status.software {
                             let Some(display) = &status.display else {
                                 return Ok(());
@@ -902,6 +963,61 @@ impl EditorApp {
                             );
                         }
                         test.checks.push("Tab/Enter timeline selection, Shift+F10 menu, frame keys, split/undo/delete and Space transport preserve text-entry focus".into());
+                        test.phase = 110;
+                    }
+                    110 => {
+                        self.apply(Command::Replace { clips: Vec::new() });
+                        let (rect, origin, zoom) =
+                            self.timeline_drop.ok_or("Timeline drop area is missing")?;
+                        let point = Pos2::new(origin + 5.0 * zoom, rect.center().y);
+                        if !rect.contains(point) {
+                            return Err("Drop fixture escaped the visible timeline".into());
+                        }
+                        test.pointer(point, Some(true));
+                        test.phase = 111;
+                    }
+                    111 => {
+                        egui::DragAndDrop::set_payload(ctx, self.editor.metadata().sources[0].id);
+                        let (rect, origin, zoom) = self.timeline_drop.unwrap();
+                        test.pointer(Pos2::new(origin + 5.0 * zoom, rect.center().y), Some(false));
+                        test.phase = 112;
+                    }
+                    112 => {
+                        let clips = self.editor.timeline().clips();
+                        if clips.len() != 1 || (clips[0].timeline_start - 5.0).abs() > 0.001 {
+                            return Err(
+                                "Library drop did not place its linked section at five seconds"
+                                    .into(),
+                            );
+                        }
+                        test.key(egui::Key::Z, true);
+                        test.phase = 113;
+                    }
+                    113 => {
+                        if !self.editor.timeline().clips().is_empty() {
+                            return Err("Library drop was not one undoable edit".into());
+                        }
+                        let (rect, origin, zoom) = self.timeline_drop.unwrap();
+                        test.pointer(Pos2::new(origin + 5.0 * zoom, rect.center().y), None);
+                        test.dropped_files.push(egui::DroppedFile {
+                            path: Some(test.source.clone()),
+                            ..Default::default()
+                        });
+                        test.phase = 114;
+                    }
+                    114 if !self.busy => {
+                        // External drops are dispatched after verification in update.
+                        test.phase = 115;
+                    }
+                    115 if !self.busy => {
+                        let clips = self.editor.timeline().clips();
+                        if clips.len() != 1 || (clips[0].timeline_start - 5.0).abs() > 0.001 {
+                            return Err(
+                                "External recording drop did not import and place at five seconds"
+                                    .into(),
+                            );
+                        }
+                        test.checks.push("Library and external recording drops preserve the timeline pointer position and undo".into());
                         test.phase = 60;
                     }
                     60 => {

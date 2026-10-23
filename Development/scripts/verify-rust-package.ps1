@@ -50,5 +50,8 @@ try{
     if(!$editorPortableProcess.WaitForExit(30000)){Stop-Process -Id $editorPortableProcess.Id;throw 'Damaged package verification did not terminate.'}
     if($editorPortableProcess.ExitCode -eq 0){throw 'A missing packaged native tool was silently borrowed from outside the portable app.'}
 }finally{if(Test-Path -LiteralPath $editorPortableHeld){Move-Item -LiteralPath $editorPortableHeld -Destination $editorPortableMissing}}
-if($Desktop){& (Join-Path $PSScriptRoot 'test-rust-desktop.ps1') -AppPath $editorPortableExe -Extended:$Extended}
+if($Desktop){
+    & (Join-Path $PSScriptRoot 'test-rust-launch.ps1') -AppPath $editorPortableExe
+    & (Join-Path $PSScriptRoot 'test-rust-desktop.ps1') -AppPath $editorPortableExe -Extended:$Extended
+}
 Write-Output "Rust ZIP layout, checksum, embedded version, native pins, no-.NET startup, relocation, persistence, export and playback passed: $editorPortableRoot"

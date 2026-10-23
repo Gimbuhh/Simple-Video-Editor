@@ -6,6 +6,8 @@ Simple Video Editor 1.1 edits local recordings non-destructively. Keep the execu
 
 Import files or drop them into the window. Click a recording to preview it; double-click it, use Add to timeline, or drag it onto the timeline to add a section. Add all includes the entire library in library order, including search-hidden recordings, as one undoable edit. A hidden selection cannot be added by the single-recording button. Escape clears search.
 
+Dropping recordings from the library or File Explorer onto the timeline places linked sections at the drop point, choosing the nearest free space if needed. Dropping elsewhere imports into the library. You can also drop a project or recordings onto the executable, or pass filenames when launching it; a project opens with its saved trims and gaps, while recordings import in order.
+
 The video and audio lanes are the same linked section. Moving, splitting, trimming or deleting a section moves both. Repeated sections of one recording have separate identities. Right-click a recording to remove it and all its sections from the project; the original file remains untouched and Undo restores the edit.
 
 Move sections freely; nearby edges snap. Existing gaps separate joined groups. Trimming a left edge follows the pointer while the right edge/following sections stay anchored; releasing closes the temporary gap within a joined group. The preview retains the current source frame or clamps to the nearest retained frame. Escape restores the original gesture state. Delete closes only the connected group, preserving separate gaps.

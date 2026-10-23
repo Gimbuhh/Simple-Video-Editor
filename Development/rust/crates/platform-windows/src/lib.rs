@@ -53,8 +53,10 @@ pub fn same_file(left: &Path, right: &Path) -> io::Result<bool> {
     }
 }
 
+type VideoLayout = (i32, i32, i32, i32, bool);
 pub struct VideoWindow {
     handle: HWND,
+    layout: std::cell::Cell<Option<VideoLayout>>,
     _thread: std::marker::PhantomData<std::rc::Rc<()>>,
 }
 impl VideoWindow {
@@ -83,6 +85,7 @@ impl VideoWindow {
         }
         Ok(Self {
             handle,
+            layout: std::cell::Cell::new(None),
             _thread: std::marker::PhantomData,
         })
     }
@@ -118,6 +121,10 @@ impl VideoWindow {
         }
     }
     pub fn layout(&self, x: i32, y: i32, width: i32, height: i32, visible: bool) {
+        let next = (x, y, width.max(1), height.max(1), visible);
+        if self.layout.replace(Some(next)) == Some(next) {
+            return;
+        }
         // SAFETY: called on the owning UI thread, with a live child HWND.
         unsafe {
             SetWindowPos(
@@ -132,6 +139,18 @@ impl VideoWindow {
             ShowWindow(self.handle, if visible { SW_SHOWNA } else { SW_HIDE });
         }
     }
+}
+pub fn cursor_position(owner: isize) -> io::Result<(i32, i32)> {
+    let mut point = POINT { x: 0, y: 0 };
+    // SAFETY: Windows writes to this local point; owner is the live UI HWND.
+    unsafe {
+        if GetCursorPos(&mut point) == 0
+            || windows_sys::Win32::Graphics::Gdi::ScreenToClient(owner, &mut point) == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    Ok((point.x, point.y))
 }
 impl Drop for VideoWindow {
     fn drop(&mut self) {

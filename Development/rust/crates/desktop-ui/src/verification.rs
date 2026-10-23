@@ -145,20 +145,36 @@ pub struct Verification {
     pub was_software: bool,
     pub recovery_lock: Option<std::fs::File>,
     pub precision: Option<project_store::SavedProject>,
+    pub launch_files: bool,
+    pub dropped_files: Vec<egui::DroppedFile>,
+    pub recorded_phase: Option<u8>,
+    pub fail_native: bool,
 }
 impl Verification {
     pub fn arguments() -> Option<Self> {
         let args: Vec<_> = std::env::args_os().collect();
-        if args.get(1).is_none_or(|v| v != "--verify-desktop") {
+        let launch_directory = std::env::var_os("SVE_VERIFY_LAUNCH_DIRECTORY");
+        let launch_files = launch_directory.is_some();
+        if !launch_files && args.get(1).is_none_or(|v| v != "--verify-desktop") {
             return None;
         }
-        let source = PathBuf::from(args.get(2)?);
+        let source = if launch_files {
+            crate::startup::paths(args.iter().skip(1).cloned())
+                .into_iter()
+                .next()?
+        } else {
+            PathBuf::from(args.get(2)?)
+        };
         let secondary = args
             .iter()
             .position(|v| v == "--second-recording")
             .and_then(|i| args.get(i + 1))
             .map(PathBuf::from);
-        let directory = PathBuf::from(args.get(3)?);
+        let directory = if let Some(directory) = launch_directory {
+            PathBuf::from(directory)
+        } else {
+            PathBuf::from(args.get(3)?)
+        };
         std::fs::create_dir_all(&directory).ok()?;
         Some(Self {
             capture_hold: args.iter().any(|a| a == "--capture-hold"),
@@ -187,6 +203,10 @@ impl Verification {
             was_software: false,
             recovery_lock: None,
             precision: None,
+            launch_files,
+            dropped_files: Vec::new(),
+            recorded_phase: None,
+            fail_native: args.iter().any(|a| a == "--fail-native-preview"),
         })
     }
     pub fn key(&mut self, key: egui::Key, command: bool) {

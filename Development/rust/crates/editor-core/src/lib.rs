@@ -215,6 +215,13 @@ pub enum Command {
     Append {
         sections: Vec<Clip>,
     },
+    /// Place a linked batch at the nearest free position to the drop point.
+    Insert {
+        sections: Vec<Clip>,
+        position: f64,
+        rate: FrameRate,
+        snap: f64,
+    },
 }
 
 /// Owns timeline edits and bounded undo history. Video and audio refer to the
@@ -487,6 +494,37 @@ impl<M: Clone> Editor<M> {
                 }
                 clips.remove(index);
             }
+            Command::Append { sections } | Command::Insert { sections, .. }
+                if sections.is_empty() =>
+            {
+                return Ok(());
+            }
+            Command::Insert {
+                sections,
+                mut position,
+                rate,
+                snap,
+            } => {
+                if !position.is_finite() || !snap.is_finite() || snap < 0.0 {
+                    return Err(EditError("Invalid clip position"));
+                }
+                if sections.len() > MAX_CLIPS - clips.len() {
+                    return Err(EditError("Too many clips"));
+                }
+                for section in sections {
+                    let mut added = Clip {
+                        id: allocate_id()?,
+                        timeline_start: 0.0,
+                        ..section
+                    };
+                    Timeline::new(vec![added.clone()])?;
+                    let id = added.id;
+                    clips.push(added.clone());
+                    added.timeline_start = available_position(&clips, id, position, rate, snap)?;
+                    position = added.timeline_end();
+                    *clips.last_mut().unwrap() = added;
+                }
+            }
             Command::Append { sections } => {
                 if sections.is_empty() {
                     return Ok(());
@@ -718,6 +756,63 @@ mod tests {
         assert_ne!(editor.timeline.clips[1].id, editor.timeline.clips[2].id);
         assert!(editor.undo());
         assert_eq!(editor.timeline, before);
+    }
+    #[test]
+    fn dropped_batch_preserves_gaps_trims_and_undoes_atomically() {
+        let initial = Timeline::new(vec![section(1, 0.0), section(2, 10.0)]).unwrap();
+        let mut editor = Editor::new(initial.clone()).unwrap();
+        let mut trimmed = section(0, 0.0);
+        trimmed.source_in = 1.123456;
+        trimmed.source_out = 2.123456;
+        let rate = FrameRate::new(60, 1).unwrap();
+        editor
+            .apply(Command::Insert {
+                sections: vec![trimmed.clone(), trimmed],
+                position: 5.0,
+                rate,
+                snap: 0.1,
+            })
+            .unwrap();
+        let clips = editor.timeline.clips();
+        assert_eq!(
+            clips.iter().map(|c| c.timeline_start).collect::<Vec<_>>(),
+            vec![0.0, 5.0, 6.0, 10.0]
+        );
+        assert_eq!(clips[1].source_in, 1.123456);
+        assert_eq!(clips[1].source_out, 2.123456);
+        assert_ne!(clips[1].id, clips[2].id);
+        assert!(editor.undo());
+        assert_eq!(editor.timeline, initial);
+        assert!(editor.redo());
+        let before = editor.timeline.clone();
+        assert!(
+            editor
+                .apply(Command::Insert {
+                    sections: vec![section(0, 0.0)],
+                    position: f64::NAN,
+                    rate,
+                    snap: 0.1
+                })
+                .is_err()
+        );
+        assert_eq!(editor.timeline, before);
+        editor
+            .apply(Command::Insert {
+                sections: vec![section(0, 0.0)],
+                position: 5.5,
+                rate,
+                snap: 0.1,
+            })
+            .unwrap();
+        assert_eq!(
+            editor
+                .timeline
+                .clips()
+                .iter()
+                .map(|c| c.timeline_start)
+                .collect::<Vec<_>>(),
+            vec![0.0, 4.0, 5.0, 6.0, 10.0]
+        );
     }
     #[test]
     fn delete_closes_only_connected_group_and_keeps_existing_gap() {

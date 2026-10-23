@@ -14,7 +14,7 @@ use std::{
 const MINT: Color32 = Color32::from_rgb(106, 218, 187);
 enum Event {
     Tools(Result<Tools, String>),
-    Imported(Vec<MediaSource>, Vec<String>),
+    Imported(Vec<MediaSource>, Vec<String>, Option<f64>),
     Opened(Result<(SavedProject, PathBuf, bool), String>),
     Saved(Result<(SavedProject, PathBuf), String>),
     Recovery(u64, SavedProject, Result<(), String>),
@@ -24,6 +24,18 @@ enum Event {
     Progress(f64, String),
     Exported(Result<(PathBuf, bool), String>),
     Missing(PathBuf, Vec<String>),
+}
+#[derive(Clone)]
+struct EventSender {
+    sender: mpsc::Sender<Event>,
+    context: egui::Context,
+}
+impl EventSender {
+    fn send(&self, event: Event) -> bool {
+        let sent = self.sender.send(event).is_ok();
+        self.context.request_repaint();
+        sent
+    }
 }
 struct Drag {
     base: Timeline,
@@ -58,7 +70,7 @@ pub struct EditorApp {
     owner: isize,
     editor: ProjectEditor,
     tools: Option<Tools>,
-    tx: mpsc::Sender<Event>,
+    tx: EventSender,
     rx: mpsc::Receiver<Event>,
     jobs: Vec<std::thread::JoinHandle<()>>,
     cancel: Cancel,
@@ -104,6 +116,9 @@ pub struct EditorApp {
     keyboard_menu: Option<(egui::Id, Pos2)>,
     verification: Option<crate::verification::Verification>,
     relink: Option<RelinkState>,
+    startup_paths: Vec<PathBuf>,
+    timeline_drop: Option<(Rect, f32, f32)>,
+    window_title: String,
 }
 impl EditorApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> media_engine::Result<Self> {
@@ -133,10 +148,21 @@ impl EditorApp {
             .join("SimpleVideoEditor")
         };
         let recovery = Arc::new(Recovery::new(&data)?);
-        let startup_recovery = recovery.candidates().into_iter().next();
+        let startup_paths = crate::startup::paths(std::env::args_os().skip(1));
+        // Explicit files take priority, as in 1.0.x. Other interrupted sessions
+        // remain available on the next launch without filenames.
+        let startup_recovery = if startup_paths.is_empty() {
+            recovery.candidates().into_iter().next()
+        } else {
+            None
+        };
         let editor = Editor::with_metadata(Timeline::default(), ProjectMetadata::default())?;
         let saved = SavedProject::capture(&editor);
-        let (tx, rx) = mpsc::channel();
+        let (sender, rx) = mpsc::channel();
+        let tx = EventSender {
+            sender,
+            context: cc.egui_ctx.clone(),
+        };
         let sender = tx.clone();
         let cache = data.join("cache");
         let job = std::thread::spawn(move || {
@@ -196,6 +222,9 @@ impl EditorApp {
             keyboard_menu: None,
             verification,
             relink: None,
+            startup_paths,
+            timeline_drop: None,
+            window_title: String::new(),
         })
     }
     fn dirty(&self) -> bool {
@@ -291,6 +320,9 @@ impl EditorApp {
             return;
         }
         self.cancel.store(true, Ordering::Release);
+        drop(self.playback.take());
+        self.preview_frame = None;
+        self.preview_texture = None;
         self.cancel = uncancelled();
         self.editor =
             Editor::with_metadata(Timeline::default(), ProjectMetadata::default()).unwrap();
@@ -331,7 +363,10 @@ impl EditorApp {
         self.editor.metadata_mut().view = self.current_view();
         let select_new = matches!(
             &command,
-            Command::Split { .. } | Command::Duplicate { .. } | Command::Append { .. }
+            Command::Split { .. }
+                | Command::Duplicate { .. }
+                | Command::Append { .. }
+                | Command::Insert { .. }
         );
         let previous: std::collections::BTreeSet<_> = if select_new {
             self.editor
@@ -415,6 +450,9 @@ impl EditorApp {
         }
     }
     fn add(&mut self, ids: Vec<SourceId>) {
+        self.add_at(ids, None);
+    }
+    fn add_at(&mut self, ids: Vec<SourceId>, position: Option<f64>) {
         let previous: std::collections::BTreeSet<_> = self
             .editor
             .timeline()
@@ -433,7 +471,16 @@ impl EditorApp {
                 timeline_start: 0.0,
             })
             .collect();
-        self.apply(Command::Append { sections });
+        self.apply(if let Some(position) = position {
+            Command::Insert {
+                sections,
+                position,
+                rate: self.editor.metadata().output.rate,
+                snap: 10.0 / f64::from(self.zoom),
+            }
+        } else {
+            Command::Append { sections }
+        });
         if let Some(clip) = self
             .editor
             .timeline()
@@ -531,6 +578,7 @@ impl EditorApp {
             self.request_key.clear();
         }
         self.playing = !self.playing && self.preview_duration() > 0.0;
+        self.last_tick = Instant::now();
     }
     fn begin_scrub(&mut self, owner: u8) {
         if self.ignore_scrub_until_release || self.scrub.is_some() {
@@ -695,6 +743,9 @@ impl EditorApp {
         }
     }
     fn import(&mut self, paths: Vec<PathBuf>) {
+        self.import_at(paths, None);
+    }
+    fn import_at(&mut self, paths: Vec<PathBuf>, position: Option<f64>) {
         let Some(tools) = self.tools.clone() else {
             return;
         };
@@ -740,7 +791,7 @@ impl EditorApp {
                     )),
                 }
             }
-            let _ = tx.send(Event::Imported(sources, errors));
+            let _ = tx.send(Event::Imported(sources, errors, position));
         }));
     }
     fn open(&mut self, path: PathBuf) {
@@ -929,19 +980,15 @@ impl EditorApp {
                 }
                 Event::Tools(result) => match result {
                     Ok(tools) => {
-                        self.playback = Some(Playback::new(
-                            tools.clone(),
-                            self.video.handle(),
-                            self.software_preview,
-                        ));
                         self.tools = Some(tools);
                         self.message = "Import recordings to begin".into();
                     }
                     Err(e) => self.fail(e),
                 },
-                Event::Imported(sources, errors) => {
+                Event::Imported(sources, errors, position) => {
                     self.busy = false;
                     let mut metadata = self.editor.metadata().clone();
+                    let paths: Vec<_> = sources.iter().map(|s| s.path.clone()).collect();
                     let empty = metadata.sources.is_empty();
                     for source in sources {
                         if !metadata
@@ -967,6 +1014,20 @@ impl EditorApp {
                         };
                     }
                     self.metadata(metadata);
+                    if position.is_some() {
+                        let ids = paths
+                            .iter()
+                            .filter_map(|path| {
+                                self.editor
+                                    .metadata()
+                                    .sources
+                                    .iter()
+                                    .find(|s| platform_windows::ordinal_ignore_case(&s.path, path))
+                                    .map(|s| s.id)
+                            })
+                            .collect();
+                        self.add_at(ids, position);
+                    }
                     if self.library_selected.is_none() {
                         self.library_selected =
                             self.editor.metadata().sources.first().map(|s| s.id);
@@ -1343,6 +1404,7 @@ impl EditorApp {
                             300.0
                         };
                         let visible = painter.clip_rect();
+                        self.timeline_drop = Some((rect.intersect(visible), origin, zoom));
                         let first = ((visible.left() - origin).max(0.0) / zoom / second_step)
                             .floor() as u32;
                         let last = ((visible.right() - origin).max(0.0) / zoom / second_step).ceil()
@@ -1376,8 +1438,13 @@ impl EditorApp {
                             FontId::proportional(10.0),
                             Color32::GRAY,
                         );
-                        if let Some(id) = response.dnd_release_payload::<SourceId>() {
-                            self.add(vec![*id]);
+                        if let Some(id) = response.dnd_release_payload::<SourceId>()
+                            && let Some(pointer) = ui.input(|i| i.pointer.latest_pos())
+                        {
+                            self.add_at(
+                                vec![*id],
+                                Some(f64::from((pointer.x - origin) / zoom).max(0.0)),
+                            );
                         }
                         let clips = self.timeline().clips().to_vec();
                         let mut over_clip = false;
@@ -2016,7 +2083,7 @@ impl EditorApp {
             let software=ui.checkbox(&mut self.software_preview,"Software SDR preview").on_hover_text("Uses CPU-rendered, tone-mapped video. Try this if native preview or capture compatibility causes problems.");
             self.controls.insert("software-preview",software.rect);
             if software.changed() && let Some(tools)=self.tools.clone(){
-                self.stepping=None;drop(self.playback.take());self.playback=Some(Playback::new(tools,self.video.handle(),self.software_preview));self.request_key.clear();
+                self.stepping=None;if self.playback.take().is_some(){self.playback=Some(Playback::new(tools,self.video.handle(),self.software_preview,ctx.clone()));}self.request_key.clear();
             }
             let available = Vec2::new(
                 ui.available_width(),
@@ -2168,7 +2235,7 @@ impl EditorApp {
             });
         });
     }
-    fn playback(&mut self) {
+    fn playback(&mut self, ctx: &egui::Context) {
         let elapsed = self.last_tick.elapsed().as_secs_f64().min(0.25);
         self.last_tick = Instant::now();
         let status = self
@@ -2332,11 +2399,22 @@ impl EditorApp {
             && self.editor.metadata().output.profile == ColorProfile::Hdr10
             && !status.software
             && status.display.as_ref().is_some_and(|d| d.hdr_active);
+        let rect = self
+            .controls
+            .get("preview")
+            .copied()
+            .unwrap_or(Rect::NOTHING);
+        let output = crate::playback::preview_output(
+            self.preview_output(),
+            rect.width() * ctx.pixels_per_point(),
+            rect.height() * ctx.pixels_per_point(),
+            self.software_preview || status.software,
+        );
         let key = format!(
             "{:?}|{:?}|{:?}|{}|{}",
             mapped.map(|(id, source, _)| (id, source)),
             adjustment,
-            self.editor.metadata().output,
+            output,
             self.library_preview,
             hdr_preview
         );
@@ -2357,8 +2435,9 @@ impl EditorApp {
         if let Some(stepping) = &mut self.stepping {
             stepping.generation.get_or_insert(self.generation);
         }
-        if status.error.is_some()
-            && status.generation != self.generation
+        if source.is_some()
+            && (self.playback.is_none()
+                || status.error.is_some() && status.generation != self.generation)
             && let Some(tools) = self.tools.clone()
         {
             drop(self.playback.take());
@@ -2366,6 +2445,7 @@ impl EditorApp {
                 tools,
                 self.video.handle(),
                 self.software_preview,
+                ctx.clone(),
             ));
         }
         if let Some(playback) = &self.playback {
@@ -2383,7 +2463,7 @@ impl EditorApp {
                 generation: self.generation,
                 source,
                 adjustment,
-                output: self.preview_output(),
+                output,
                 position: mapped.map_or(0.0, |(_, _, time)| time),
                 start: mapped
                     .and_then(|(id, _, _)| {
@@ -2569,6 +2649,7 @@ impl eframe::App for EditorApp {
                 raw.modifiers = *modifiers;
             }
             raw.events.append(&mut test.input);
+            raw.dropped_files.append(&mut test.dropped_files);
         }
     }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -2576,13 +2657,26 @@ impl eframe::App for EditorApp {
             self.ignore_scrub_until_release = false;
         }
         self.events(ctx);
+        if self.tools.is_some()
+            && !self.busy
+            && self.startup_recovery.is_none()
+            && !self.startup_paths.is_empty()
+        {
+            let paths = std::mem::take(&mut self.startup_paths);
+            if paths.len() == 1 && crate::startup::is_project(&paths[0]) {
+                self.open(paths[0].clone());
+            } else {
+                self.import(paths);
+            }
+        }
         self.shortcuts(ctx);
         self.top(ctx);
+        self.timeline_drop = None;
         self.timeline_ui(ctx);
         self.library(ctx);
         self.inspector(ctx);
         self.preview(ctx);
-        self.playback();
+        self.playback(ctx);
         self.verify(ctx);
         if let Some((path, missing, mut replacements)) = self.relink.take() {
             let mut keep = true;
@@ -2612,15 +2706,27 @@ impl eframe::App for EditorApp {
                 .collect()
         });
         if !dropped.is_empty() && self.relink.is_none() && self.startup_recovery.is_none() {
-            if dropped.len() == 1
-                && dropped[0]
-                    .extension()
-                    .and_then(|s| s.to_str())
-                    .is_some_and(|s| s.eq_ignore_ascii_case("sveproject"))
-            {
+            if dropped.len() == 1 && crate::startup::is_project(&dropped[0]) {
                 self.open(dropped[0].clone());
             } else {
-                self.import(dropped);
+                let pointer = if self.verification.is_some() {
+                    ctx.input(|i| i.pointer.latest_pos())
+                } else {
+                    platform_windows::cursor_position(self.owner)
+                        .ok()
+                        .map(|(x, y)| {
+                            Pos2::new(
+                                x as f32 / ctx.pixels_per_point(),
+                                y as f32 / ctx.pixels_per_point(),
+                            )
+                        })
+                };
+                let position = self.timeline_drop.and_then(|(rect, origin, zoom)| {
+                    pointer
+                        .filter(|p| rect.contains(*p))
+                        .map(|p| f64::from((p.x - origin) / zoom).max(0.0))
+                });
+                self.import_at(dropped, position);
             }
         }
         if self.recovery_tick.elapsed() > Duration::from_secs(2) && (!self.busy || self.exporting) {
@@ -2672,16 +2778,33 @@ impl eframe::App for EditorApp {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             }
         }
-        ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
+        let title = format!(
             "{}Simple Video Editor {}",
             if self.dirty() { "• " } else { "" },
             env!("CARGO_PKG_VERSION")
-        )));
-        ctx.request_repaint_after(Duration::from_millis(if self.playing || self.busy {
-            16
-        } else {
-            50
-        }));
+        );
+        if title != self.window_title {
+            self.window_title.clone_from(&title);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+        }
+        if self.playing || self.settling.is_some() || self.stepping.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(16));
+        } else if self.dirty() && (!self.busy || self.exporting) {
+            ctx.request_repaint_after(
+                Duration::from_secs(2).saturating_sub(self.recovery_tick.elapsed()),
+            );
+        }
+        if let Some(test) = &self.verification {
+            ctx.request_repaint_after(if test.launch_files {
+                // Launch verification must rely on the same event wakeups as
+                // ordinary startup; this is only its failure deadline.
+                Duration::from_secs(31).saturating_sub(test.started.elapsed())
+            } else if test.capture_hold && test.phase == 80 {
+                Duration::from_millis(250)
+            } else {
+                Duration::from_millis(16)
+            });
+        }
     }
 }
 impl Drop for EditorApp {

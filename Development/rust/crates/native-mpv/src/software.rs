@@ -72,13 +72,20 @@ impl Renderer {
         self.frame.lock().unwrap().take()
     }
     pub fn refresh(&self) -> u64 {
-        self.refresh.fetch_add(1, Ordering::AcqRel) + 1
+        let serial = self.refresh.fetch_add(1, Ordering::AcqRel) + 1;
+        if let Some(thread) = &self.thread {
+            thread.thread().unpark();
+        }
+        serial
     }
     pub fn resize(&self, width: usize, height: usize) -> Result<()> {
         if !(1..=1920).contains(&width) || !(1..=1080).contains(&height) {
             return Err("Software preview size is outside its bounded surface".into());
         }
         *self.size.lock().unwrap() = (width, height);
+        if let Some(thread) = &self.thread {
+            thread.thread().unpark();
+        }
         Ok(())
     }
     pub fn check(&self) -> Result<()> {
@@ -90,15 +97,22 @@ impl Renderer {
 }
 
 unsafe extern "C" fn updated(state: *mut c_void) {
-    // SAFETY: registered pointer refers to the boxed AtomicBool below, retained
-    // through callback removal and context destruction. No libmpv call or lock.
-    unsafe { &*state.cast::<AtomicBool>() }.store(true, Ordering::Release);
+    // SAFETY: this stable signal remains alive through callback removal and
+    // context destruction. Waking the render owner makes no libmpv call.
+    let signal = unsafe { &*state.cast::<RenderSignal>() };
+    signal.updated.store(true, Ordering::Release);
+    signal.thread.unpark();
+}
+
+struct RenderSignal {
+    updated: AtomicBool,
+    thread: thread::Thread,
 }
 
 struct Context<'a> {
     handle: ffi::Handle,
     api: &'a ffi::Api,
-    _signal: Box<AtomicBool>,
+    _signal: Box<RenderSignal>,
 }
 impl Drop for Context<'_> {
     fn drop(&mut self) {
@@ -141,14 +155,17 @@ fn run(
     let context = Context {
         handle,
         api,
-        _signal: Box::new(AtomicBool::new(true)),
+        _signal: Box::new(RenderSignal {
+            updated: AtomicBool::new(true),
+            thread: thread::current(),
+        }),
     };
     // SAFETY: context owns stable signal allocation until unregister/free.
     unsafe {
         (api.render_update_callback)(
             handle,
             Some(updated),
-            (&*context._signal as *const AtomicBool).cast_mut().cast(),
+            (&*context._signal as *const RenderSignal).cast_mut().cast(),
         );
     }
     ready.send(Ok(()))?;
@@ -163,8 +180,8 @@ fn run(
         let resized = desired != (width, height);
         let serial = refresh.load(Ordering::Acquire);
         let refreshed = serial != rendered_serial;
-        if !context._signal.swap(false, Ordering::AcqRel) && !resized && !refreshed {
-            thread::sleep(Duration::from_millis(2));
+        if !context._signal.updated.swap(false, Ordering::AcqRel) && !resized && !refreshed {
+            thread::park();
             continue;
         }
         if resized {
@@ -222,6 +239,7 @@ impl Drop for Renderer {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
         if let Some(thread) = self.thread.take() {
+            thread.thread().unpark();
             let _ = thread.join();
         }
     }

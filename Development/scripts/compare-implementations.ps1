@@ -5,7 +5,8 @@ param(
     [ValidateRange(1,5)][int]$Samples=3,
     [ValidateRange(5,30)][int]$SettleSeconds=10,
     [ValidateRange(3,20)][int]$MeasureSeconds=6,
-    [switch]$Visible
+    [switch]$Visible,
+    [switch]$OrdinaryStartup
 )
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'project-paths.ps1')
@@ -45,7 +46,7 @@ foreach($editorComparisonFile in Get-ChildItem -LiteralPath (Join-Path $editorCo
     if((Get-FileHash -LiteralPath $editorComparisonOld -Algorithm SHA256).Hash -ne $editorComparisonHash){throw 'Native dependency versions differ; do not compare as the same media engine.'}
     $editorComparisonNative+=@{name=$editorComparisonFile.Name;sha256=$editorComparisonHash}
 }
-@{apps=$editorComparisonApps;native=$editorComparisonNative;source=$Source;sourceSha256=$editorComparisonSourceHash;visibleRequested=[bool]$Visible;cpu=@(Get-CimInstance Win32_Processor | Select-Object Name,NumberOfLogicalProcessors);gpu=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion);scope='Process-only CPU/private bytes/working set after settling; excludes child-process and GPU memory. App default window/preview sizes, uncontrolled OS cache/system load, not a cold-start or export-speed benchmark. Hidden runs can produce unmatched minimized states and are diagnostic only.'} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $editorComparisonRoot 'environment.json') -Encoding utf8
+@{apps=$editorComparisonApps;native=$editorComparisonNative;source=$Source;sourceSha256=$editorComparisonSourceHash;visibleRequested=[bool]$Visible;ordinaryStartup=[bool]$OrdinaryStartup;cpu=@(Get-CimInstance Win32_Processor | Select-Object Name,NumberOfLogicalProcessors);gpu=@(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion);scope='Process-only CPU/private bytes/working set after settling; excludes child-process and GPU memory. App default window/preview sizes, uncontrolled OS cache/system load, not a cold-start or export-speed benchmark. Hidden runs can produce unmatched minimized states and are diagnostic only.'} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $editorComparisonRoot 'environment.json') -Encoding utf8
 $editorComparisonRows=@()
 $editorComparisonCases=@(
     @{name='csharp-empty';app='csharp';preview=$false},
@@ -69,7 +70,8 @@ foreach($editorComparisonSample in 1..$Samples){
         }
         $editorComparisonDocument | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $editorComparisonProject -Encoding utf8
         $editorComparisonArguments=@(('"'+$editorComparisonProject+'"'))
-        $editorComparisonHold=$editorComparisonCase.app -eq 'rust' -and $editorComparisonCase.preview
+        $editorComparisonHold=$editorComparisonCase.app -eq 'rust' -and $editorComparisonCase.preview -and !$OrdinaryStartup
+        if($OrdinaryStartup -and $editorComparisonCase.software){$editorComparisonArguments+='--software-preview'}
         if($editorComparisonHold){
             $editorComparisonArguments=@('--verify-desktop',('"'+$Source+'"'),('"'+$editorComparisonRun+'"'),'--capture-hold')
             if($editorComparisonCase.software){$editorComparisonArguments+='--software-preview'}
@@ -112,6 +114,7 @@ foreach($editorComparisonSample in 1..$Samples){
                 windowDpi=[EditorComparisonWindow]::GetDpiForWindow($editorComparisonWindow)
                 clientSize=$(if($editorComparisonHasBounds){@(($editorComparisonBounds.Right-$editorComparisonBounds.Left),($editorComparisonBounds.Bottom-$editorComparisonBounds.Top))}else{@()})
                 rustPreviewReady=$editorComparisonHold
+                previewReadiness=$(if($editorComparisonHold){'hold-confirmed'}else{'ordinary startup; not instrumented'})
                 desktopControlUsed=$false
             }
             if($editorComparisonHold){
@@ -134,4 +137,8 @@ foreach($editorComparisonSample in 1..$Samples){
 }
 foreach($editorComparisonApp in $editorComparisonApps.Values){if((Get-FileHash -LiteralPath $editorComparisonApp.exe -Algorithm SHA256).Hash -ne $editorComparisonApp.executableSha256){throw 'Comparison changed an executable.'}}
 if((Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash -ne $editorComparisonSourceHash){throw 'Comparison changed its source.'}
+$editorComparisonSummary=@($editorComparisonRows | Group-Object case | ForEach-Object {
+    @{case=$_.Name;samples=$_.Count;cpuOneCorePercent=($_.Group.cpuPercentOfOneCore | Measure-Object -Average).Average;workingSetMiB=($_.Group.workingSet | Measure-Object -Average).Average/1MB;privateCommitMiB=($_.Group.privateBytes | Measure-Object -Average).Average/1MB}
+})
+$editorComparisonSummary | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $editorComparisonRoot 'summary.json') -Encoding utf8
 Write-Output "Comparison evidence: $editorComparisonRoot"

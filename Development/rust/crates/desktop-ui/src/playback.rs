@@ -46,16 +46,22 @@ pub struct Playback {
     status: Arc<Mutex<Status>>,
     stop: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
+    submitted: Mutex<Option<(u64, bool, u64, i32)>>,
 }
 impl Playback {
-    pub fn new(tools: Tools, window: isize, forced: bool) -> Self {
+    pub fn new(tools: Tools, window: isize, forced: bool, context: eframe::egui::Context) -> Self {
         let request = Arc::new(Mutex::new(None::<Request>));
         let status = Arc::new(Mutex::new(Status::default()));
         let stop = Arc::new(AtomicBool::new(false));
         let (requests, state, stopped) = (request.clone(), status.clone(), stop.clone());
+        let fail_native = std::env::args_os()
+            .nth(1)
+            .is_some_and(|a| a == "--verify-desktop")
+            && std::env::args_os().any(|a| a == "--fail-native-preview");
         let worker = std::thread::spawn(move || {
             for attempt in 0..if forced { 1 } else { 2 } {
                 let software = forced || attempt > 0;
+                let mut retry: Option<Request> = None;
                 let result = (|| -> media_engine::Result<()> {
                     let player = Player::open_embedded(
                         &tools.mpv,
@@ -70,13 +76,25 @@ impl Playback {
                     let mut display = None;
                     let mut display_tick = Instant::now() - Duration::from_secs(2);
                     while !stopped.load(Ordering::Acquire) {
+                        let previous = state.lock().unwrap().clone();
+                        let mut changed = false;
                         if display_tick.elapsed() >= Duration::from_secs(1) {
-                            display = platform_windows::display_color(window).ok();
+                            let updated = platform_windows::display_color(window).ok();
+                            changed = display != updated;
+                            display = updated;
                             state.lock().unwrap().display = display.clone();
                             display_tick = Instant::now();
                         }
                         let next = requests.lock().unwrap().take();
                         if let Some(next) = next {
+                            retry = Some(next.clone());
+                            if !software && fail_native {
+                                return Err(
+                                    "Injected native preview failure after dequeuing request"
+                                        .into(),
+                                );
+                            }
+                            changed = true;
                             let replace = current
                                 .as_ref()
                                 .is_none_or(|c| c.generation != next.generation);
@@ -344,7 +362,7 @@ impl Playback {
                             player.set_paused(!next.playing || next.source.is_none())?;
                             current = Some(next);
                         }
-                        player.poll_event(0.005)?;
+                        player.poll_event(0.0)?;
                         if let Some(position) =
                             player.property("time-pos").and_then(|s| s.parse().ok())
                         {
@@ -356,17 +374,48 @@ impl Playback {
                             player.property("pause").as_deref() == Some("yes");
                         if let Some(frame) = player.take_frame() {
                             state.lock().unwrap().frame = Some(Arc::new(frame));
+                            changed = true;
                         }
                         state.lock().unwrap().gamma = player.property("video-out-params/gamma");
-                        std::thread::sleep(Duration::from_millis(3));
+                        {
+                            let updated = state.lock().unwrap();
+                            changed |= previous.position != updated.position
+                                || previous.ended != updated.ended
+                                || previous.paused != updated.paused
+                                || previous.gamma != updated.gamma;
+                        }
+                        let playing = current
+                            .as_ref()
+                            .is_some_and(|r| r.playing && r.source.is_some());
+                        if changed || playing {
+                            context.request_repaint();
+                        }
+                        // Submissions and shutdown unpark immediately. A paused player
+                        // needs only a slow display/HDR check, not continuous polling.
+                        std::thread::park_timeout(if playing {
+                            Duration::from_millis(16)
+                        } else {
+                            Duration::from_secs(1)
+                        });
                     }
                     Ok(())
                 })();
                 if let Err(error) = result {
                     if !software && !stopped.load(Ordering::Acquire) {
+                        if let Some(request) = &mut retry {
+                            let latest = state.lock().unwrap();
+                            if latest.ready && latest.generation == request.generation {
+                                request.position = latest.position;
+                            }
+                        }
+                        let mut queued = requests.lock().unwrap();
+                        if queued.is_none() {
+                            *queued = retry;
+                        }
                         continue;
                     }
                     state.lock().unwrap().error = Some(error.to_string());
+                    context.request_repaint();
                 }
                 break;
             }
@@ -376,20 +425,99 @@ impl Playback {
             status,
             stop,
             worker: Some(worker),
+            submitted: Mutex::new(None),
         }
     }
     pub fn submit(&self, request: Request) {
+        let key = (
+            request.generation,
+            request.playing,
+            request.volume.to_bits(),
+            request.steps,
+        );
+        let mut submitted = self.submitted.lock().unwrap();
+        if *submitted == Some(key) {
+            return;
+        }
+        *submitted = Some(key);
         *self.request.lock().unwrap() = Some(request);
+        if let Some(worker) = &self.worker {
+            worker.thread().unpark();
+        }
     }
     pub fn status(&self) -> Status {
         self.status.lock().unwrap().clone()
     }
 }
+
 impl Drop for Playback {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
         if let Some(worker) = self.worker.take() {
+            worker.thread().unpark();
             let _ = worker.join();
         }
+    }
+}
+
+/// Bound only the preview transform. Project settings and export stay exact.
+pub fn preview_output(
+    mut output: OutputSettings,
+    width: f32,
+    height: f32,
+    software: bool,
+) -> OutputSettings {
+    let needed = (f64::from(width.max(1.0)) / f64::from(output.width))
+        .min(f64::from(height.max(1.0)) / f64::from(output.height));
+    // Eighth-size tiers avoid rebuilding the graph for every resize pixel.
+    let mut scale = ((needed * 8.0).ceil() / 8.0).min(1.0);
+    if software {
+        scale = scale
+            .min(1280.0 / f64::from(output.width))
+            .min(720.0 / f64::from(output.height));
+    }
+    output.width = ((f64::from(output.width) * scale).round() as u32)
+        .max(2)
+        .next_multiple_of(2);
+    output.height = ((f64::from(output.height) * scale).round() as u32)
+        .max(2)
+        .next_multiple_of(2);
+    output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn preview_sizes_follow_display_preserve_profile_rate_and_leave_export_unchanged() {
+        let output = OutputSettings {
+            width: 3840,
+            height: 2160,
+            profile: project_store::ColorProfile::Hdr10,
+            ..Default::default()
+        };
+        let preview = preview_output(output.clone(), 700.0, 394.0, false);
+        assert_eq!((preview.width, preview.height), (960, 540));
+        assert_eq!(preview.profile, output.profile);
+        assert_eq!(preview.rate, output.rate);
+        assert_eq!((output.width, output.height), (3840, 2160));
+        assert_eq!(preview_output(output.clone(), 710.0, 400.0, false), preview);
+        assert_eq!(
+            preview_output(output.clone(), 3840.0, 2160.0, false),
+            output
+        );
+        let software = preview_output(output, 3840.0, 2160.0, true);
+        assert_eq!((software.width, software.height), (1280, 720));
+        let portrait = preview_output(
+            OutputSettings {
+                width: 2160,
+                height: 3840,
+                ..Default::default()
+            },
+            400.0,
+            700.0,
+            false,
+        );
+        assert_eq!((portrait.width, portrait.height), (540, 960));
     }
 }
