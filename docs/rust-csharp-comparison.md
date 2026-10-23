@@ -13,7 +13,7 @@ Compared on 2026-10-23. The improved Rust candidate restores the identified star
 
 The complete portable bundles are approximately 469 MB and 367 MB; their downloads are approximately 199 MB and 149 MB (decimal MB). This is about 22% less extracted storage and 25% less download, rather than the much larger reduction suggested by executable sizes alone. Final ZIP checksums live in their sidecars. All compared media binaries match by SHA-256. Both distributions are portable; C# already bundled its runtime, so neither requires a separate .NET installation.
 
-C# main/history and its original release ZIP are retained. Redundant extracted baseline bundles and cached source were removed during the requested cleanup; extract the ZIP or restore the pinned Git commit when needed. The original ZIP SHA-256 is `5503f27981238c9d38e9e0b31fce8075b0c26511727fdfd16f6c0ef772e86493`. The latest documentation and tooling changes do not change the tested Rust executable above, now in `App`.
+C# main/history and its original release ZIP are retained. Redundant extracted baseline bundles and cached source were removed during the requested cleanup; extract the ZIP or restore the pinned Git commit when needed. The original ZIP SHA-256 is `5503f27981238c9d38e9e0b31fce8075b0c26511727fdfd16f6c0ef772e86493`. The table records the measured pre-icon-update executable. The current `App` uses the selected scissors/play icon and explicit window-icon initialization; resource measurements have not been repeated for that asset change.
 
 ## Restored behavior and performance changes
 

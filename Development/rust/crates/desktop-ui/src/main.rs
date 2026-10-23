@@ -20,7 +20,19 @@ fn main() -> eframe::Result {
         }
         return Ok(());
     }
+    let icon = image::load_from_memory_with_format(
+        include_bytes!("../../../../assets/app-icon.png"),
+        image::ImageFormat::Png,
+    )
+    .expect("The embedded application icon must be a valid PNG")
+    .resize_exact(256, 256, image::imageops::FilterType::Lanczos3)
+    .into_rgba8();
     let mut viewport = egui::ViewportBuilder::default()
+        .with_icon(egui::IconData {
+            rgba: icon.into_raw(),
+            width: 256,
+            height: 256,
+        })
         .with_inner_size([1360.0, 900.0])
         .with_min_inner_size([1000.0, 740.0]);
     if capture_hold {
