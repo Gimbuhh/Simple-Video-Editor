@@ -6,9 +6,9 @@ A portable Windows editor for trimming and combining local recordings. Edits lea
 
 Version 1.1.0 is the Rust release candidate on this branch. The latest published 1.0.x release remains available for rollback. Current-display HDR preview is user-confirmed and local game/Shadowplay controls pass. The user confirmed the separate HDR-to-SDR game-switch recording issue is external to this project. The PR stays open for remaining testing and approval.
 
-A startup crash from an earlier Glow/OpenGL debug build remains unattributed. Current DX12 startup checks have passed without recurrence; broader display/DPI/accessibility acceptance is also pending before release. Details and verification evidence are in the [rewrite status](docs/rust-rewrite-status.md).
+Current startup checks pass. Remaining display, DPI and accessibility testing, along with the earlier debug-build crash investigation, is tracked in the [rewrite status](docs/rust-rewrite-status.md).
 
-The [C#/Rust comparison](docs/rust-csharp-comparison.md) found missing launch-filename handling and timeline-drop placement in the current Rust candidate. Keep the C# release and original projects until those parity gaps are resolved; Rust has not yet demonstrated an overall performance advantage.
+The Rust candidate opens project/media filenames and places library/File Explorer drops at the timeline pointer. Idle previews sleep between updates and use display-sized processing while exports retain their chosen resolution. The [C#/Rust comparison](docs/rust-csharp-comparison.md) records the verified benefits, resource measurements and remaining tradeoffs. Keep the C# release and original projects for rollback while testing continues.
 
 ## Run
 

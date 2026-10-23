@@ -44,6 +44,11 @@ foreach($editorRustDocument in Get-ChildItem -LiteralPath $editorRustDocs -Filte
     $editorRustText=[IO.File]::ReadAllText($editorRustDocument.FullName).Replace('](docs/','](').Replace('](../','](')
     [IO.File]::WriteAllText($editorRustDocument.FullName,$editorRustText,[Text.UTF8Encoding]::new($false))
 }
+foreach($editorRustDocument in Get-ChildItem -LiteralPath (Join-Path $editorRustDocs 'release-notes') -Filter '*.md' -File){
+    # Release notes move inside docs; their ../docs links must move with them.
+    $editorRustText=[IO.File]::ReadAllText($editorRustDocument.FullName).Replace('](../docs/','](../')
+    [IO.File]::WriteAllText($editorRustDocument.FullName,$editorRustText,[Text.UTF8Encoding]::new($false))
+}
 $editorRustLicenseRows=@()
 foreach ($editorRustDependency in $editorRustMetadata.packages | Where-Object source) {
     $editorRustLicenseRows += "| $($editorRustDependency.name) | $($editorRustDependency.version) | $($editorRustDependency.license) |"
@@ -68,7 +73,7 @@ SIMPLE VIDEO EDITOR $editorRustVersion
 
 Run Simple Video Editor.exe. Keep bin and docs beside it.
 No .NET runtime or installation is required.
-This release candidate awaits physical HDR/game-capture acceptance; see docs/rust-rewrite-status.md.
+This release candidate awaits remaining acceptance; see docs/rust-rewrite-status.md.
 Original recordings remain untouched. Save legacy projects to a new filename.
 "@ | Set-Content (Join-Path $editorRustStage 'README.txt') -Encoding utf8
 Assert-RustOutputStopped

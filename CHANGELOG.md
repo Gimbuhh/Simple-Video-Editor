@@ -22,7 +22,7 @@ Unreleased Rust candidate.
 
 ### Known limitations
 
-- The candidate ignores files passed at startup, appends timeline drops to the end and uses more CPU while idle than 1.0.4. See the [C#/Rust comparison](docs/rust-csharp-comparison.md) before replacing it.
+- Some workflows use more memory than 1.0.4. See the [C#/Rust comparison](docs/rust-csharp-comparison.md) for measured results and remaining acceptance checks.
 - Visual refinement is planned for a later pass, with matching or improving on the C# interface as the goal. Transition effects remain follow-up work.
 
 ## 1.0.4 — 2026-10-09
