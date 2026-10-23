@@ -41,6 +41,8 @@ For a controlled editor comparison, launch an isolated `--verify-desktop <record
 
 Let layout and control names explain the editor. Avoid repeated headings, secondary descriptions and permanent shortcut legends; put optional technical detail and shortcuts in contextual tooltips. Keep action labels, source identity, active HDR/SDR state, meaningful metadata, warnings, errors and progress visible where they affect a decision. Preserve accessible names and keyboard behavior when simplifying the presentation.
 
+Enabled buttons, dropdowns and toggles use the pointing hand cursor on hover. Set it on their responses with `on_hover_cursor`: the pinned egui version does not consume `Visuals::interact_cursor`. Keep text-entry and drag cursors specific to their interactions.
+
 ## Frozen legacy oracle
 
 The old implementation is removed from production source. Optional differential tests restore only its source from Git commit `dd65df13a41490e8168a624b65fcff6a27956940` into ignored `Development/artifacts/rewrite-baseline/source`. The Rust application never loads it.

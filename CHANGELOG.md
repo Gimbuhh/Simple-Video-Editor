@@ -17,7 +17,7 @@ Unreleased Rust candidate.
 
 ### Changed
 
-- The interface uses fewer repeated labels and descriptions; optional details appear in tooltips.
+- The interface uses fewer repeated labels, contextual tooltips and a pointing hand cursor over enabled buttons.
 - The app has a new scissors icon with a blue play symbol.
 - The portable Rust app has a smaller download—about 25% in the compared candidate—and no bundled .NET runtime.
 - Frame stepping and quick trims follow actual frame boundaries in variable-frame-rate recordings.

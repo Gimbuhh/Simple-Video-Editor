@@ -1208,6 +1208,7 @@ impl EditorApp {
                             !self.busy && !self.editor.timeline().clips().is_empty(),
                             egui::Button::new("Export video").fill(Color32::from_rgb(38, 99, 83)),
                         )
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
                     {
                         self.export();
@@ -1217,6 +1218,7 @@ impl EditorApp {
                             !self.busy && !self.editor.timeline().clips().is_empty(),
                             egui::Button::new("Save"),
                         )
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
                     {
                         self.save(false);
@@ -1226,6 +1228,7 @@ impl EditorApp {
                             !self.busy && self.tools.is_some(),
                             egui::Button::new("Open"),
                         )
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
                         && let Ok(paths) = platform_windows::choose_files(self.owner, false, true)
                         && let Some(path) = paths.into_iter().next()
@@ -1234,11 +1237,16 @@ impl EditorApp {
                     }
                     if ui
                         .add_enabled(!self.busy, egui::Button::new("New"))
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
                     {
                         self.new_project();
                     }
-                    if ui.button("Output").clicked() {
+                    if ui
+                        .button("Output")
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .clicked()
+                    {
                         self.settings = !self.settings;
                     }
                 });
@@ -1252,7 +1260,12 @@ impl EditorApp {
                         ui.spinner();
                     }
                     ui.label(&self.message);
-                    if self.busy && ui.button("Cancel").clicked() {
+                    if self.busy
+                        && ui
+                            .button("Cancel")
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                    {
                         self.cancel.store(true, Ordering::Release);
                     }
                 });
@@ -1267,23 +1280,23 @@ impl EditorApp {
             if self.busy && !self.exporting{ui.disable();}
             ui.horizontal(|ui| {
                 ui.heading("Recordings");ui.label(self.editor.metadata().sources.len().to_string());
-                if ui.add_enabled(!self.busy && self.tools.is_some(),egui::Button::new("Clear cache")).on_hover_text("Clear generated thumbnails and waveforms").clicked() && let Some(tools)=self.tools.clone(){
+                if ui.add_enabled(!self.busy && self.tools.is_some(),egui::Button::new("Clear cache")).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Clear generated thumbnails and waveforms").clicked() && let Some(tools)=self.tools.clone(){
                     self.busy=true;let protected=self.editor.metadata().sources.iter().map(|s|PathBuf::from(&s.path)).collect::<Vec<_>>();let tx=self.tx.clone();self.jobs.push(std::thread::spawn(move ||{let _=tx.send(Event::Cache(tools.clear_cache(&protected).map_err(|e|e.to_string())));}));
                 }
             });
-            if ui.add_enabled(!self.busy && self.tools.is_some(),egui::Button::new("+ Import recordings").min_size(Vec2::new(ui.available_width(),32.0))).clicked() && let Ok(paths)=platform_windows::choose_files(self.owner,false,false) { self.import(paths); }
+            if ui.add_enabled(!self.busy && self.tools.is_some(),egui::Button::new("+ Import recordings").min_size(Vec2::new(ui.available_width(),32.0))).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() && let Ok(paths)=platform_windows::choose_files(self.owner,false,false) { self.import(paths); }
             ui.horizontal(|ui|{
                 let response=ui.add(egui::TextEdit::singleline(&mut self.search).id(egui::Id::new("recording-search-input")).hint_text("Search recordings").desired_width((ui.available_width()-45.0).max(1.0)));
                 self.controls.insert("recording-search",response.rect);
                 if response.has_focus() && ui.input_mut(|i|i.consume_key(egui::Modifiers::NONE,egui::Key::Escape)){self.search.clear();response.surrender_focus();}
-                if ui.add_enabled(!self.search.is_empty(),egui::Button::new("×")).on_hover_text("Clear search").clicked(){self.search.clear();}
+                if ui.add_enabled(!self.search.is_empty(),egui::Button::new("×")).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Clear search").clicked(){self.search.clear();}
             });
             let sources=self.editor.metadata().sources.clone();
             let search=self.search.to_lowercase();
             let visible:Vec<_>=sources.iter().filter(|s|s.name().to_lowercase().contains(&search)).collect();
             ui.horizontal(|ui|{
-                let response=ui.add_enabled(!self.busy && visible.iter().any(|s|Some(s.id)==self.library_selected),egui::Button::new("Add to timeline"));self.controls.insert("add-selected",response.rect);if response.clicked() && let Some(id)=self.library_selected{self.add(vec![id]);}
-                if sources.len()>1{let response=ui.add_enabled(!self.busy,egui::Button::new("Add all")).on_hover_text("Adds the complete library, including hidden search results, as one undoable edit");self.controls.insert("add-all",response.rect);if response.clicked(){self.add(sources.iter().map(|s|s.id).collect());}}
+                let response=ui.add_enabled(!self.busy && visible.iter().any(|s|Some(s.id)==self.library_selected),egui::Button::new("Add to timeline")).on_hover_cursor(egui::CursorIcon::PointingHand);self.controls.insert("add-selected",response.rect);if response.clicked() && let Some(id)=self.library_selected{self.add(vec![id]);}
+                if sources.len()>1{let response=ui.add_enabled(!self.busy,egui::Button::new("Add all")).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Adds the complete library, including hidden search results, as one undoable edit");self.controls.insert("add-all",response.rect);if response.clicked(){self.add(sources.iter().map(|s|s.id).collect());}}
             });
             if !search.is_empty(){ui.label(format!("{} of {} recordings",visible.len(),sources.len()));}
             ui.separator();
@@ -1307,8 +1320,8 @@ impl EditorApp {
                     if response.clicked() { self.library_selected=Some(source.id);self.library_preview=true;self.playing=false;self.seek(0.0); }
                     if response.double_clicked() { self.add(vec![source.id]); }
                     response.context_menu(|ui| {
-                        if ui.button("Add to timeline").clicked() { self.add(vec![source.id]);ui.close(); }
-                        if ui.button("Remove from project").on_hover_text("Removes this recording and its timeline sections; the original file stays unchanged").clicked(){
+                        if ui.button("Add to timeline").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.add(vec![source.id]);ui.close(); }
+                        if ui.button("Remove from project").on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Removes this recording and its timeline sections; the original file stays unchanged").clicked(){
                             self.editor.metadata_mut().view=self.current_view();
                             match remove_source(&mut self.editor,source.id){Ok(())=>{self.playing=false;self.stepping=None;self.selected=None;self.library_selected=None;self.library_preview=false;self.playhead=0.0;self.sync_selection();self.update_dirty();self.request_key.clear();},Err(error)=>self.fail(error)}
                             ui.close();
@@ -1333,6 +1346,7 @@ impl EditorApp {
                     ui.separator();
                     if ui
                         .add_enabled(self.editor.can_undo(), egui::Button::new("Undo"))
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
                     {
                         self.history(false);
@@ -1340,6 +1354,7 @@ impl EditorApp {
                     }
                     if ui
                         .add_enabled(self.editor.can_redo(), egui::Button::new("Redo"))
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
                     {
                         self.history(true);
@@ -1351,6 +1366,7 @@ impl EditorApp {
                                 && self.timeline().source_at(self.playhead).is_some(),
                             egui::Button::new("Split"),
                         )
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .on_hover_text("Split at the playhead (S / Ctrl+B)")
                         .clicked()
                     {
@@ -1361,6 +1377,7 @@ impl EditorApp {
                             self.selected.is_some() && !self.library_preview,
                             egui::Button::new("Delete"),
                         )
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
                         && let Some(clip) = self.selected
                     {
@@ -1368,7 +1385,11 @@ impl EditorApp {
                         self.selected = None;
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Fit").clicked() {
+                        if ui
+                            .button("Fit")
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
                             self.zoom = ((ui.available_width().max(400.0) - 80.0)
                                 / self.timeline().duration().max(5.0) as f32)
                                 .clamp(0.05, 500.0);
@@ -1749,7 +1770,11 @@ impl EditorApp {
                                 && ctx.input(|i| i.key_pressed(egui::Key::Escape));
                             menu.show(|ui| {
                                 self.selected = Some(clip.id);
-                                if ui.button("Duplicate").clicked() {
+                                if ui
+                                    .button("Duplicate")
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                    .clicked()
+                                {
                                     if let Some(source) = &source {
                                         self.apply(Command::Duplicate {
                                             clip: clip.id,
@@ -1758,21 +1783,33 @@ impl EditorApp {
                                     }
                                     ui.close();
                                 }
-                                if ui.button("Move earlier").clicked() {
+                                if ui
+                                    .button("Move earlier")
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                    .clicked()
+                                {
                                     self.apply(Command::Swap {
                                         clip: clip.id,
                                         direction: -1,
                                     });
                                     ui.close();
                                 }
-                                if ui.button("Move later").clicked() {
+                                if ui
+                                    .button("Move later")
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                    .clicked()
+                                {
                                     self.apply(Command::Swap {
                                         clip: clip.id,
                                         direction: 1,
                                     });
                                     ui.close();
                                 }
-                                if ui.button("Delete linked section").clicked() {
+                                if ui
+                                    .button("Delete linked section")
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                    .clicked()
+                                {
                                     self.apply(Command::Delete { clip: clip.id });
                                     ui.close();
                                 }
@@ -1853,7 +1890,7 @@ impl EditorApp {
                         if source.transfer=="unknown" || source.primaries=="unknown" || source.matrix=="unknown"{ui.label("Color metadata missing").on_hover_text("Unspecified metadata uses SDR Rec.709 for YUV or sRGB for RGB. Choose an interpretation if the recording was made differently.");}
                         if source.hdr() && source.primaries!="bt2020"{ui.label("Conflicting HDR metadata").on_hover_text("HDR transfer and color primaries disagree. Confirm the intended interpretation.");}
                         let mut interpretation=metadata.interpretations.get(&source.id).copied().unwrap_or_default();
-                        egui::ComboBox::from_label("Interpretation").selected_text(match interpretation {SourceInterpretation::Auto=>"From recording",SourceInterpretation::Sdr709=>"SDR Rec.709",SourceInterpretation::Srgb=>"SDR sRGB",SourceInterpretation::Pq2020=>"HDR PQ / Rec.2020",SourceInterpretation::Hlg2020=>"HDR HLG / Rec.2020"}).show_ui(ui,|ui|{for (value,label) in [(SourceInterpretation::Auto,"From recording"),(SourceInterpretation::Sdr709,"SDR Rec.709"),(SourceInterpretation::Srgb,"SDR sRGB"),(SourceInterpretation::Pq2020,"HDR PQ / Rec.2020"),(SourceInterpretation::Hlg2020,"HDR HLG / Rec.2020")]{ui.selectable_value(&mut interpretation,value,label);}});
+                        egui::ComboBox::from_label("Interpretation").selected_text(match interpretation {SourceInterpretation::Auto=>"From recording",SourceInterpretation::Sdr709=>"SDR Rec.709",SourceInterpretation::Srgb=>"SDR sRGB",SourceInterpretation::Pq2020=>"HDR PQ / Rec.2020",SourceInterpretation::Hlg2020=>"HDR HLG / Rec.2020"}).show_ui(ui,|ui|{for (value,label) in [(SourceInterpretation::Auto,"From recording"),(SourceInterpretation::Sdr709,"SDR Rec.709"),(SourceInterpretation::Srgb,"SDR sRGB"),(SourceInterpretation::Pq2020,"HDR PQ / Rec.2020"),(SourceInterpretation::Hlg2020,"HDR HLG / Rec.2020")]{ui.selectable_value(&mut interpretation,value,label).on_hover_cursor(egui::CursorIcon::PointingHand);}}).response.on_hover_cursor(egui::CursorIcon::PointingHand);
                         if interpretation!=SourceInterpretation::Auto || metadata.interpretations.contains_key(&source.id){metadata.interpretations.insert(source.id,interpretation);}ui.separator();
                     }
                     if self.settings {
@@ -1861,7 +1898,7 @@ impl EditorApp {
                         if metadata.output.profile==ColorProfile::Hdr10{
                             let display=self.playback.as_ref().and_then(|p|p.status().display);
                             let state=match display {Some(display) if display.hdr_active=>"Windows HDR is active on the preview display",Some(display) if display.state_known=>"Windows HDR is inactive on the preview display",_=>"Display HDR state unavailable"};
-                            ui.checkbox(&mut self.hdr_preview,"HDR preview").on_hover_text(format!("{state}. Uses tone-mapped SDR when Windows HDR is inactive or the preview uses software rendering."));
+                            ui.checkbox(&mut self.hdr_preview,"HDR preview").on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(format!("{state}. Uses tone-mapped SDR when Windows HDR is inactive or the preview uses software rendering."));
                         }
                         ui.horizontal(|ui| {
                             ui.label("Size");
@@ -1891,9 +1928,9 @@ impl EditorApp {
                                     "120/1",
                                 ] {
                                     let value = editor_core::FrameRate::parse(rate).unwrap();
-                                    ui.selectable_value(&mut metadata.output.rate, value, rate);
+                                    ui.selectable_value(&mut metadata.output.rate, value, rate).on_hover_cursor(egui::CursorIcon::PointingHand);
                                 }
-                            });
+                            }).response.on_hover_cursor(egui::CursorIcon::PointingHand);
                         egui::ComboBox::from_label("Color")
                             .selected_text(match metadata.output.profile {ColorProfile::Sdr=>"SDR",ColorProfile::Hdr10=>"HDR10"})
                             .show_ui(ui, |ui| {
@@ -1901,36 +1938,36 @@ impl EditorApp {
                                     &mut metadata.output.profile,
                                     ColorProfile::Sdr,
                                     "SDR · Rec.709",
-                                );
+                                ).on_hover_cursor(egui::CursorIcon::PointingHand);
                                 ui.selectable_value(
                                     &mut metadata.output.profile,
                                     ColorProfile::Hdr10,
                                     "HDR10 · PQ / Rec.2020",
-                                );
-                            });
+                                ).on_hover_cursor(egui::CursorIcon::PointingHand);
+                            }).response.on_hover_cursor(egui::CursorIcon::PointingHand);
                         egui::ComboBox::from_label("Codec")
                             .selected_text(match metadata.output.codec {Codec::Av1=>"AV1",Codec::Hevc=>"HEVC",Codec::H264=>"H.264"})
                             .show_ui(ui, |ui| {
-                                ui.selectable_value(&mut metadata.output.codec, Codec::Av1, "AV1");
+                                ui.selectable_value(&mut metadata.output.codec, Codec::Av1, "AV1").on_hover_cursor(egui::CursorIcon::PointingHand);
                                 ui.selectable_value(
                                     &mut metadata.output.codec,
                                     Codec::Hevc,
                                     "HEVC",
-                                );
+                                ).on_hover_cursor(egui::CursorIcon::PointingHand);
                                 if metadata.output.profile == ColorProfile::Sdr {
                                     ui.selectable_value(
                                         &mut metadata.output.codec,
                                         Codec::H264,
                                         "H.264",
-                                    );
+                                    ).on_hover_cursor(egui::CursorIcon::PointingHand);
                                 }
-                            });
+                            }).response.on_hover_cursor(egui::CursorIcon::PointingHand);
                         if metadata.output.profile == ColorProfile::Hdr10
                             && metadata.output.codec == Codec::H264
                         {
                             metadata.output.codec = Codec::Hevc;
                         }
-                        ui.checkbox(&mut metadata.output.gpu, "NVIDIA GPU encoding");
+                        ui.checkbox(&mut metadata.output.gpu, "NVIDIA GPU encoding").on_hover_cursor(egui::CursorIcon::PointingHand);
                         ui.add(
                             egui::Slider::new(&mut metadata.output.quality, 0..=51).text("Quality"),
                         ).on_hover_text("Lower values preserve more detail and create larger files.");
@@ -1955,14 +1992,14 @@ impl EditorApp {
                             }
                         });
                         ui.horizontal(|ui| {
-                            if ui.button("Trim before").on_hover_text("Trim before the playhead (Q)").clicked() {
+                            if ui.button("Trim before").on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Trim before the playhead (Q)").clicked() {
                                 self.quick_trim(true);
                             }
-                            if ui.button("Trim after").on_hover_text("Trim after the playhead (W)").clicked() {
+                            if ui.button("Trim after").on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Trim after the playhead (W)").clicked() {
                                 self.quick_trim(false);
                             }
                         });
-                        if ui.button("Reset trim").clicked()
+                        if ui.button("Reset trim").on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
                             && let Some(s) = metadata.sources.iter().find(|s| s.id == clip.source)
                         {
                             self.trim(Some(0.0), Some(s.duration));
@@ -1980,17 +2017,17 @@ impl EditorApp {
                                         .map_or("Default".into(), |s| format!("Stream {s}")),
                                 )
                                 .show_ui(ui, |ui| {
-                                    ui.selectable_value(&mut adjustment.stream, None, "Default");
+                                    ui.selectable_value(&mut adjustment.stream, None, "Default").on_hover_cursor(egui::CursorIcon::PointingHand);
                                     for stream in &source.audio {
                                         ui.selectable_value(
                                             &mut adjustment.stream,
                                             Some(stream.index),
                                             format!("{} · {} ch", stream.label, stream.channels),
-                                        );
+                                        ).on_hover_cursor(egui::CursorIcon::PointingHand);
                                     }
-                                });
+                                }).response.on_hover_cursor(egui::CursorIcon::PointingHand);
                         }
-                        ui.checkbox(&mut adjustment.muted, "Mute section");
+                        ui.checkbox(&mut adjustment.muted, "Mute section").on_hover_cursor(egui::CursorIcon::PointingHand);
                         ui.add(
                             egui::Slider::new(&mut adjustment.gain_db, -60.0..=24.0)
                                 .text("Gain dB"),
@@ -2018,10 +2055,10 @@ impl EditorApp {
                         egui::ComboBox::from_label("Mode")
                             .selected_text(format!("{:?}", adjustment.framing))
                             .show_ui(ui, |ui| {
-                                ui.selectable_value(&mut adjustment.framing, Framing::Fit, "Fit");
-                                ui.selectable_value(&mut adjustment.framing, Framing::Fill, "Fill");
-                                ui.selectable_value(&mut adjustment.framing, Framing::Crop, "Crop");
-                            });
+                                ui.selectable_value(&mut adjustment.framing, Framing::Fit, "Fit").on_hover_cursor(egui::CursorIcon::PointingHand);
+                                ui.selectable_value(&mut adjustment.framing, Framing::Fill, "Fill").on_hover_cursor(egui::CursorIcon::PointingHand);
+                                ui.selectable_value(&mut adjustment.framing, Framing::Crop, "Crop").on_hover_cursor(egui::CursorIcon::PointingHand);
+                            }).response.on_hover_cursor(egui::CursorIcon::PointingHand);
                         egui::ComboBox::from_label("Rotate")
                             .selected_text(format!("{}°", adjustment.rotation))
                             .show_ui(ui, |ui| {
@@ -2030,9 +2067,9 @@ impl EditorApp {
                                         &mut adjustment.rotation,
                                         value,
                                         format!("{value}°"),
-                                    );
+                                    ).on_hover_cursor(egui::CursorIcon::PointingHand);
                                 }
-                            });
+                            }).response.on_hover_cursor(egui::CursorIcon::PointingHand);
                         if adjustment.framing == Framing::Crop {
                             for (index, label) in
                                 ["Left", "Top", "Width", "Height"].iter().enumerate()
@@ -2080,7 +2117,7 @@ impl EditorApp {
                     ui.small(mode).on_hover_text(detail);
                 });
             });
-            let software=ui.checkbox(&mut self.software_preview,"Software preview").on_hover_text("Uses CPU-rendered, tone-mapped video. Try this if native preview or capture compatibility causes problems.");
+            let software=ui.checkbox(&mut self.software_preview,"Software preview").on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Uses CPU-rendered, tone-mapped video. Try this if native preview or capture compatibility causes problems.");
             self.controls.insert("software-preview",software.rect);
             if software.changed() && let Some(tools)=self.tools.clone(){
                 self.stepping=None;if self.playback.take().is_some(){self.playback=Some(Playback::new(tools,self.video.handle(),self.software_preview,ctx.clone()));}self.request_key.clear();
@@ -2194,17 +2231,17 @@ impl EditorApp {
             }
             ui.horizontal(|ui| {
                 if ui
-                    .button(if self.play_intent() { "Pause" } else { "Play" })
+                    .button(if self.play_intent() { "Pause" } else { "Play" }).on_hover_cursor(egui::CursorIcon::PointingHand)
                     .clicked()
                 {
                     self.toggle_playback();
                 }
-                let back = ui.button("◀ Frame");
+                let back = ui.button("◀ Frame").on_hover_cursor(egui::CursorIcon::PointingHand);
                 self.controls.insert("frame-back", back.rect);
                 if back.clicked() {
                     self.step_frame(-1);
                 }
-                let next = ui.button("Frame ▶");
+                let next = ui.button("Frame ▶").on_hover_cursor(egui::CursorIcon::PointingHand);
                 self.controls.insert("frame-forward", next.rect);
                 if next.clicked() {
                     self.step_frame(1);
@@ -2679,8 +2716,8 @@ impl eframe::App for EditorApp {
                 ui.heading("Locate missing recordings");
                 let index=replacements.len();ui.label(format!("Recording {} of {}",index+1,missing.len()));ui.label(&missing[index]);
                 ui.horizontal(|ui|{
-                    if ui.button("Locate recording…").on_hover_text("Choose the same original recording in its new location. The current project stays open until all recordings pass validation.").clicked(){match platform_windows::choose_files(self.owner,false,false){Ok(paths)=>{if let Some(replacement)=paths.into_iter().next(){replacements.push((missing[index].clone(),replacement));if replacements.len()==missing.len(){keep=false;load=true;}}},Err(e)=>self.fail(e)}}
-                    if ui.button("Cancel").clicked(){keep=false;}
+                    if ui.button("Locate recording…").on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Choose the same original recording in its new location. The current project stays open until all recordings pass validation.").clicked(){match platform_windows::choose_files(self.owner,false,false){Ok(paths)=>{if let Some(replacement)=paths.into_iter().next(){replacements.push((missing[index].clone(),replacement));if replacements.len()==missing.len(){keep=false;load=true;}}},Err(e)=>self.fail(e)}}
+                    if ui.button("Cancel").on_hover_cursor(egui::CursorIcon::PointingHand).clicked(){keep=false;}
                 });
             });
             if load {
@@ -2742,7 +2779,10 @@ impl eframe::App for EditorApp {
             egui::Modal::new(egui::Id::new("recovery")).show(ctx, |ui| {
                 ui.heading("Recover unsaved project");
                 ui.horizontal(|ui| {
-                    if ui.button("Recover").clicked()
+                    if ui
+                        .button("Recover")
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .clicked()
                         && self.discard()
                         && let Some(claim) = self.startup_recovery.take()
                     {
@@ -2750,7 +2790,10 @@ impl eframe::App for EditorApp {
                         self.restoring = Some(claim);
                         self.open_relinked(path, Vec::new());
                     }
-                    if ui.button("Discard recovery").clicked()
+                    if ui
+                        .button("Discard recovery")
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .clicked()
                         && let Some(claim) = self.startup_recovery.take()
                     {
                         claim.discard();
