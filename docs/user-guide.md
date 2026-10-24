@@ -1,84 +1,67 @@
 # User guide
 
-A portable Windows editor for trimming and combining gameplay recordings. Version 1.0.3.
+Simple Video Editor 1.1 edits local recordings non-destructively. Keep the executable, bin and docs folders together. The portable app needs no .NET runtime.
 
-## Run
+## Recordings and linked sections
 
-Extract the entire portable ZIP, then double-click **Simple Video Editor.exe** at the top of the extracted folder. Keep **bin** beside it; it contains the video tools and libraries. Guides and licenses are in **docs**. No installer or separate runtime/video-tool setup is needed. Local builds create a **Simple Video Editor 1.0.3** shortcut pointing to the chosen app output folder.
+Import files or drop them into the window. Click a recording to preview it; double-click it, use Add to timeline, or drag it onto the timeline to add a section. Add all includes the entire library in library order, including search-hidden recordings, as one undoable edit. A hidden selection cannot be added by the single-recording button. Escape clears search.
 
-Recordings must be on a local drive. Network shares, mapped network drives, device paths and unsupported linked/cloud locations are rejected before media access. Local symbolic links and junctions work when their targets are local. Copy unsupported recordings into an ordinary local folder first. Projects reject timelines outside the supported time range.
+Dropping recordings from the library or File Explorer onto the timeline places linked sections at the drop point, choosing the nearest free space if needed. Dropping elsewhere imports into the library. You can also drop a project or recordings onto the executable, or pass filenames when launching it; a project opens with its saved trims and gaps, while recordings import in order.
 
-## Editing
+Recordings keep a floating thumbnail while dragged from the library. Timeline video sections show sampled source frames that follow their trim and zoom; images load in the background.
 
-1. Click **Import clips** or drop recordings into the window. The **Recordings** library keeps the original files separate from timeline edits.
-2. Drag a recording onto the **Video** or **Audio** track. Double-click a library recording or use **Add to timeline** to append it. Dropping video files directly onto the timeline imports and inserts them. Moving a timeline clip carries its current preview frame along with it; a simple click seeks when you release the mouse.
-3. Click the ruler or a clip to move the shared playhead. Scrubbing preserves the current playing or paused state, including across recordings. One **play/pause icon button**, or **Space**, toggles playback through all timeline cuts. **Left / Right** moves a frame while paused. Library recordings have a separate preview scrubber that also preserves playback state.
-4. Drag either edge of a clip to trim it. Video and audio stay linked, and the preview keeps the current frame. If the new trim excludes that frame, the playhead clamps to the nearest retained frame. **Trim before (Q)** removes everything before the current frame; **Trim after (W)** removes everything after it. Both keep the current frame. You can also enter source in/out timestamps or press **I / O** at the playhead.
-5. Press **Ctrl+B** or click **Split** to cut at the playhead. Split at both ends of an unwanted middle portion, select that middle clip, and press **Delete**. Joined following clips close the gap; clips across an existing gap stay in place.
-6. Drag clips freely. Their edges automatically snap together when close, and moving a clip away detaches it. Trimming and deleting keep joined neighbors together without moving separate groups. Library drags show a thumbnail; existing timeline clips show their moving block. Cyan markers show drop destinations. Placement avoids overwriting other clips on this single linked track. Right-click for quick trims, split, duplicate, reset trim, move, and delete actions.
-7. Use **Fit**, **+ / −**, or **Ctrl+mouse wheel** to zoom. The mouse wheel scrolls horizontally. Click **Export video** when ready.
+The video and audio lanes are the same linked section. Moving, splitting, trimming or deleting a section moves both. Repeated sections of one recording have separate identities. Right-click a recording to remove it and all its sections from the project; the original file remains untouched and Undo restores the edit.
 
-The timeline has one video lane and one linked audio lane, with proportional durations and a global playhead. Both lanes edit the same clip; dragging or trimming either keeps video and audio together. Positions and gaps are preserved in projects, preview, and export; gaps show black video and silence. Snapping uses a small screen-distance threshold at every zoom level. While dragging a left trim edge, the opposite edge stays anchored where space permits; joined clips close the temporary gap when the gesture finishes. Isolated clips retain their positions when neighboring groups are edited. The audio lane shows a real waveform from the recording's first audio track, aligned to each clip's trim range. Peaks load in the background and are cached for reopening; the line is dotted while loading. Silence and video-only recordings show a flat line. The display makes quieter peaks easier to see; it does not change playback volume. A recording can be added repeatedly and split into as many separately editable parts as needed. Source files remain untouched.
+Move sections freely; nearby edges snap. Existing gaps separate joined groups. Trimming a left edge follows the pointer while the right edge/following sections stay anchored; releasing closes the temporary gap within a joined group. The preview retains the current source frame or clamps to the nearest retained frame. Escape restores the original gesture state. Delete closes only the connected group, preserving separate gaps.
 
-Selecting a recording already visible in the library preserves the scroll position. Keyboard navigation reveals the selected item with pixel scrolling, and selecting an entirely offscreen recording from the timeline brings it into view.
+Out points exclude the next frame. A split needs at least one retained frame on each side. Timestamp fields accept seconds, MM:SS.mmm or HH:MM:SS.mmm with a decimal point. Unchanged fields preserve their original precision. Frame stepping uses decoded timestamps, including VFR media, rather than the output frame rate.
 
-**Add to timeline** appends the selected recording. When the library contains more than one recording, **Add all to timeline** appears beside it and appends every recording in library order, including recordings hidden by search. Each addition creates separately editable timeline clips, and a single undo removes the entire batch. Existing timeline edits and gaps stay intact.
+## Navigation and shortcuts
 
-Recording cards show the original duration once; exact source in/out points remain in the trim fields and timeline tooltips. New, Open, and Save disable while importing or opening a project. Save stays available for edited or existing projects, including a project intentionally cleared of all recordings.
-
-The Recordings panel grows with the window to show more of each filename. Drag the divider beside it to adjust its width, or focus the divider with Tab and use the arrow keys. Hover over a recording name to see its full path. The preview fits the whole video at its display aspect ratio and stays centered when the window resizes; the surrounding space uses the app background. Black bars already present in a recording remain part of the video.
-
-Search the **Recordings** library by name with the search field or **Ctrl+F**. Search ignores letter case, shows the matching count, and filters only the library; the active preview and timeline edits stay intact. Use the clear button or **Escape** in the search field to show every recording again.
-
-Playback moves a retained playhead drawing instead of reconstructing the timeline on every tick. Tracks redraw when clips, selection, zoom, the visible scroll region, or waveform data change. Timeline duration is calculated with clip offsets when edits occur, rather than rescanning all clips during every playhead update. Thumbnail images are released when the timeline is cleared.
-
-Drag the recording scrubber or timeline ruler to seek. The white playhead follows the pointer while the preview decodes the latest requested position. Playback pauses during the drag; releasing lands on the final frame and restores the previous play/pause state. Escape or losing mouse capture ends the scrub at its current position.
-
-The out point is the first excluded frame. Splitting requires at least one frame on each side. Trim handles move in frame-sized increments while preserving the original timestamp precision. Import, insert, split, delete, trim, reorder, and removal from the library support undo/redo. Removing a library recording from the project also removes its timeline clips, without deleting the file.
+Drag the recording scrubber or timeline ruler to seek. The pointer owns the playhead during the drag. Release submits the final seek and restores the previous play/pause intent after it settles. The last valid preview stays visible while a seek completes, and the picture keeps updating during a continuous drag. Releasing submits the exact final position. Native preview can accelerate AV1 decoding on supported hardware; Software preview retains CPU decoding. The timeline endpoint shows the final retained frame. Playback continues across sections and black/silent gaps.
 
 | Shortcut | Action |
-|---|---|
-| Ctrl+I | Import recordings |
-| Ctrl+F | Search recording names |
+| --- | --- |
+| Ctrl+I / Ctrl+F | Import / search recordings |
 | Ctrl+N / Ctrl+O | New / open project |
 | Ctrl+S / Ctrl+Shift+S | Save / save as |
-| Ctrl+Z / Ctrl+Y | Undo / redo |
-| Space | Play / pause, continuing through timeline cuts |
-| Left / Right | Previous / next timeline frame |
-| I / O | Set the selected clip's in / out point |
-| Q / W | Trim before / after the current frame, keeping that frame |
-| Ctrl+B | Split at the playhead |
-| Delete | Delete the selected clip and close the gap within its joined group |
-| Escape while dragging | Cancel a free move or trim gesture |
-| Alt+Left / Alt+Right | Swap the selected clip with its previous / next neighbor |
-| Menu key / Shift+F10 | Open the selected timeline clip's context menu |
-| Ctrl+mouse wheel | Zoom the timeline |
+| Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z | Undo / redo |
+| Ctrl+B or S | Split at the playhead |
+| Space / Left / Right | Play or pause / previous or next frame |
+| Q / W | Trim before / after, retaining the current frame |
+| I / O | Set selected section in / out |
+| Delete | Delete selected linked section |
+| Alt+Left / Alt+Right | Swap with the previous / next section |
+| Shift+F10 | Selected section context menu |
+| Escape while dragging | Cancel the gesture |
 | Escape during import | Cancel import |
 
-Timestamp fields accept `HH:MM:SS.mmm`, `MM:SS.mmm`, or seconds, using a decimal point. Unchanged fields preserve full timestamp precision even though the display rounds to milliseconds. Ordinary shortcuts do not replace text while a timestamp field has focus. Clicking a trim handle without moving it, or canceling import before a recording is added, leaves undo history unchanged.
+Tab moves keyboard focus between controls, including timeline sections; Enter selects the focused section. A white inner outline identifies the focused section. Frame stepping, Split, Delete, Undo and Space playback remain available while a section has focus. Shift+F10 opens its context menu; Escape closes the menu and restores section focus. Text fields own ordinary editing keys while focused. Use the timeline Zoom slider or Fit to change the visible scale.
+
+## Audio, framing and color
+
+The inspector keeps In/Out and quick trims visible. Expand Audio, Framing or Recording color when needed; opening these groups does not change the project. Reset beside Trim restores the full recording.
+
+Audio selects one source audio stream per section; the default uses the first stream. Gain, mute and fades are saved, undoable, previewed and exported. Output audio is stereo AAC at 48 kHz. Video-only sources receive silence. Separate music tracks and arbitrary mixing are later work.
+
+Fit adds letterboxing. Fill covers the output frame. Crop uses normalized source coordinates; rotation is non-destructive. Intrinsic display rotation and non-square pixels are normalized before user framing. Export always reads original recordings.
+
+Sources report transfer, primaries, matrix, range and pixel format. PQ and HLG are detected from transfer metadata; a 10-bit pixel format alone does not imply HDR. Unspecified YUV metadata defaults to SDR Rec.709 and unspecified RGB to sRGB. The selector under Recording color overrides incorrect source signaling and persists in the project.
+
+Choose SDR Rec.709 or HDR10/PQ output. PQ and HLG sources are deliberately tone-mapped for SDR preview/export and library thumbnails. HDR10 output uses 10-bit Rec.2020/PQ through AV1 or HEVC. H.264 remains SDR. Native HDR preview is requested only when Windows reports active HDR on the preview display; software rendering always uses SDR. The preview shows an HDR or SDR indicator; hover it for the rendering mode. Select Software preview to explicitly use CPU-rendered tone-mapped video if native playback or capture compatibility causes problems. Changing Windows/display state is detected on the playback worker without changing system settings.
+
+Current-display HDR appearance is user-confirmed and local game/Shadowplay controls pass. The user-confirmed Windows/NVIDIA HDR-to-SDR game-switch recording issue is external to the editor. Broader display switching and DPI/assistive-technology combinations remain tracked in the rewrite ledger. A negotiated PQ target or ordinary screenshot alone does not prove physical HDR output.
 
 ## Export
 
-- MP4 with **AV1** (default) or **H.264**.
-- High, Balanced, and Smaller file quality presets. Size varies with scene complexity; these are quality settings rather than fixed size targets.
-- Output resolution and frame rate follow the first clip, with optional 1080p or 720p resolution.
-- NVIDIA encoding is enabled by default. Turn it off for CPU encoding if the driver/GPU is unavailable.
-- All selected sections are encoded with matching output settings. The final join copies encoded video and encodes AAC audio once.
-- Export progress and cancellation are supported. Existing outputs are replaced only after the new video finishes and passes a duration check.
-- Temporary exports live beside the output file and are removed after completion or cancellation. Leave space for intermediate files and the finished video. If the computer loses power during export, a `.sve-export-*` folder may remain in the output folder and can be removed once the app is closed.
+Choose dimensions, rational frame rate, color, codec, quality and GPU preference before exporting. Lower quality numbers preserve more detail. NVIDIA support is probed using the actual encoder; unsupported hardware falls back to CPU. Export freezes its project/settings snapshot, encodes sections and black/silent gaps consistently, then joins video with AAC audio.
 
-Audio is stereo, 48 kHz, using the first audio track. Video-only inputs receive silence. Mixed resolutions use letterboxing to preserve the image. Output uses the first recording's nominal frame rate; sections are rounded to whole output frames. Preview uses CPU decoding and software rendering, with its display buffer limited to 1280×720. Source files and exports retain their full resolution. The interface also uses software rendering, so the editor does not create its own Direct3D/OpenGL/Vulkan display surface for capture overlays to detect. NVIDIA export encoding remains available.
+Existing output is replaced only after duration/color/full-decode verification. Cancel preserves the prior destination. Project saves and exports reject source paths and source file identities, including hard links. Temporary .sve-export-* work folders are removed after completion or cancellation. An interrupted export may leave its own work folder beside the destination; remove it only once that editor is closed.
 
-## Projects and recovery
+## Projects, recovery and cache
 
-`.sveproject` files store the recording library, timeline positions, and source in/out points, including unused recordings and multiple parts of one recording. Existing projects retain their positions and gaps; the previous build's mode flag is ignored. They do not embed video files. When a recording has moved, **Locate recordings** opens before the project loads. Select **Locate file…** for each missing recording. Selecting a file also locates matching filenames from the same original folder in its new folder. Cancel leaves the current session intact. Replacements must cover the existing cuts and be supported SDR videos. All cuts and timeline positions are preserved, including repeated parts of a recording and unused library recordings. Save the project to keep the new file paths; relinking alone does not overwrite it.
+Opening schema-1 projects preserves library order, repeated recordings, gaps and exact trims without rewriting the original. Save initially asks for a new schema-2 filename; 1.0.x cannot read the new format. Keep the original project for rollback. Locate each missing recording when prompted; loading commits only after all replacements cover the saved cuts. Cancel leaves the current project open.
 
-Unsaved sessions are saved after a one-second editing pause in `%LOCALAPPDATA%/SimpleVideoEditor/recovery/`. Each editor window owns a separate recovery file. On the next launch, you can restore the latest interrupted session; sessions still open in another window are left alone. Saving or closing a window clears only its own recovery. The previous version's `recovery.sveproject` file is also recognized. Thumbnails, waveform caches, and error logs are stored under `%LOCALAPPDATA%/SimpleVideoEditor/`.
+Projects save stable identities, audio/framing/color choices and output settings. Atomic replacement protects the previous saved file if writing fails. Unsaved recovery sessions live under %LOCALAPPDATA%/SimpleVideoEditor/recovery, each with an independent exclusive lease. Recovery skips live windows and other active prompts. Closing/discarding affects only the current session; the legacy recovery file is recognized.
 
-Use **Cache…** to see thumbnail and waveform disk usage and **Clear cache** to reclaim that space. Cleanup targets only generated files in the thumbnail and waveform cache folders, including incomplete generated files; projects, recovery sessions, recordings, and unrelated files stay intact. Files in use by another window are reported and left alone. Current previews and loaded waveforms remain in memory; disk caches are recreated when needed. A running waveform analysis is canceled before cleanup and can restart when the cache dialog closes.
-
-The app runs locally. It does not upload recordings or require an account. You can also drop a project file onto the window or pass recording/project paths as command-line arguments.
-
-## Scope
-
-Windows x64; optimized and verified with SDR 2560×1440, approximately 60 fps AV1 Shadowplay recordings. HDR clips are rejected with a clear message. This version supports multiple parts per recording, straight cuts, and one video track with linked audio. Independent audio editing, additional tracks, transitions, titles, and effects are outside this version's scope.
+Cache clears recognized generated thumbnails and waveform files. It preserves unrelated files, recovery and current source identities, and refuses linked cache folders. Native dependencies and decoded caches stay local; no recording is uploaded by the editor.

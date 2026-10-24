@@ -1,0 +1,31 @@
+[workspace]
+members = ["crates/editor-core", "crates/project-store", "crates/sve-inspect", "crates/media-path", "crates/native-mpv", "crates/sve-playback-lab", "crates/platform-windows", "crates/media-engine", "crates/desktop-ui"]
+resolver = "2"
+
+# Private engine/tool crate version. The application version is authoritative
+# in crates/desktop-ui/Cargo.toml and owns portable executable metadata.
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+publish = false
+license = "MIT"
+
+[workspace.dependencies]
+editor-core = { path = "crates/editor-core" }
+project-store = { path = "crates/project-store" }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = { version = "=1.0.145", features = ["float_roundtrip"] }
+media-path = { path = "crates/media-path" }
+native-mpv = { path = "crates/native-mpv" }
+sha2 = "=0.10.9"
+platform-windows = { path = "crates/platform-windows" }
+media-engine = { path = "crates/media-engine" }
+eframe = { version = "=0.32.3", default-features = false, features = ["wgpu", "default_fonts", "accesskit"] }
+wgpu = { version = "=25.0.2", default-features = false, features = ["dx12", "wgsl"] }
+raw-window-handle = "=0.6.2"
+image = { version="=0.25.10",default-features=false,features=["bmp","png"] }
+windows-sys = { version = "=0.52.0", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Controls_Dialogs", "Win32_UI_Shell", "Win32_System_LibraryLoader", "Win32_Graphics_Gdi", "Win32_System_Threading", "Win32_Storage_FileSystem", "Win32_System_Com"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"

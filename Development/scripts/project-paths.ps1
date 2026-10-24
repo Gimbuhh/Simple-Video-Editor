@@ -1,5 +1,10 @@
 $editorDevelopment = Split-Path -Parent $PSScriptRoot
 $editorWorkspace = if ((Split-Path -Leaf $editorDevelopment) -eq 'Development') { Split-Path -Parent $editorDevelopment } else { $editorDevelopment }
+function Get-EditorVersion {
+    $editorManifest=Get-Content -LiteralPath (Join-Path $editorDevelopment 'rust/crates/desktop-ui/Cargo.toml') -Raw
+    if($editorManifest -notmatch '(?m)^version = "(\d+\.\d+\.\d+)"$'){throw 'Missing authoritative Rust application version.'}
+    return $Matches[1]
+}
 function Resolve-EditorMediaFile([string]$VendorPath, [string]$AppPath) {
     $editorCandidate = Join-Path (Join-Path $editorDevelopment 'vendor') $VendorPath
     if (Test-Path -LiteralPath $editorCandidate -PathType Leaf) { return $editorCandidate }

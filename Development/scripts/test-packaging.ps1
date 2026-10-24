@@ -2,7 +2,7 @@ param([string]$PackageDirectory)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'project-paths.ps1')
 . (Join-Path $PSScriptRoot 'portable-package.ps1')
-$editorVersion = ([xml](Get-Content (Join-Path $editorDevelopment 'src/SimpleVideoEditor/SimpleVideoEditor.csproj') -Raw)).Project.PropertyGroup.Version
+$editorVersion = Get-EditorVersion
 $editorPackages = if ($PackageDirectory) { [IO.Path]::GetFullPath($PackageDirectory) } else { Join-Path $editorWorkspace 'Releases' }
 $editorPackageName = Get-EditorPackageName $editorVersion
 $editorSource = Join-Path $editorPackages $editorPackageName

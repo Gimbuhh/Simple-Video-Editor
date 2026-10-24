@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.1.0 — 2026-10-23
+
+Unreleased Rust candidate.
+
+### Breaking Changes
+
+- Newly saved projects use a format that 1.0.x cannot open. Keep original project files for rollback.
+
+### Added
+
+- Timeline filmstrips show sampled video frames, and dragged recordings keep their thumbnail visible.
+- HDR recordings support native HDR preview, HDR10 export and conversion to SDR.
+- Each section has audio track selection, volume, mute and fade controls.
+- Individual sections support fit, fill, crop and rotation without changing the original recordings.
+- HEVC output joins H.264 and AV1.
+
+### Changed
+
+- Scrubbing keeps the preview visible and updating while you drag, then settles on the exact frame when you release.
+- Preview seeks faster on ordinary SDR recordings and uses hardware decoding when supported.
+- Trimming takes priority in a simpler inspector, with expandable audio, framing and color controls. Tooltips keep extra detail out of the way, and enabled buttons show a pointing hand.
+- The app has a new scissors icon with a blue play symbol.
+- The portable Rust app has a smaller download—about 25% in the compared candidate—and no bundled .NET runtime.
+- Frame stepping and quick trims follow actual frame boundaries in variable-frame-rate recordings.
+
+### Known limitations
+
+- Some workflows use more memory than 1.0.4. See the [C#/Rust comparison](docs/rust-csharp-comparison.md) for measured results and remaining acceptance checks.
+- Further visual refinement is planned, with matching or improving on the C# interface as the goal. Transition effects remain follow-up work.
+
 ## 1.0.4 — 2026-10-09
 
 ### Changed

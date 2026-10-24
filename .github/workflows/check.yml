@@ -25,15 +25,16 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0 # Restore the exact v1.0.4 Git oracle for differential tests.
       - name: Check repository metadata
         run: ./Development/scripts/check-repository.ps1
       - name: Set up verified dependencies
         env:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
-        run: ./Development/scripts/setup.ps1
+        run: ./Development/scripts/setup.ps1 -LegacyOracle
       - name: Run CPU and media checks
-        run: ./Development/scripts/test.ps1
+        run: ./Development/scripts/test.ps1 -LegacyParity
       - name: Build portable app
         run: ./Development/scripts/build.ps1 -Zip
       - name: Verify portable package
@@ -48,6 +49,8 @@ jobs:
           path: |
             Development/artifacts/verification/results.json
             Development/artifacts/package-verification/results.json
+            Development/artifacts/rust-playback/*.json
+            Development/artifacts/rust-package-verification/**/portable.json
           retention-days: 7
           if-no-files-found: warn
       - name: Keep portable package
