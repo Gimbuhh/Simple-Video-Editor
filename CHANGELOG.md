@@ -18,7 +18,8 @@ Unreleased Rust candidate.
 
 ### Changed
 
-- Scrubbing keeps the preview visible and updating while the pointer moves, then settles on the exact final frame. Native AV1 preview uses hardware decoding when supported.
+- Scrubbing keeps the preview visible and updating while you drag, then settles on the exact frame when you release.
+- Preview seeks faster on ordinary SDR recordings and uses hardware decoding when supported.
 - Trimming takes priority in a simpler inspector, with expandable audio, framing and color controls. Tooltips keep extra detail out of the way, and enabled buttons show a pointing hand.
 - The app has a new scissors icon with a blue play symbol.
 - The portable Rust app has a smaller download—about 25% in the compared candidate—and no bundled .NET runtime.

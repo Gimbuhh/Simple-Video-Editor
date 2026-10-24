@@ -1,4 +1,4 @@
-use media_engine::{Tools, preview_filters};
+use media_engine::{Tools, direct_preview, preview_mpv_filter};
 use native_mpv::{Mode, Player};
 use project_store::{ClipSettings, MediaSource, OutputSettings};
 use std::{
@@ -154,25 +154,27 @@ impl Playback {
                                         }
                                     }
                                     if let Some(source) = &next.source {
-                                        // AV1 benefits from copied hardware frames on the measured capture.
-                                        // Other codecs retain CPU decoding; software preview is always CPU-only.
+                                        let path = media_path::RecordingPath::authorize(
+                                            Path::new(&source.path),
+                                        )?;
+                                        // Use the shared color/framing graph when processing is needed;
+                                        // ordinary SDR can stay on mpv's direct presentation path.
+                                        let mut output = next.output.clone();
+                                        if software || !next.hdr_preview {
+                                            output.profile = project_store::ColorProfile::Sdr;
+                                        }
                                         player.set(
                                             "hwdec",
-                                            if !software && source.codec == "av1" {
+                                            if !software
+                                                && direct_preview(source, &next.adjustment, &output)
+                                            {
+                                                "auto"
+                                            } else if !software && source.codec == "av1" {
                                                 "auto-copy"
                                             } else {
                                                 "no"
                                             },
                                         )?;
-                                        let path = media_path::RecordingPath::authorize(
-                                            Path::new(&source.path),
-                                        )?;
-                                        // All preview frames use the same color/framing graph as export.
-                                        // Software always receives an explicit SDR transform.
-                                        let mut output = next.output.clone();
-                                        if software || !next.hdr_preview {
-                                            output.profile = project_store::ColorProfile::Sdr;
-                                        }
                                         if software {
                                             let scale = (1280.0 / f64::from(output.width))
                                                 .min(720.0 / f64::from(output.height))
@@ -200,10 +202,7 @@ impl Playback {
                                         }
                                         player.set(
                                             "vf",
-                                            &format!(
-                                                "lavfi=[{}]",
-                                                preview_filters(source, &next.adjustment, &output)
-                                            ),
+                                            &preview_mpv_filter(source, &next.adjustment, &output),
                                         )?;
                                         player.set("start", &next.position.to_string())?;
                                         player.set("end", &next.end.to_string())?;

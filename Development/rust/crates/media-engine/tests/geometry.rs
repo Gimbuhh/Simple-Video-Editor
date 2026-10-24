@@ -184,10 +184,7 @@ fn rotation_anamorphic_rgb_and_preview_export_agree() {
         player
             .set(
                 "vf",
-                &format!(
-                    "lavfi=[{}]",
-                    preview_filters(&source, &ClipSettings::default(), &output)
-                ),
+                &preview_mpv_filter(&source, &ClipSettings::default(), &output),
             )
             .unwrap();
         player

@@ -616,6 +616,53 @@ pub fn color_transform(source: &MediaSource, profile: ColorProfile) -> String {
         ),
     }
 }
+/// Let mpv scale ordinary Rec.709 video without a CPU pixel-processing graph.
+/// More complex color, geometry and output cases retain the shared transform.
+pub fn direct_preview(
+    source: &MediaSource,
+    adjustment: &ClipSettings,
+    output: &OutputSettings,
+) -> bool {
+    let rec709 = |value: &str| matches!(value, "bt709" | "unknown" | "unspecified" | "");
+    output.profile == ColorProfile::Sdr
+        && rec709(&source.transfer)
+        && rec709(&source.primaries)
+        && rec709(&source.matrix)
+        && matches!(
+            source.pixel_format.as_str(),
+            "yuv420p" | "yuv420p10le" | "yuvj420p"
+        )
+        && source.rotation == 0.0
+        && source.sample_aspect_ratio == 1.0
+        && adjustment.rotation == 0
+        && adjustment.framing == Framing::Fit
+        && source.width > 0
+        && source.height > 0
+        && u64::from(source.width) * u64::from(output.height)
+            == u64::from(source.height) * u64::from(output.width)
+}
+/// mpv's format filter changes only metadata here, allowing native GPU surfaces
+/// to reach the renderer without a CPU download/re-upload. Explicit tags retain
+/// the shared graph's Rec.709/limited-range defaults for untagged recordings.
+pub fn preview_mpv_filter(
+    source: &MediaSource,
+    adjustment: &ClipSettings,
+    output: &OutputSettings,
+) -> String {
+    if direct_preview(source, adjustment, output) {
+        format!(
+            "format=colormatrix=bt.709:primaries=bt.709:gamma=bt.1886:colorlevels={}",
+            if source.range == "pc" {
+                "full"
+            } else {
+                "limited"
+            }
+        )
+    } else {
+        format!("lavfi=[{}]", preview_filters(source, adjustment, output))
+    }
+}
+
 /// Resize preview pixels before color conversion; export retains its full-resolution graph.
 /// Keep enough source detail for normalized crops and preserve SAR until the shared graph normalizes it.
 pub fn preview_filters(
