@@ -2,6 +2,12 @@
 
 The Rust production cutover, graphite interface and identified software fixes are implemented on PR #8. Version 1.1.0 remains an unreleased candidate prepared for final user acceptance. No merge, release tag or publication is authorized by this preparation.
 
+## Current timeline drop-preview candidate
+
+Executable SHA-256: `791314afa871a972d1fa10b722b93cc8dd07423efcfc6b0e14cba3d7d76875eb`. Library drags show a thumbnail/filmstrip ghost at the actual insertion position while over the timeline; the floating card remains outside it. Placement uses the same source frame rate, snapping and free-space calculation as the committed drop. No project edit occurs during hover. The ghost follows movement and disappears on release; the inserted linked section matches its shown position and remains one undoable edit.
+
+43 core tests, including 162 placement-parity cases, strict formatting/Clippy, 541 desktop checks across 18 native/software runs, 65 checks across 40 scaled layouts and relocated portable verification pass. Evidence: drop-preview/verification.json, rust-desktop/f356520be67342a2bdec684ceedfde8c and rust-desktop/8bea067243224c188caf2f7b91ffb992. Existing media/device/resource results below keep their original hashes and scope.
+
 ## Current clip-cursor candidate
 
 Executable SHA-256: `42c706562cc1df9450ead95f9bbfcbaf637368639bb43550acd244824b6ea81f`. Both ends of linked video/audio sections use the horizontal resize cursor. Hover and drag start share their existing bounded hit region; a captured trim retains the cursor beyond that edge. Clip bodies use grab/grabbing for moves. Core checks and actual native/software pointer verification pass; source timestamps, trim behavior and media processing are unchanged. Current evidence is recorded in ignored clip-cursor/verification.json. Earlier button/media/resource evidence below keeps its own artifact hashes.

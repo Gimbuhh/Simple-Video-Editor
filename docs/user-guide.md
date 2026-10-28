@@ -12,7 +12,7 @@ Import files or drop them into the window. Click a recording to preview it; doub
 
 Dropping recordings from the library or File Explorer onto the timeline places linked sections at the drop point, choosing the nearest free space if needed. Dropping elsewhere imports into the library. You can also drop a project or recordings onto the executable, or pass filenames when launching it; a project opens with its saved trims and gaps, while recordings import in order.
 
-Recordings keep a floating thumbnail while dragged from the library. Timeline video sections show sampled source frames that follow their trim and zoom; images load in the background.
+Recordings keep a floating thumbnail outside the timeline. Over the timeline, a linked clip preview shows thumbnails and the actual drop position before release, including snapping and avoiding overlap. Hovering does not edit the project. Timeline video sections show sampled source frames that follow their trim and zoom; images load in the background.
 
 The video and audio lanes are the same linked section. Moving, splitting, trimming or deleting a section moves both. Repeated sections of one recording have separate identities. Right-click a recording to remove it and all its sections from the project; the original file remains untouched and Undo restores the edit.
 

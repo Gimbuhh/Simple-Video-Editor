@@ -1444,6 +1444,7 @@ impl EditorApp {
         });
     }
     fn timeline_ui(&mut self, ctx: &egui::Context) {
+        self.controls.remove("drop-preview");
         self.timeline_focus = None;
         egui::TopBottomPanel::bottom("timeline")
             .frame(theme::panel(theme::PANEL))
@@ -1522,7 +1523,17 @@ impl EditorApp {
                     });
                 });
                 let zoom = self.zoom;
-                let duration = self.timeline().duration().max(10.0);
+                let dragged_duration = egui::DragAndDrop::payload::<SourceId>(ctx)
+                    .and_then(|id| {
+                        self.editor
+                            .metadata()
+                            .sources
+                            .iter()
+                            .find(|s| s.id == *id)
+                            .map(|s| s.duration)
+                    })
+                    .unwrap_or(0.0);
+                let duration = (self.timeline().duration() + dragged_duration).max(10.0);
                 let width = (duration as f32 * zoom + 100.0).max(ui.available_width());
                 let height = (ui.available_height() - 8.0).max(150.0);
                 egui::ScrollArea::horizontal()
@@ -1960,6 +1971,7 @@ impl EditorApp {
                                 clip_hover_cursor(ui, &interaction);
                             }
                         }
+                        self.paint_drop_preview(ui, &painter, rect, visible, origin, zoom);
                         // The captured gesture owns the cursor even outside its original
                         // edge or over a neighboring section.
                         if ui.is_enabled()

@@ -10,7 +10,7 @@ Unreleased Rust candidate.
 
 ### Added
 
-- Timeline filmstrips show sampled video frames, and dragged recordings keep their thumbnail visible.
+- Timeline filmstrips show sampled video frames, and dragged recordings preview their placement before dropping.
 - HDR recordings support native HDR preview, HDR10 export and conversion to SDR.
 - Each section has audio track selection, volume, mute and fade controls.
 - Individual sections support fit, fill, crop and rotation without changing the original recordings.

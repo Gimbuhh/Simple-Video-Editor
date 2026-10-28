@@ -1387,6 +1387,7 @@ impl EditorApp {
                         }) =>
                     {
                         test.checks.push("Visible timeline filmstrip contains multiple decoded source-time samples".into());
+                        test.precision = Some(SavedProject::capture(&self.editor));
                         test.expected = Some(self.editor.timeline().clips().to_vec());
                         test.pointer(self.controls["first-recording"].center(), Some(true));
                         test.phase = 132;
@@ -1399,6 +1400,14 @@ impl EditorApp {
                         test.phase = 133;
                     }
                     133 => {
+                        if !self.controls.contains_key("drag-thumbnail")
+                            || self.controls.contains_key("drop-preview")
+                        {
+                            return Err(
+                                "Library drag lost its floating thumbnail outside the timeline"
+                                    .into(),
+                            );
+                        }
                         let (rect, origin, zoom) =
                             self.timeline_drop.ok_or("Missing timeline drop area")?;
                         let point = Pos2::new(origin + 0.3 * zoom, rect.center().y);
@@ -1407,11 +1416,43 @@ impl EditorApp {
                         test.phase = 134;
                     }
                     134 => {
-                        if !self.controls.contains_key("drag-thumbnail")
+                        if !self.controls.contains_key("drop-preview")
+                            || self.controls.contains_key("drag-thumbnail")
                             || egui::DragAndDrop::payload::<SourceId>(ctx).is_none()
                         {
-                            return Err("Library drag did not paint its floating thumbnail".into());
+                            return Err(
+                                "Library drag did not switch to an in-timeline thumbnail preview"
+                                    .into(),
+                            );
                         }
+                        if SavedProject::capture(&self.editor) != *test.precision.as_ref().unwrap()
+                        {
+                            return Err(
+                                "Hovering a drop preview changed the project before release".into(),
+                            );
+                        }
+                        let (_, origin, zoom) = self.timeline_drop.unwrap();
+                        let preview = self.controls["drop-preview"];
+                        test.keyboard_position = f64::from((preview.left() - origin) / zoom);
+                        let target = test.anchor.unwrap() + Vec2::new(0.4 * zoom, 0.0);
+                        test.anchor = Some(target);
+                        test.pointer(target, None);
+                        test.phase = 222;
+                    }
+                    222 => {
+                        let (_, origin, zoom) = self.timeline_drop.unwrap();
+                        let preview = self
+                            .controls
+                            .get("drop-preview")
+                            .ok_or("Drop ghost disappeared while moving")?;
+                        let position = f64::from((preview.left() - origin) / zoom);
+                        if (position - test.keyboard_position).abs() < 0.05
+                            || SavedProject::capture(&self.editor)
+                                != *test.precision.as_ref().unwrap()
+                        {
+                            return Err("Drop preview did not follow the pointer without editing the project".into());
+                        }
+                        test.keyboard_position = position;
                         ctx.send_viewport_cmd(
                             egui::ViewportCommand::Screenshot(Default::default()),
                         );
@@ -1441,6 +1482,15 @@ impl EditorApp {
                                     .into(),
                             );
                         }
+                        let added = clips
+                            .iter()
+                            .find(|c| !previous.iter().any(|old| old.id == c.id))
+                            .unwrap();
+                        if (added.timeline_start - test.keyboard_position).abs() > 0.001
+                            || self.controls.contains_key("drop-preview")
+                        {
+                            return Err("The released clip did not match its preview position or left a stale ghost".into());
+                        }
                         test.pointer(self.controls["undo"].center(), Some(true));
                         test.phase = 137;
                     }
@@ -1451,13 +1501,14 @@ impl EditorApp {
                     138 => {
                         if self.editor.timeline().clips() != test.expected.as_ref().unwrap()
                             || self.controls.contains_key("drag-thumbnail")
+                            || self.controls.contains_key("drop-preview")
                         {
                             return Err(
                                 "Thumbnail drag did not undo cleanly or left a floating preview"
                                     .into(),
                             );
                         }
-                        test.checks.push("Actual library drag paints its thumbnail, inserts one linked section and undoes without moving existing sections".into());
+                        test.checks.push("Library drag previews the linked clip in the timeline without editing; drop matches the ghost and undoes without moving existing sections".into());
                         test.phase = 60;
                     }
                     60 => {

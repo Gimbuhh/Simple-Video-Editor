@@ -211,7 +211,79 @@ impl EditorApp {
             }
         }
     }
+    pub(super) fn paint_drop_preview(
+        &mut self,
+        ui: &egui::Ui,
+        painter: &egui::Painter,
+        canvas: Rect,
+        visible: Rect,
+        origin: f32,
+        zoom: f32,
+    ) {
+        if !ui.is_enabled() {
+            return;
+        }
+        let Some(id) = egui::DragAndDrop::payload::<SourceId>(ui.ctx()) else {
+            return;
+        };
+        let Some(pointer) = ui
+            .input(|i| i.pointer.latest_pos())
+            .filter(|p| canvas.intersect(visible).contains(*p))
+        else {
+            return;
+        };
+        let Some(source) = self
+            .editor
+            .metadata()
+            .sources
+            .iter()
+            .find(|s| s.id == *id)
+            .cloned()
+        else {
+            return;
+        };
+        let position = f64::from((pointer.x - origin) / zoom).max(0.0);
+        let Some(clip) = drop_clip(self.editor.timeline(), &source, position, zoom) else {
+            return;
+        };
+        let x = origin + clip.timeline_start as f32 * zoom;
+        let width = (clip.duration() as f32 * zoom).max(3.0);
+        let video = Rect::from_min_size(Pos2::new(x, canvas.top() + 29.0), Vec2::new(width, 49.0));
+        let audio = Rect::from_min_size(Pos2::new(x, canvas.top() + 82.0), Vec2::new(width, 38.0));
+        let linked = video.union(audio);
+        if !linked.intersect(visible).is_positive() {
+            return;
+        }
+        let painter = painter.with_clip_rect(visible.intersect(canvas));
+        painter.rect_filled(video, 4.0, theme::SELECTED);
+        self.paint_filmstrip(&painter, video, visible, &clip, &source, zoom);
+        painter.rect_filled(video, 4.0, theme::ACCENT.gamma_multiply(0.18));
+        painter.rect_filled(audio, 4.0, theme::SELECTED);
+        painter.rect_stroke(
+            linked.shrink(0.5),
+            4.0,
+            Stroke::new(2.0, theme::ACCENT),
+            egui::StrokeKind::Inside,
+        );
+        painter.rect_filled(
+            Rect::from_min_size(video.min, Vec2::new(video.width(), 18.0)),
+            0.0,
+            Color32::from_black_alpha(170),
+        );
+        painter.with_clip_rect(video.intersect(visible)).text(
+            video.min + Vec2::new(6.0, 3.0),
+            Align2::LEFT_TOP,
+            source.name(),
+            FontId::proportional(12.0),
+            theme::TEXT,
+        );
+        self.controls.insert("drop-preview", linked);
+    }
     pub(super) fn drag_thumbnail(&mut self, ctx: &egui::Context) {
+        // The in-track preview replaces the floating card while its target is visible.
+        if self.controls.contains_key("drop-preview") {
+            return;
+        }
         let Some(id) = egui::DragAndDrop::payload::<SourceId>(ctx) else {
             return;
         };
@@ -252,6 +324,34 @@ impl EditorApp {
     }
 }
 
+fn drop_clip(timeline: &Timeline, source: &MediaSource, position: f64, zoom: f32) -> Option<Clip> {
+    if timeline.clips().len() >= editor_core::MAX_CLIPS {
+        return None;
+    }
+    let id = ClipId(
+        timeline
+            .clips()
+            .iter()
+            .map(|c| c.id.0)
+            .max()
+            .unwrap_or(0)
+            .checked_add(1)?,
+    );
+    let mut clip = Clip {
+        id,
+        source: source.id,
+        source_in: 0.0,
+        source_out: source.duration,
+        timeline_start: 0.0,
+    };
+    let mut clips = timeline.clips().to_vec();
+    clips.push(clip.clone());
+    clip.timeline_start =
+        editor_core::available_position(&clips, id, position, source.rate, 10.0 / f64::from(zoom))
+            .ok()?;
+    Some(clip)
+}
+
 pub(super) fn drag_bounds(ctx: &egui::Context) -> Option<Rect> {
     egui::DragAndDrop::payload::<SourceId>(ctx)?;
     let pointer = ctx.input(|i| i.pointer.latest_pos())?;
@@ -269,23 +369,8 @@ pub(super) fn drag_bounds(ctx: &egui::Context) -> Option<Rect> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn visible_sample_budget_includes_cached_frames() {
-        let ctx = egui::Context::default();
-        let (_, receiver) = mpsc::channel();
-        let mut cache = TimelineThumbnails {
-            queue: Arc::new(Mutex::new(Queue {
-                pending: VecDeque::new(),
-                running: None,
-            })),
-            receiver,
-            worker: None,
-            cancel: uncancelled(),
-            textures: BTreeMap::new(),
-            wanted: BTreeMap::new(),
-            frame: 0,
-        };
-        let source = MediaSource {
+    fn source() -> MediaSource {
+        MediaSource {
             id: SourceId(1),
             path: "fixture.mp4".into(),
             duration: 2000.0,
@@ -304,7 +389,89 @@ mod tests {
             matrix: "bt709".into(),
             range: "tv".into(),
             pixel_format: "yuv420p".into(),
+        }
+    }
+    #[test]
+    fn drop_preview_matches_insert_for_gaps_overlap_snapping_and_source_rates() {
+        let mut source = source();
+        source.duration = 1.25;
+        for fps in [24, 30, 60] {
+            source.rate = editor_core::FrameRate::new(fps, 1).unwrap();
+            for timeline in [
+                Timeline::default(),
+                Timeline::new(vec![
+                    Clip {
+                        id: ClipId(7),
+                        source: SourceId(9),
+                        source_in: 0.2,
+                        source_out: 2.2,
+                        timeline_start: 0.5,
+                    },
+                    Clip {
+                        id: ClipId(11),
+                        source: SourceId(9),
+                        source_in: 1.0,
+                        source_out: 2.0,
+                        timeline_start: 5.0,
+                    },
+                ])
+                .unwrap(),
+            ] {
+                for position in [0.0, 0.2, 0.5, 1.5, 2.49, 2.55, 3.7, 4.8, 6.01] {
+                    for zoom in [5.0, 90.0, 500.0] {
+                        let original = timeline.clone();
+                        let preview = drop_clip(&timeline, &source, position, zoom).unwrap();
+                        let mut editor = Editor::new(timeline.clone()).unwrap();
+                        editor
+                            .apply(Command::Insert {
+                                sections: vec![(
+                                    Clip {
+                                        id: ClipId(0),
+                                        source: source.id,
+                                        source_in: 0.0,
+                                        source_out: source.duration,
+                                        timeline_start: 0.0,
+                                    },
+                                    source.rate,
+                                )],
+                                position,
+                                snap: 10.0 / f64::from(zoom),
+                            })
+                            .unwrap();
+                        let inserted = editor
+                            .timeline()
+                            .clips()
+                            .iter()
+                            .find(|c| !original.clips().iter().any(|old| old.id == c.id))
+                            .unwrap();
+                        assert_eq!(preview.timeline_start, inserted.timeline_start);
+                        assert_eq!(preview.duration(), inserted.duration());
+                        assert_eq!(timeline, original);
+                        assert!(editor.undo());
+                        assert_eq!(editor.timeline(), &original);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn visible_sample_budget_includes_cached_frames() {
+        let ctx = egui::Context::default();
+        let (_, receiver) = mpsc::channel();
+        let mut cache = TimelineThumbnails {
+            queue: Arc::new(Mutex::new(Queue {
+                pending: VecDeque::new(),
+                running: None,
+            })),
+            receiver,
+            worker: None,
+            cancel: uncancelled(),
+            textures: BTreeMap::new(),
+            wanted: BTreeMap::new(),
+            frame: 0,
         };
+        let source = source();
         let texture = ctx.load_texture(
             "cached-frame",
             egui::ColorImage::from_rgba_unmultiplied([1, 1], &[0, 0, 0, 255]),
