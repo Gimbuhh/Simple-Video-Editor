@@ -2,6 +2,10 @@
 
 The Rust production cutover, graphite interface and identified software fixes are implemented on PR #8. Version 1.1.0 remains an unreleased candidate prepared for final user acceptance. No merge, release tag or publication is authorized by this preparation.
 
+## Current clip-cursor candidate
+
+Executable SHA-256: `42c706562cc1df9450ead95f9bbfcbaf637368639bb43550acd244824b6ea81f`. Both ends of linked video/audio sections use the horizontal resize cursor. Hover and drag start share their existing bounded hit region; a captured trim retains the cursor beyond that edge. Clip bodies use grab/grabbing for moves. Core checks and actual native/software pointer verification pass; source timestamps, trim behavior and media processing are unchanged. Current evidence is recorded in ignored clip-cursor/verification.json. Earlier button/media/resource evidence below keeps its own artifact hashes.
+
 ## Current button-alignment candidate
 
 Executable SHA-256: `de247583a86ad8d1c14f15da16e16f2df608361c1b051ef9526b2282c8900d97`. Action captions center their painted glyph bounds on the physical pixel grid. The regression covers 2,400 installed/fallback-font, scale, layout, size, label and interaction-state combinations. Actual raster measurements put Import at zero horizontal/vertical offset, correcting the prior one-pixel right/two-pixel down displacement.

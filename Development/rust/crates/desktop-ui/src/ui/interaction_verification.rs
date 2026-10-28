@@ -583,7 +583,43 @@ impl EditorApp {
                             .push("Preview remains fitted with its output aspect ratio".into());
                         self.seek(0.25);
                         test.expected = Some(self.editor.timeline().clips().to_vec());
-                        test.phase = 34;
+                        test.focus_steps = 0;
+                        test.phase = 220;
+                    }
+                    220 => {
+                        let rect = self.controls["first-clip"];
+                        let position = match test.focus_steps {
+                            0 => Pos2::new(rect.left() + 2.0, rect.top() + 24.0),
+                            1 => Pos2::new(rect.right() - 2.0, rect.top() + 24.0),
+                            2 => Pos2::new(rect.left() + 2.0, rect.bottom() - 18.0),
+                            3 => Pos2::new(rect.right() - 2.0, rect.bottom() - 18.0),
+                            _ => Pos2::new(rect.center().x, rect.top() + 24.0),
+                        };
+                        test.pointer(position, None);
+                        test.phase = 221;
+                    }
+                    221 => {
+                        let expected = if test.focus_steps < 4 {
+                            egui::CursorIcon::ResizeHorizontal
+                        } else {
+                            egui::CursorIcon::Grab
+                        };
+                        if ctx.output(|o| o.cursor_icon) != expected {
+                            return Err(format!(
+                                "Wrong clip hover cursor at target {}: {:?}, expected {:?}",
+                                test.focus_steps,
+                                ctx.output(|o| o.cursor_icon),
+                                expected
+                            )
+                            .into());
+                        }
+                        test.focus_steps += 1;
+                        if test.focus_steps < 5 {
+                            test.phase = 220;
+                        } else {
+                            test.checks.push("Video/audio trim edges use horizontal resize and clip bodies use grab cursors".into());
+                            test.phase = 34;
+                        }
                     }
                     34 => {
                         let rect = self.controls["first-clip"];
@@ -596,6 +632,11 @@ impl EditorApp {
                         test.phase = 36;
                     }
                     36 => {
+                        if ctx.output(|o| o.cursor_icon) != egui::CursorIcon::ResizeHorizontal {
+                            return Err(
+                                "Trim cursor did not stay horizontal after leaving the edge".into(),
+                            );
+                        }
                         let clips = self.timeline().clips();
                         let original = test.expected.as_ref().unwrap();
                         if self.drag.as_ref().is_none_or(|d| d.mode != 1)

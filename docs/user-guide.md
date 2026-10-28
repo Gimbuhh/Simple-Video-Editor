@@ -16,6 +16,8 @@ Recordings keep a floating thumbnail while dragged from the library. Timeline vi
 
 The video and audio lanes are the same linked section. Moving, splitting, trimming or deleting a section moves both. Repeated sections of one recording have separate identities. Right-click a recording to remove it and all its sections from the project; the original file remains untouched and Undo restores the edit.
 
+Clip edges show a horizontal resize pointer for trimming; clip bodies show grab/grabbing pointers for moving. The trim pointer stays active throughout the drag, including over a neighboring section.
+
 Move sections freely; nearby edges snap. Existing gaps separate joined groups. Trimming a left edge follows the pointer while the right edge/following sections stay anchored; releasing closes the temporary gap within a joined group. The preview retains the current source frame or clamps to the nearest retained frame. Escape restores the original gesture state. Delete closes only the connected group, preserving separate gaps.
 
 Out points exclude the next frame. A split needs at least one retained frame on each side. Timestamp fields accept seconds, MM:SS.mmm or HH:MM:SS.mmm with a decimal point. Unchanged fields preserve their original precision. Frame stepping uses decoded timestamps, including VFR media, rather than the output frame rate.

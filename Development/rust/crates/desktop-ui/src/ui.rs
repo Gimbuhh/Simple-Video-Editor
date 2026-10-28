@@ -1765,14 +1765,7 @@ impl EditorApp {
                                 let px = ui
                                     .input(|i| i.pointer.press_origin())
                                     .map_or(linked.center().x, |p| p.x);
-                                let edge = 8.0_f32.min(video.width() / 3.0);
-                                let mode = if px - video.left() < edge {
-                                    1
-                                } else if video.right() - px < edge {
-                                    2
-                                } else {
-                                    0
-                                };
+                                let mode = clip_drag_mode(linked, px);
                                 self.drag = Some(Drag {
                                     base: self.editor.timeline().clone(),
                                     clip: clip.id,
@@ -1963,6 +1956,17 @@ impl EditorApp {
                             {
                                 self.keyboard_menu = None;
                             }
+                            if self.drag.is_none() {
+                                clip_hover_cursor(ui, &interaction);
+                            }
+                        }
+                        // The captured gesture owns the cursor even outside its original
+                        // edge or over a neighboring section.
+                        if ui.is_enabled()
+                            && let Some(drag) = &self.drag
+                            && ui.input(|i| i.pointer.primary_down())
+                        {
+                            ctx.set_cursor_icon(clip_drag_cursor(drag.mode, true));
                         }
                         if !over_clip
                             && !self.ignore_scrub_until_release
@@ -3167,6 +3171,36 @@ impl Drop for EditorApp {
         }
     }
 }
+fn clip_drag_mode(bounds: Rect, x: f32) -> u8 {
+    let edge = 8.0_f32.min(bounds.width() / 3.0);
+    if x - bounds.left() < edge {
+        1
+    } else if bounds.right() - x < edge {
+        2
+    } else {
+        0
+    }
+}
+fn clip_drag_cursor(mode: u8, dragging: bool) -> egui::CursorIcon {
+    if mode != 0 {
+        egui::CursorIcon::ResizeHorizontal
+    } else if dragging {
+        egui::CursorIcon::Grabbing
+    } else {
+        egui::CursorIcon::Grab
+    }
+}
+fn clip_hover_cursor(ui: &egui::Ui, response: &egui::Response) {
+    if ui.is_enabled()
+        && let Some(pointer) = response.hover_pos()
+    {
+        ui.ctx().set_cursor_icon(clip_drag_cursor(
+            clip_drag_mode(response.rect, pointer.x),
+            false,
+        ));
+    }
+}
+
 fn preview_scrubber(ui: &mut egui::Ui, position: &mut f64, duration: f64) -> egui::Response {
     let response = ui.add(
         egui::Slider::new(position, 0.0..=duration.max(0.001))
