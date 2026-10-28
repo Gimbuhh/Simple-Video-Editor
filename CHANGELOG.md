@@ -20,7 +20,7 @@ Unreleased Rust candidate.
 
 - Scrubbing keeps the preview visible and updating while you drag, then settles on the exact frame when you release.
 - Preview seeks faster on ordinary SDR recordings and uses hardware decoding when supported.
-- A graphite workspace puts video and trimming first, with clearer text, centered action labels, larger thumbnails, blue trim handles and Export at the top right. Secondary controls stay in menus or expandable sections; enabled buttons show a pointing hand.
+- A graphite workspace puts video and trimming first, with clearer text, visually centered button text, larger thumbnails, blue trim handles and Export at the top right. Secondary controls stay in menus or expandable sections; enabled buttons show a pointing hand.
 - Preview uses the Windows audio output and retries when it becomes unavailable.
 - The app has a new scissors icon with a blue play symbol.
 - The portable Rust app has a smaller download—about 25% in the compared candidate—and no bundled .NET runtime.

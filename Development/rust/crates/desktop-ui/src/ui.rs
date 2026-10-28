@@ -1221,50 +1221,49 @@ impl EditorApp {
             .show(ctx, |ui| {
                 ui.add_space(2.0);
                 ui.horizontal(|ui| {
-                    let file = ui
-                        .menu_button("File", |ui| {
-                            let new = ui.add_enabled(!self.busy, egui::Button::new("New project"));
-                            self.controls.insert("file-new", new.rect);
-                            if new
-                                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                .clicked()
+                    let file = theme::menu_button(ui, "File", |ui| {
+                        let new = ui.add_enabled(!self.busy, egui::Button::new("New project"));
+                        self.controls.insert("file-new", new.rect);
+                        if new
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            self.new_project();
+                            ui.close();
+                        }
+                        let open = ui.add_enabled(
+                            !self.busy && self.tools.is_some(),
+                            egui::Button::new("Open project…"),
+                        );
+                        self.controls.insert("file-open", open.rect);
+                        if open
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            ui.close();
+                            if let Ok(paths) =
+                                platform_windows::choose_files(self.owner, false, true)
+                                && let Some(path) = paths.into_iter().next()
                             {
-                                self.new_project();
-                                ui.close();
+                                self.open(path);
                             }
-                            let open = ui.add_enabled(
-                                !self.busy && self.tools.is_some(),
-                                egui::Button::new("Open project…"),
-                            );
-                            self.controls.insert("file-open", open.rect);
-                            if open
-                                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                .clicked()
-                            {
-                                ui.close();
-                                if let Ok(paths) =
-                                    platform_windows::choose_files(self.owner, false, true)
-                                    && let Some(path) = paths.into_iter().next()
-                                {
-                                    self.open(path);
-                                }
-                            }
-                            ui.separator();
-                            let save = ui.add_enabled(
-                                !self.busy && !self.editor.timeline().clips().is_empty(),
-                                egui::Button::new("Save as…"),
-                            );
-                            self.controls.insert("file-save-as", save.rect);
-                            if save
-                                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                .clicked()
-                            {
-                                self.save(true);
-                                ui.close();
-                            }
-                        })
-                        .response
-                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        }
+                        ui.separator();
+                        let save = ui.add_enabled(
+                            !self.busy && !self.editor.timeline().clips().is_empty(),
+                            egui::Button::new("Save as…"),
+                        );
+                        self.controls.insert("file-save-as", save.rect);
+                        if save
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            self.save(true);
+                            ui.close();
+                        }
+                    })
+                    .response
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
                     self.controls.insert("file-menu", file.rect);
                     let title_width = (ui.available_width() - 270.0).clamp(0.0, 480.0);
                     ui.add_sized(
@@ -1344,7 +1343,7 @@ impl EditorApp {
         }
     }
     fn more_options(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        let menu = ui.menu_button("…", |ui| {
+        let menu = theme::menu_button(ui, "…", |ui| {
             let settings = ui.button("Export settings…").on_hover_cursor(egui::CursorIcon::PointingHand);
             self.controls.insert("export-settings", settings.rect);
             if settings.clicked() { self.settings = !self.settings; ui.close(); }

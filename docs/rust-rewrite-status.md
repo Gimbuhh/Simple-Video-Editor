@@ -2,7 +2,13 @@
 
 The Rust production cutover, graphite interface and identified software fixes are implemented on PR #8. Version 1.1.0 remains an unreleased candidate prepared for final user acceptance. No merge, release tag or publication is authorized by this preparation.
 
-## Verified candidate
+## Current button-alignment candidate
+
+Executable SHA-256: `de247583a86ad8d1c14f15da16e16f2df608361c1b051ef9526b2282c8900d97`. Action captions center their painted glyph bounds on the physical pixel grid. The regression covers 2,400 installed/fallback-font, scale, layout, size, label and interaction-state combinations. Actual raster measurements put Import at zero horizontal/vertical offset, correcting the prior one-pixel right/two-pixel down displacement.
+
+The alignment pass verifies 42 core tests, strict formatting/Clippy, 525 desktop checks across 18 native/software runs, 63 checks across 40 scaled layouts, ordinary filename startup, relocated portable checks and nine packaging safeguards. Evidence: button-alignment/verification.json, rust-desktop/490cf1982552404c879bed2ac935269d and rust-desktop/c558af021b8c40e79c43df63bd9c42cb. Media/device/resource results below retain their earlier executable hash; those processing paths are unchanged by this caption-only change.
+
+## Release baseline
 
 Executable SHA-256: `1e3599a09e3537098ffcfbe097d05d549496e754a427be90f46459e30dfc05b0`. Cargo's desktop-ui version remains the single source of application/package versioning.
 

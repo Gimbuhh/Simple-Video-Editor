@@ -25,3 +25,7 @@ Retained deliberately: source authorization, stale-result checks, asynchronous g
 Verification: 42 core tests, strict formatting/Clippy, 525 desktop checks, separate audio-recovery/fallback runs, 40 scaled layouts, GPU/media integrations, 20 startup cycles, normal filename startup, physical monitor round trips, relocated portable verification and nine packaging safeguards pass. Exact reports and executable hashes are in the [status ledger](rust-rewrite-status.md). Tests use generated fixtures; original recordings are not modified.
 
 The [release checklist](release-readiness.md) retains manual HDR-toggle, genuine mixed-DPI and full screen-reader acceptance. Physical speaker/headphone loudness is not measured by negotiated-output checks. Existing HDR and game-capture conclusions remain unchanged.
+
+## Button glyph alignment follow-up
+
+The earlier alignment check centered a font layout box. Actual Import screenshots still put the visible text one pixel right and two pixels down at 100% scale. The shared action-button renderer now centers painted glyph bounds and snaps to physical pixels, while retaining stock button interaction and accessibility. Raster measurements of the corrected Import button show zero offset on both axes and equal margins. The installed-font/fallback-font regression covers 2,400 combinations; the full native/software desktop matrix, 40 scaled layouts and portable checks pass. This changes action and menu-trigger captions; menu entries retain their established alignment and editable fields retain their normal text layout.

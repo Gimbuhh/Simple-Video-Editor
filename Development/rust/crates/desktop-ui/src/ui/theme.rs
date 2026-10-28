@@ -109,10 +109,111 @@ pub(super) fn configure(ctx: &egui::Context) {
     ctx.set_style(style);
 }
 
-// Action labels must stay centered even in a left-aligned inspector or dialog.
-pub(super) fn button<'a>(text: impl Into<egui::Atom<'a>>) -> egui::Button<'a> {
-    use egui::AtomExt as _;
-    egui::Button::new(text.atom_grow(true))
+// Center the painted glyphs, not the font's advance/line box. Font bearings
+// and unused ascent/descent otherwise make a mathematically centered label drift.
+pub(super) struct ActionButton {
+    text: egui::WidgetText,
+    fill: Option<Color32>,
+    stroke: Option<Stroke>,
+    frame: Option<bool>,
+    min_size: Vec2,
+}
+pub(super) fn button(text: impl Into<egui::WidgetText>) -> ActionButton {
+    ActionButton {
+        text: text.into(),
+        fill: None,
+        stroke: None,
+        frame: None,
+        min_size: Vec2::ZERO,
+    }
+}
+impl ActionButton {
+    pub(super) fn fill(mut self, fill: Color32) -> Self {
+        self.fill = Some(fill);
+        self
+    }
+    pub(super) fn stroke(mut self, stroke: Stroke) -> Self {
+        self.stroke = Some(stroke);
+        self.frame = Some(true);
+        self
+    }
+    pub(super) fn frame(mut self, frame: bool) -> Self {
+        self.frame = Some(frame);
+        self
+    }
+    pub(super) fn min_size(mut self, size: Vec2) -> Self {
+        self.min_size = size;
+        self
+    }
+}
+impl egui::Widget for ActionButton {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        let padding = if self.frame.unwrap_or(ui.visuals().button_frame) {
+            ui.spacing().button_padding
+        } else {
+            Vec2::ZERO
+        };
+        let galley = self.text.into_galley(
+            ui,
+            None,
+            (ui.available_width() - 2.0 * padding.x).max(0.0),
+            egui::TextStyle::Button,
+        );
+        let slot = ui.next_auto_id().with("action-label");
+        let mut button =
+            egui::Button::new(egui::Atom::custom(slot, galley.size())).min_size(self.min_size);
+        if let Some(fill) = self.fill {
+            button = button.fill(fill);
+        }
+        if let Some(stroke) = self.stroke {
+            button = button.stroke(stroke);
+        }
+        if let Some(frame) = self.frame {
+            button = button.frame(frame);
+        }
+        // Keep egui's input, focus, disabled rendering, frames and hit testing.
+        let response = button.atom_ui(ui).response;
+        paint_button_label(ui, &response, galley);
+        response
+    }
+}
+
+pub(super) fn menu_button<R>(
+    ui: &mut egui::Ui,
+    text: impl Into<egui::WidgetText>,
+    contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<Option<R>> {
+    let galley = text.into().into_galley(
+        ui,
+        None,
+        (ui.available_width() - 2.0 * ui.spacing().button_padding.x).max(0.0),
+        egui::TextStyle::Button,
+    );
+    let slot = ui.next_auto_id().with("menu-label");
+    let menu = ui.menu_button(egui::Atom::custom(slot, galley.size()), contents);
+    paint_button_label(ui, &menu.response, galley);
+    menu
+}
+
+fn paint_button_label(ui: &egui::Ui, response: &egui::Response, galley: Arc<egui::Galley>) {
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), galley.text())
+    });
+    if ui.is_rect_visible(response.rect) {
+        let ink = if galley.mesh_bounds.is_positive() {
+            galley.mesh_bounds
+        } else {
+            galley.rect
+        };
+        let origin = response.rect.center() - ink.center().to_vec2();
+        let ppp = ui.pixels_per_point();
+        let origin = Pos2::new(
+            (origin.x * ppp).round() / ppp,
+            (origin.y * ppp).round() / ppp,
+        );
+        ui.painter()
+            .galley(origin, galley, ui.style().interact(response).text_color());
+    }
 }
 
 pub(super) enum TransportIcon {
@@ -187,41 +288,164 @@ pub(super) fn transport_button(
 mod tests {
     use super::*;
     #[test]
-    fn action_labels_center_in_horizontal_vertical_and_disabled_buttons() {
-        for layout in [
-            egui::Layout::left_to_right(egui::Align::Center),
-            egui::Layout::right_to_left(egui::Align::Center),
-            egui::Layout::top_down(egui::Align::Min),
-        ] {
-            for enabled in [true, false] {
-                let ctx = egui::Context::default();
-                configure(&ctx);
-                let mut button_rect = Rect::NOTHING;
-                let output = ctx.run(egui::RawInput::default(), |ctx| {
-                    egui::CentralPanel::default().show(ctx, |ui| {
-                        ui.with_layout(layout, |ui| {
-                            button_rect = ui
-                                .add_enabled(
-                                    enabled,
-                                    button("Export").min_size(Vec2::new(140.0, 40.0)),
-                                )
-                                .rect;
-                        });
-                    });
+    fn action_labels_center_visible_glyphs_at_each_scale_and_state() {
+        for fallback in [false, true] {
+            let ctx = egui::Context::default();
+            configure(&ctx);
+            ctx.enable_accesskit();
+            if fallback {
+                ctx.set_fonts(egui::FontDefinitions::default());
+                ctx.style_mut(|s| {
+                    s.text_styles
+                        .insert(egui::TextStyle::Heading, FontId::proportional(15.5));
                 });
-                let text = output
-                    .shapes
-                    .iter()
-                    .find_map(|shape| match &shape.shape {
-                        egui::Shape::Text(text) if text.galley.text() == "Export" => Some(text),
-                        _ => None,
-                    })
-                    .expect("Button did not paint its label");
-                let text_center = text.pos + text.galley.rect.center().to_vec2();
-                assert!(
-                    text_center.distance(button_rect.center()) <= 1.0,
-                    "Off-center action label: {text_center:?} in {button_rect:?}, {layout:?}"
-                );
+            }
+            for scale in [1.0, 1.25, 1.5, 1.75, 2.0] {
+                for layout in [
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    egui::Layout::right_to_left(egui::Align::Center),
+                    egui::Layout::top_down(egui::Align::Min),
+                ] {
+                    for label in [
+                        "+ Import",
+                        "Export",
+                        "Save",
+                        "Reset",
+                        "Trim before",
+                        "×",
+                        "Ångström",
+                        "File",
+                        "…",
+                    ] {
+                        for size in [Vec2::ZERO, Vec2::new(140.0, 40.0)] {
+                            if matches!(label, "File" | "…") && size != Vec2::ZERO {
+                                continue;
+                            }
+                            for state in ["rest", "hover", "press", "focus", "disabled"] {
+                                let input = |events| {
+                                    let mut input = egui::RawInput {
+                                        screen_rect: Some(Rect::from_min_size(
+                                            Pos2::ZERO,
+                                            Vec2::new(640.0, 480.0),
+                                        )),
+                                        events,
+                                        ..Default::default()
+                                    };
+                                    input
+                                        .viewports
+                                        .get_mut(&egui::ViewportId::ROOT)
+                                        .unwrap()
+                                        .native_pixels_per_point = Some(scale);
+                                    input
+                                };
+                                let draw = |ctx: &egui::Context| {
+                                    egui::CentralPanel::default()
+                                        .show(ctx, |ui| {
+                                            ui.with_layout(layout, |ui| {
+                                                if matches!(label, "File" | "…") {
+                                                    return ui
+                                                        .add_enabled_ui(state != "disabled", |ui| {
+                                                            menu_button(ui, label, |ui| {
+                                                                ui.label("Menu item");
+                                                            })
+                                                            .response
+                                                        })
+                                                        .inner;
+                                                }
+                                                let mut action = button(label).min_size(size);
+                                                if label == "+ Import" {
+                                                    action =
+                                                        action.stroke(Stroke::new(1.0, BORDER));
+                                                }
+                                                if label == "Export" {
+                                                    action = action.fill(PRIMARY);
+                                                }
+                                                ui.add_enabled(state != "disabled", action)
+                                            })
+                                            .inner
+                                        })
+                                        .inner
+                                };
+                                egui::Popup::close_all(&ctx);
+                                let mut response = None;
+                                let _ = ctx.run(
+                                    input(vec![
+                                        egui::Event::PointerButton {
+                                            pos: Pos2::ZERO,
+                                            button: egui::PointerButton::Primary,
+                                            pressed: false,
+                                            modifiers: Default::default(),
+                                        },
+                                        egui::Event::PointerGone,
+                                    ]),
+                                    |ctx| {
+                                        response = Some(draw(ctx));
+                                    },
+                                );
+                                let response = response.unwrap();
+                                ctx.memory_mut(|m| {
+                                    m.surrender_focus(response.id);
+                                    if state == "focus" {
+                                        m.request_focus(response.id);
+                                    }
+                                });
+                                let mut events = Vec::new();
+                                if state == "hover" || state == "press" {
+                                    events.push(egui::Event::PointerMoved(response.rect.center()));
+                                }
+                                if state == "press" {
+                                    events.push(egui::Event::PointerButton {
+                                        pos: response.rect.center(),
+                                        button: egui::PointerButton::Primary,
+                                        pressed: true,
+                                        modifiers: Default::default(),
+                                    });
+                                }
+                                let mut rect = Rect::NOTHING;
+                                let output = ctx.run(input(events), |ctx| {
+                                    let response = draw(ctx);
+                                    match state {
+                                        "hover" => assert!(response.hovered()),
+                                        "press" => assert!(response.is_pointer_button_down_on()),
+                                        "focus" => assert!(response.has_focus()),
+                                        "disabled" => assert!(!response.enabled()),
+                                        _ => {}
+                                    }
+                                    rect = response.rect;
+                                });
+                                assert!((ctx.pixels_per_point() - scale).abs() < 0.001);
+                                let text = output
+                                    .shapes
+                                    .iter()
+                                    .find_map(|s| match &s.shape {
+                                        egui::Shape::Text(text) if text.galley.text() == label => {
+                                            Some(text)
+                                        }
+                                        _ => None,
+                                    })
+                                    .expect("Missing painted action label");
+                                let center = text.pos + text.galley.mesh_bounds.center().to_vec2();
+                                let delta = (center - rect.center()) * scale;
+                                assert!(
+                                    delta.x.abs() <= 0.51 && delta.y.abs() <= 0.51,
+                                    "Visible label {label} drifts {delta:?} pixels at scale {scale}, {state}, fallback={fallback}, {layout:?}"
+                                );
+                                assert!(
+                                    rect.contains_rect(
+                                        text.galley.mesh_bounds.translate(text.pos.to_vec2())
+                                    ),
+                                    "Action glyphs escape the button"
+                                );
+                                let tree = output.platform_output.accesskit_update.unwrap();
+                                assert!(
+                                    tree.nodes.iter().any(|(_, node)| node.role()
+                                        == egui::accesskit::Role::Button
+                                        && node.label() == Some(label))
+                                );
+                            }
+                        }
+                    }
+                }
             }
         }
     }
