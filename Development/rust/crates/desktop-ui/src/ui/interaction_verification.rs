@@ -321,6 +321,16 @@ impl EditorApp {
                         test.phase = 14;
                     }
                     14 if self.playhead > 1.4 => {
+                        let source = &self.editor.metadata().sources[0];
+                        if let Some(audio) = source.audio.first() {
+                            let status = self.playback.as_ref().unwrap().status();
+                            if status.audio_output.as_deref().is_none_or(|ao| ao == "null")
+                                || status.audio_stream != Some(audio.index)
+                            {
+                                return Err(format!("Preview audio did not reach the system output on the probed track: output={:?}, stream={:?}, expected={}", status.audio_output, status.audio_stream, audio.index).into());
+                            }
+                            test.checks.push("Playing preview opens a real system audio output on the probed track, rather than silently disabling sound".into());
+                        }
                         test.key(egui::Key::Space, false);
                         test.phase = 15;
                     }
@@ -1255,6 +1265,41 @@ impl EditorApp {
                     }
                     130 => {
                         test.checks.push("Inspector starts with trim only; all advanced groups expand/collapse without editing, and audio mute undoes exactly".into());
+                        let mut metadata = self.editor.metadata().clone();
+                        metadata
+                            .interpretations
+                            .insert(metadata.sources[0].id, SourceInterpretation::Srgb);
+                        self.metadata(metadata);
+                        test.phase = 216;
+                    }
+                    216..=218
+                        if self
+                            .thumbnails
+                            .contains_key(&self.editor.metadata().sources[0].id) =>
+                    {
+                        self.history(test.phase == 217);
+                        if self
+                            .thumbnails
+                            .contains_key(&self.editor.metadata().sources[0].id)
+                        {
+                            return Err(
+                                "Recording-color undo/redo retained a stale library thumbnail"
+                                    .into(),
+                            );
+                        }
+                        test.phase += 1;
+                    }
+                    219 if self
+                        .thumbnails
+                        .contains_key(&self.editor.metadata().sources[0].id) =>
+                    {
+                        if SavedProject::capture(&self.editor) != *test.precision.as_ref().unwrap()
+                        {
+                            return Err(
+                                "Recording-color undo/redo changed the saved editing state".into(),
+                            );
+                        }
+                        test.checks.push("Recording-color undo and redo regenerate library previews and restore the exact project".into());
                         test.phase = 131;
                     }
                     131 if self

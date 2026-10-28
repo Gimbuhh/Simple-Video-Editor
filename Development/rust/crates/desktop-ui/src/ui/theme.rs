@@ -109,6 +109,12 @@ pub(super) fn configure(ctx: &egui::Context) {
     ctx.set_style(style);
 }
 
+// Action labels must stay centered even in a left-aligned inspector or dialog.
+pub(super) fn button<'a>(text: impl Into<egui::Atom<'a>>) -> egui::Button<'a> {
+    use egui::AtomExt as _;
+    egui::Button::new(text.atom_grow(true))
+}
+
 pub(super) enum TransportIcon {
     Play,
     Pause,
@@ -180,6 +186,46 @@ pub(super) fn transport_button(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn action_labels_center_in_horizontal_vertical_and_disabled_buttons() {
+        for layout in [
+            egui::Layout::left_to_right(egui::Align::Center),
+            egui::Layout::right_to_left(egui::Align::Center),
+            egui::Layout::top_down(egui::Align::Min),
+        ] {
+            for enabled in [true, false] {
+                let ctx = egui::Context::default();
+                configure(&ctx);
+                let mut button_rect = Rect::NOTHING;
+                let output = ctx.run(egui::RawInput::default(), |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        ui.with_layout(layout, |ui| {
+                            button_rect = ui
+                                .add_enabled(
+                                    enabled,
+                                    button("Export").min_size(Vec2::new(140.0, 40.0)),
+                                )
+                                .rect;
+                        });
+                    });
+                });
+                let text = output
+                    .shapes
+                    .iter()
+                    .find_map(|shape| match &shape.shape {
+                        egui::Shape::Text(text) if text.galley.text() == "Export" => Some(text),
+                        _ => None,
+                    })
+                    .expect("Button did not paint its label");
+                let text_center = text.pos + text.galley.rect.center().to_vec2();
+                assert!(
+                    text_center.distance(button_rect.center()) <= 1.0,
+                    "Off-center action label: {text_center:?} in {button_rect:?}, {layout:?}"
+                );
+            }
+        }
+    }
+
     fn luminance(color: Color32) -> f64 {
         let linear = |value: u8| {
             let v = f64::from(value) / 255.0;

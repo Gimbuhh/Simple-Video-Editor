@@ -12,7 +12,7 @@ $editorDesktopRoot=Join-Path $editorRustDevelopment ('artifacts/rust-desktop/'+[
 New-Item -ItemType Directory -Path $editorDesktopRoot -Force | Out-Null
 $editorDesktopReports=@()
 foreach ($editorDesktopMode in @('native','software')) {
-    $editorDesktopFixtures=if($Fixtures){$Fixtures}else{@('sdr.mkv','pq.mkv','hlg.mkv')}
+    $editorDesktopFixtures=if($Fixtures){$Fixtures}else{@('sdr.mkv','pq.mkv','hlg.mkv','audio.mkv')}
     if($Extended){$editorDesktopFixtures+=@('geometry/rotated.mp4','geometry/anamorphic.mp4','geometry/rgb.mkv','geometry/multiple.mkv','stepping/variable.mkv')}
     foreach ($editorDesktopFixture in $editorDesktopFixtures) {
         $editorDesktopSource=Join-Path $editorRustDevelopment "artifacts/rust-playback/$editorDesktopFixture"

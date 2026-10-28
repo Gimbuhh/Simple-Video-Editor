@@ -40,6 +40,10 @@ foreach ($editorTransfer in @('sdr','pq','hlg')) {
     & $editorPlaybackFfmpeg @editorArguments $editorSource
     if ($LASTEXITCODE -ne 0) { throw "Fixture generation failed: $editorTransfer" }
 }
+# Two audible tracks with the second marked default expose preview track-id/index
+# mistakes as well as missing audio-device initialization in the desktop verifier.
+& $editorPlaybackFfmpeg -v error -y -i (Join-Path $editorPlaybackRoot 'sdr.mkv') -f lavfi -i 'sine=frequency=440:sample_rate=48000:duration=3' -f lavfi -i 'sine=frequency=880:sample_rate=48000:duration=3' -map 0:v:0 -map 1:a:0 -map 2:a:0 -c:v copy -c:a pcm_s16le -disposition:a:0 0 -disposition:a:1 default (Join-Path $editorPlaybackRoot 'audio.mkv')
+if ($LASTEXITCODE -ne 0) { throw 'Preview audio fixture generation failed.' }
 $editorSoftware = Invoke-RustPlayback 'software' (Join-Path $editorPlaybackRoot 'sdr.mkv')
 foreach ($editorCycle in $editorSoftware.cycles) {
     Assert-RustPlayback ($editorCycle.properties.'current-vo' -eq 'libmpv' -and $editorCycle.properties.'hwdec-current' -eq 'no' -and $editorCycle.softwareFrame.nonBlackPixels -gt 0) 'Software API presents real CPU-decoded frames without a GPU output backend'

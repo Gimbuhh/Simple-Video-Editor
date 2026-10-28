@@ -53,6 +53,9 @@ pub struct Status {
     pub frame: Option<Arc<native_mpv::Frame>>,
     pub gamma: Option<String>,
     pub decoder: Option<String>,
+    // Only present once a real audio output has negotiated its sample format.
+    pub audio_output: Option<String>,
+    pub audio_stream: Option<u32>,
     pub error: Option<String>,
     pub display: Option<platform_windows::DisplayColor>,
 }
@@ -418,6 +421,15 @@ impl Playback {
                         }
                         state.lock().unwrap().gamma = player.property("video-out-params/gamma");
                         state.lock().unwrap().decoder = player.property("hwdec-current");
+                        {
+                            let mut updated = state.lock().unwrap();
+                            updated.audio_output = player.property("current-ao").filter(|_| {
+                                player.property("audio-out-params/samplerate").is_some()
+                            });
+                            updated.audio_stream = player
+                                .property("current-tracks/audio/ff-index")
+                                .and_then(|s| s.parse().ok());
+                        }
                         {
                             let updated = state.lock().unwrap();
                             changed |= previous.position != updated.position

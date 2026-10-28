@@ -106,9 +106,13 @@ impl Player {
             ("osc", "no"),
             ("osd-level", "0"),
             ("hwdec", "no"),
-            ("ao", if audio { "auto" } else { "null" }),
         ] {
             player.option(key, value)?;
+        }
+        // An empty/default AO list lets mpv choose the platform output. "auto"
+        // is not an output driver; forcing it disables sound in embedded preview.
+        if !audio {
+            player.option("ao", "null")?;
         }
         if let Some(window) = window {
             player.option("video-rotate", "no")?;
@@ -191,7 +195,7 @@ impl Player {
         self.set_paused(true)?;
         self.command(&["stop"])?;
         // Serialized lab loads: discard old events/frames before replacement.
-        // The editor will need generation-tagged asynchronous coordination.
+        // The desktop playback actor owns generation-tagged asynchronous loads.
         for _ in 0..256 {
             if self.poll_event(0.0)? == 0 {
                 break;

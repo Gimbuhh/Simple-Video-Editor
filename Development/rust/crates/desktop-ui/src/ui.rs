@@ -230,6 +230,7 @@ impl EditorApp {
         self.dirty_cache = SavedProject::capture(&self.editor) != self.saved;
     }
     fn history(&mut self, redo: bool) {
+        let interpretations = self.editor.metadata().interpretations.clone();
         self.editor.metadata_mut().view = self.current_view();
         if if redo {
             self.editor.redo()
@@ -254,6 +255,7 @@ impl EditorApp {
                 }
                 None => {}
             }
+            self.refresh_interpretations(&interpretations);
             self.sync_selection();
             self.playhead = if self.library_preview {
                 0.0
@@ -408,17 +410,7 @@ impl EditorApp {
         let view = self.current_view();
         self.editor.metadata_mut().view = view;
         metadata.view = view;
-        let changed: Vec<_> = self
-            .editor
-            .metadata()
-            .sources
-            .iter()
-            .filter(|s| {
-                self.editor.metadata().interpretations.get(&s.id)
-                    != metadata.interpretations.get(&s.id)
-            })
-            .map(|s| s.id)
-            .collect();
+        let interpretations = self.editor.metadata().interpretations.clone();
         let document = SavedProject {
             metadata: metadata.clone(),
             ..SavedProject::capture(&self.editor)
@@ -438,13 +430,25 @@ impl EditorApp {
             Err(e) => self.fail(e),
         }
         self.update_dirty();
-        if !changed.is_empty() {
-            for id in changed {
-                self.waveforms.remove(&id);
-                self.thumbnails.remove(&id);
-            }
-            self.start_waveforms();
+        self.refresh_interpretations(&interpretations);
+    }
+    fn refresh_interpretations(&mut self, previous: &BTreeMap<SourceId, SourceInterpretation>) {
+        let changed: Vec<_> = self
+            .editor
+            .metadata()
+            .sources
+            .iter()
+            .filter(|s| previous.get(&s.id) != self.editor.metadata().interpretations.get(&s.id))
+            .map(|s| s.id)
+            .collect();
+        if changed.is_empty() {
+            return;
         }
+        for id in changed {
+            self.waveforms.remove(&id);
+            self.thumbnails.remove(&id);
+        }
+        self.start_waveforms();
     }
     fn add(&mut self, ids: Vec<SourceId>) {
         self.add_at(ids, None);
@@ -949,6 +953,9 @@ impl EditorApp {
                 )
             })
             .collect();
+        if sources.is_empty() {
+            return;
+        }
         for source in &sources {
             self.waveforms.insert(source.id, Arc::new(Vec::new()));
         }
@@ -983,6 +990,19 @@ impl EditorApp {
                 }
             }
         }));
+    }
+    fn is_current_source(&self, source: &MediaSource) -> bool {
+        self.editor.metadata().sources.iter().any(|s| {
+            s.id == source.id
+                && s.interpreted(
+                    self.editor
+                        .metadata()
+                        .interpretations
+                        .get(&s.id)
+                        .copied()
+                        .unwrap_or_default(),
+                ) == *source
+        })
     }
     fn events(&mut self, ctx: &egui::Context) {
         while let Ok(event) = self.rx.try_recv() {
@@ -1126,32 +1146,12 @@ impl EditorApp {
                     }
                 }
                 Event::Waveform(source, peaks) => {
-                    if self.editor.metadata().sources.iter().any(|s| {
-                        s.id == source.id
-                            && s.interpreted(
-                                self.editor
-                                    .metadata()
-                                    .interpretations
-                                    .get(&s.id)
-                                    .copied()
-                                    .unwrap_or_default(),
-                            ) == source
-                    }) {
+                    if self.is_current_source(&source) {
                         self.waveforms.insert(source.id, Arc::new(peaks));
                     }
                 }
                 Event::Thumbnail(source, image) => {
-                    if self.editor.metadata().sources.iter().any(|s| {
-                        s.id == source.id
-                            && s.interpreted(
-                                self.editor
-                                    .metadata()
-                                    .interpretations
-                                    .get(&s.id)
-                                    .copied()
-                                    .unwrap_or_default(),
-                            ) == source
-                    }) {
+                    if self.is_current_source(&source) {
                         self.thumbnails.insert(
                             source.id,
                             ctx.load_texture(
@@ -1194,7 +1194,7 @@ impl EditorApp {
                 }
             }
         }
-        self.jobs.retain_mut(|job| !job.is_finished());
+        self.jobs.retain(|job| !job.is_finished());
     }
     fn top(&mut self, ctx: &egui::Context) {
         for key in [
@@ -1282,12 +1282,10 @@ impl EditorApp {
                         let export = ui
                             .add_enabled(
                                 !self.busy && !self.editor.timeline().clips().is_empty(),
-                                egui::Button::new(
-                                    egui::RichText::new("Export").color(Color32::WHITE),
-                                )
-                                .fill(theme::PRIMARY)
-                                .frame(true)
-                                .min_size(Vec2::new(100.0, 34.0)),
+                                theme::button(egui::RichText::new("Export").color(Color32::WHITE))
+                                    .fill(theme::PRIMARY)
+                                    .frame(true)
+                                    .min_size(Vec2::new(100.0, 34.0)),
                             )
                             .on_hover_cursor(egui::CursorIcon::PointingHand);
                         self.controls.insert("export", export.rect);
@@ -1298,7 +1296,7 @@ impl EditorApp {
                         if ui
                             .add_enabled(
                                 !self.busy && !self.editor.timeline().clips().is_empty(),
-                                egui::Button::new("Save"),
+                                theme::button("Save"),
                             )
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .clicked()
@@ -1318,7 +1316,7 @@ impl EditorApp {
                     ui.label(&self.message);
                     if self.busy
                         && ui
-                            .button("Cancel")
+                            .add(theme::button("Cancel"))
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .clicked()
                     {
@@ -1373,7 +1371,7 @@ impl EditorApp {
             ui.horizontal(|ui| {
                 ui.heading("Recordings");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.add_enabled(!self.busy && self.tools.is_some(), egui::Button::new("+ Import").frame(true).stroke(Stroke::new(1.0,theme::BORDER))).on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
+                    if ui.add_enabled(!self.busy && self.tools.is_some(), theme::button("+ Import").frame(true).stroke(Stroke::new(1.0,theme::BORDER))).on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
                         && let Ok(paths) = platform_windows::choose_files(self.owner,false,false) { self.import(paths); }
                 });
             });
@@ -1385,14 +1383,14 @@ impl EditorApp {
                 let response=ui.add_sized(Vec2::new(width,30.0),egui::TextEdit::singleline(&mut self.search).id(egui::Id::new("recording-search-input")).hint_text("Search recordings").desired_width(width));
                 self.controls.insert("recording-search",response.rect);
                 if response.has_focus() && ui.input_mut(|i|i.consume_key(egui::Modifiers::NONE,egui::Key::Escape)){self.search.clear();response.surrender_focus();}
-                if clear && ui.button("×").on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Clear search").clicked(){self.search.clear();}
+                if clear && ui.add(theme::button("×")).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Clear search").clicked(){self.search.clear();}
             });
             let sources=self.editor.metadata().sources.clone();
             let search=self.search.to_lowercase();
             let visible:Vec<_>=sources.iter().filter(|s|s.name().to_lowercase().contains(&search)).collect();
             ui.horizontal(|ui|{
-                let response=ui.add_enabled(!self.busy && visible.iter().any(|s|Some(s.id)==self.library_selected),egui::Button::new("Add to timeline")).on_hover_cursor(egui::CursorIcon::PointingHand);self.controls.insert("add-selected",response.rect);if response.clicked() && let Some(id)=self.library_selected{self.add(vec![id]);}
-                if sources.len()>1{let response=ui.add_enabled(!self.busy,egui::Button::new("Add all")).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Adds the complete library, including hidden search results, as one undoable edit");self.controls.insert("add-all",response.rect);if response.clicked(){self.add(sources.iter().map(|s|s.id).collect());}}
+                let response=ui.add_enabled(!self.busy && visible.iter().any(|s|Some(s.id)==self.library_selected),theme::button("Add to timeline")).on_hover_cursor(egui::CursorIcon::PointingHand);self.controls.insert("add-selected",response.rect);if response.clicked() && let Some(id)=self.library_selected{self.add(vec![id]);}
+                if sources.len()>1{let response=ui.add_enabled(!self.busy,theme::button("Add all")).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Adds the complete library, including hidden search results, as one undoable edit");self.controls.insert("add-all",response.rect);if response.clicked(){self.add(sources.iter().map(|s|s.id).collect());}}
             });
             if !search.is_empty(){ui.label(format!("{} of {} recordings",visible.len(),sources.len()));}
             ui.separator();
@@ -1453,7 +1451,7 @@ impl EditorApp {
                     }
                     ui.separator();
                     let undo = ui
-                        .add_enabled(self.editor.can_undo(), egui::Button::new("Undo"))
+                        .add_enabled(self.editor.can_undo(), theme::button("Undo"))
                         .on_hover_cursor(egui::CursorIcon::PointingHand);
                     self.controls.insert("undo", undo.rect);
                     if undo.clicked() {
@@ -1461,7 +1459,7 @@ impl EditorApp {
                         self.request_key.clear();
                     }
                     if ui
-                        .add_enabled(self.editor.can_redo(), egui::Button::new("Redo"))
+                        .add_enabled(self.editor.can_redo(), theme::button("Redo"))
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
                     {
@@ -1472,7 +1470,7 @@ impl EditorApp {
                         .add_enabled(
                             !self.library_preview
                                 && self.timeline().source_at(self.playhead).is_some(),
-                            egui::Button::new("Split"),
+                            theme::button("Split"),
                         )
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .on_hover_text("Split at the playhead (S / Ctrl+B)")
@@ -1483,7 +1481,7 @@ impl EditorApp {
                     if ui
                         .add_enabled(
                             self.selected.is_some() && !self.library_preview,
-                            egui::Button::new("Delete"),
+                            theme::button("Delete"),
                         )
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
@@ -1494,7 +1492,7 @@ impl EditorApp {
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
-                            .button("Fit")
+                            .add(theme::button("Fit"))
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .clicked()
                         {
@@ -2102,7 +2100,7 @@ impl EditorApp {
                             ui.heading("Trim").on_hover_text(format!("Timeline position: {}", time(clip.timeline_start)));
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 if let Some(source) = metadata.sources.iter().find(|s| s.id == clip.source) {
-                                    let reset = ui.add_enabled(clip.source_in != 0.0 || clip.source_out != source.duration, egui::Button::new("Reset"))
+                                    let reset = ui.add_enabled(clip.source_in != 0.0 || clip.source_out != source.duration, theme::button("Reset"))
                                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                                         .on_hover_text("Restore the full recording");
                                     self.controls.insert("trim-reset", reset.rect);
@@ -2125,10 +2123,10 @@ impl EditorApp {
                             ui.end_row();
                         });
                         ui.horizontal(|ui| {
-                            if ui.button("Trim before").on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Trim before the playhead (Q)").clicked() {
+                            if ui.add(theme::button("Trim before")).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Trim before the playhead (Q)").clicked() {
                                 self.quick_trim(true);
                             }
-                            if ui.button("Trim after").on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Trim after the playhead (W)").clicked() {
+                            if ui.add(theme::button("Trim after")).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Trim after the playhead (W)").clicked() {
                                 self.quick_trim(false);
                             }
                         });
@@ -3021,8 +3019,8 @@ impl eframe::App for EditorApp {
                 ui.heading("Locate missing recordings");
                 let index=replacements.len();ui.label(format!("Recording {} of {}",index+1,missing.len()));ui.label(&missing[index]);
                 ui.horizontal(|ui|{
-                    if ui.button("Locate recording…").on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Choose the same original recording in its new location. The current project stays open until all recordings pass validation.").clicked(){match platform_windows::choose_files(self.owner,false,false){Ok(paths)=>{if let Some(replacement)=paths.into_iter().next(){replacements.push((missing[index].clone(),replacement));if replacements.len()==missing.len(){keep=false;load=true;}}},Err(e)=>self.fail(e)}}
-                    if ui.button("Cancel").on_hover_cursor(egui::CursorIcon::PointingHand).clicked(){keep=false;}
+                    if ui.add(theme::button("Locate recording…")).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Choose the same original recording in its new location. The current project stays open until all recordings pass validation.").clicked(){match platform_windows::choose_files(self.owner,false,false){Ok(paths)=>{if let Some(replacement)=paths.into_iter().next(){replacements.push((missing[index].clone(),replacement));if replacements.len()==missing.len(){keep=false;load=true;}}},Err(e)=>self.fail(e)}}
+                    if ui.add(theme::button("Cancel")).on_hover_cursor(egui::CursorIcon::PointingHand).clicked(){keep=false;}
                 });
             });
             if load {
@@ -3085,7 +3083,7 @@ impl eframe::App for EditorApp {
                 ui.heading("Recover unsaved project");
                 ui.horizontal(|ui| {
                     if ui
-                        .button("Recover")
+                        .add(theme::button("Recover"))
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
                         && self.discard()
@@ -3096,7 +3094,7 @@ impl eframe::App for EditorApp {
                         self.open_relinked(path, Vec::new());
                     }
                     if ui
-                        .button("Discard recovery")
+                        .add(theme::button("Discard recovery"))
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
                         && let Some(claim) = self.startup_recovery.take()
