@@ -1205,10 +1205,65 @@ impl EditorApp {
         self.jobs.retain_mut(|job| !job.is_finished());
     }
     fn top(&mut self, ctx: &egui::Context) {
+        for key in [
+            "file-new",
+            "file-open",
+            "file-save-as",
+            "software-preview",
+            "clear-cache",
+            "export-settings",
+        ] {
+            self.controls.remove(key);
+        }
         egui::TopBottomPanel::top("header").show(ctx, |ui| {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.label(format!(
+                let file = ui
+                    .menu_button("File", |ui| {
+                        let new = ui.add_enabled(!self.busy, egui::Button::new("New project"));
+                        self.controls.insert("file-new", new.rect);
+                        if new
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            self.new_project();
+                            ui.close();
+                        }
+                        let open = ui.add_enabled(
+                            !self.busy && self.tools.is_some(),
+                            egui::Button::new("Open project…"),
+                        );
+                        self.controls.insert("file-open", open.rect);
+                        if open
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            ui.close();
+                            if let Ok(paths) =
+                                platform_windows::choose_files(self.owner, false, true)
+                                && let Some(path) = paths.into_iter().next()
+                            {
+                                self.open(path);
+                            }
+                        }
+                        ui.separator();
+                        let save = ui.add_enabled(
+                            !self.busy && !self.editor.timeline().clips().is_empty(),
+                            egui::Button::new("Save as…"),
+                        );
+                        self.controls.insert("file-save-as", save.rect);
+                        if save
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            self.save(true);
+                            ui.close();
+                        }
+                    })
+                    .response
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                self.controls.insert("file-menu", file.rect);
+                ui.weak(format!(
                     "{}{}",
                     self.path
                         .as_ref()
@@ -1218,10 +1273,11 @@ impl EditorApp {
                     if self.dirty() { " •" } else { "" }
                 ));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    self.more_options(ui, ctx);
                     if ui
                         .add_enabled(
                             !self.busy && !self.editor.timeline().clips().is_empty(),
-                            egui::Button::new("Export video").fill(Color32::from_rgb(38, 99, 83)),
+                            egui::Button::new("Export").fill(Color32::from_rgb(38, 99, 83)),
                         )
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
@@ -1237,32 +1293,6 @@ impl EditorApp {
                         .clicked()
                     {
                         self.save(false);
-                    }
-                    if ui
-                        .add_enabled(
-                            !self.busy && self.tools.is_some(),
-                            egui::Button::new("Open"),
-                        )
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .clicked()
-                        && let Ok(paths) = platform_windows::choose_files(self.owner, false, true)
-                        && let Some(path) = paths.into_iter().next()
-                    {
-                        self.open(path);
-                    }
-                    if ui
-                        .add_enabled(!self.busy, egui::Button::new("New"))
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .clicked()
-                    {
-                        self.new_project();
-                    }
-                    if ui
-                        .button("Output")
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .clicked()
-                    {
-                        self.settings = !self.settings;
                     }
                 });
             });
@@ -1290,16 +1320,48 @@ impl EditorApp {
             });
         }
     }
-    fn library(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::left("recordings").resizable(true).default_width(350.0).width_range(300.0..=460.0).show(ctx,|ui| {
-            if self.busy && !self.exporting{ui.disable();}
-            ui.horizontal(|ui| {
-                ui.heading("Recordings");ui.label(self.editor.metadata().sources.len().to_string());
-                if ui.add_enabled(!self.busy && self.tools.is_some(),egui::Button::new("Clear cache")).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Clear generated thumbnails and waveforms").clicked() && let Some(tools)=self.tools.clone(){
-                    self.busy=true;let protected=self.editor.metadata().sources.iter().map(|s|PathBuf::from(&s.path)).collect::<Vec<_>>();let tx=self.tx.clone();self.jobs.push(std::thread::spawn(move ||{let _=tx.send(Event::Cache(tools.clear_cache(&protected).map_err(|e|e.to_string())));}));
+    fn more_options(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let menu = ui.menu_button("…", |ui| {
+            let settings = ui.button("Export settings…").on_hover_cursor(egui::CursorIcon::PointingHand);
+            self.controls.insert("export-settings", settings.rect);
+            if settings.clicked() { self.settings = !self.settings; ui.close(); }
+            ui.separator();
+            let software = ui.add_enabled(!self.busy, egui::Checkbox::new(&mut self.software_preview, "Software preview"))
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text("Use CPU-rendered SDR video if native preview has problems.");
+            self.controls.insert("software-preview", software.rect);
+            if software.changed() && let Some(tools) = self.tools.clone() {
+                self.stepping = None;
+                if self.playback.take().is_some() {
+                    self.playback = Some(Playback::new(tools, self.video.handle(), self.software_preview, ctx.clone()));
                 }
-            });
-            if ui.add_enabled(!self.busy && self.tools.is_some(),egui::Button::new("+ Import recordings").min_size(Vec2::new(ui.available_width(),32.0))).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() && let Ok(paths)=platform_windows::choose_files(self.owner,false,false) { self.import(paths); }
+                self.request_key.clear(); ui.close();
+            }
+            ui.separator();
+            let cache = ui.add_enabled(!self.busy && self.tools.is_some(), egui::Button::new("Clear generated cache"))
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text("Remove temporary thumbnails and waveforms to free disk space. Recordings and projects stay untouched.");
+            self.controls.insert("clear-cache", cache.rect);
+            if cache.clicked() && let Some(tools) = self.tools.clone() {
+                self.busy = true;
+                let protected = self.editor.metadata().sources.iter().map(|s|PathBuf::from(&s.path)).collect::<Vec<_>>();
+                let tx = self.tx.clone();
+                self.jobs.push(std::thread::spawn(move || {let _ = tx.send(Event::Cache(tools.clear_cache(&protected).map_err(|e|e.to_string())));}));
+                ui.close();
+            }
+        }).response.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("More options");
+        menu.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "More options")
+        });
+        self.controls.insert("more-options", menu.rect);
+    }
+    fn library(&mut self, ctx: &egui::Context) {
+        egui::SidePanel::left("recordings").resizable(true).default_width(280.0).width_range(240.0..=460.0).show(ctx,|ui| {
+            if self.busy && !self.exporting{ui.disable();}
+            for key in ["recording-search", "add-selected", "add-all", "first-recording"] { self.controls.remove(key); }
+            ui.heading("Recordings");
+            if ui.add_enabled(!self.busy && self.tools.is_some(),egui::Button::new("+ Import").min_size(Vec2::new(ui.available_width(),32.0))).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() && let Ok(paths)=platform_windows::choose_files(self.owner,false,false) { self.import(paths); }
+            if self.editor.metadata().sources.is_empty() { return; }
             ui.horizontal(|ui|{
                 let response=ui.add(egui::TextEdit::singleline(&mut self.search).id(egui::Id::new("recording-search-input")).hint_text("Search recordings").desired_width((ui.available_width()-45.0).max(1.0)));
                 self.controls.insert("recording-search",response.rect);
@@ -1316,8 +1378,7 @@ impl EditorApp {
             if !search.is_empty(){ui.label(format!("{} of {} recordings",visible.len(),sources.len()));}
             ui.separator();
             egui::ScrollArea::vertical().show_rows(ui,64.0,visible.len().max(1),|ui,rows| {
-                if sources.is_empty() { ui.add_space(32.0);ui.label("Drop recordings here"); }
-                else if visible.is_empty(){ui.label("No recordings match your search.");}
+                if visible.is_empty(){ui.label("No recordings match your search.");}
                 for source in visible.iter().skip(rows.start).take(rows.end-rows.start) {
                     let details=format!("{} · {} × {} · {}",time(source.duration),source.width,source.height,if source.hdr(){"HDR"}else{"SDR"});
                     let (rect,response)=ui.push_id(("recording",source.id.0),|ui|ui.allocate_exact_size(Vec2::new(ui.available_width(),64.0),Sense::click_and_drag())).inner;
@@ -1330,7 +1391,8 @@ impl EditorApp {
                     let text=Rect::from_min_max(Pos2::new(thumbnail.right()+10.0,rect.top()+9.0),rect.max-Vec2::splat(8.0));
                     let painter=ui.painter().with_clip_rect(text);
                     painter.text(text.min,Align2::LEFT_TOP,source.name(),FontId::proportional(13.0),Color32::WHITE);
-                    painter.text(text.min+Vec2::new(0.0,24.0),Align2::LEFT_TOP,&details,FontId::proportional(11.0),Color32::LIGHT_GRAY);
+                    let summary=if source.hdr(){format!("{} · HDR",time(source.duration))}else{time(source.duration)};
+                    painter.text(text.min+Vec2::new(0.0,24.0),Align2::LEFT_TOP,summary,FontId::proportional(11.0),Color32::LIGHT_GRAY);
                     let response=response.on_hover_text(format!("{}\n{details}",source.path));
                     response.dnd_set_drag_payload(source.id);
                     if response.clicked() { self.library_selected=Some(source.id);self.library_preview=true;self.playing=false;self.seek(0.0); }
@@ -1359,6 +1421,12 @@ impl EditorApp {
                 }
                 ui.horizontal(|ui| {
                     ui.heading("Timeline");
+                    if self.timeline().clips().is_empty()
+                        && !self.editor.can_undo()
+                        && !self.editor.can_redo()
+                    {
+                        return;
+                    }
                     ui.separator();
                     let undo = ui
                         .add_enabled(self.editor.can_undo(), egui::Button::new("Undo"))
@@ -1447,35 +1515,40 @@ impl EditorApp {
                             .floor() as u32;
                         let last = ((visible.right() - origin).max(0.0) / zoom / second_step).ceil()
                             as u32;
-                        for n in first..=last {
-                            let seconds = n as f32 * second_step;
-                            let x = origin + seconds * zoom;
-                            painter.line_segment(
-                                [Pos2::new(x, rect.top() + 23.0), Pos2::new(x, rect.bottom())],
-                                Stroke::new(1.0, Color32::from_gray(42)),
+                        let show_tracks = !self.timeline().clips().is_empty()
+                            || egui::DragAndDrop::payload::<SourceId>(ctx).is_some()
+                            || ui.input(|i| !i.raw.hovered_files.is_empty());
+                        if show_tracks {
+                            for n in first..=last {
+                                let seconds = n as f32 * second_step;
+                                let x = origin + seconds * zoom;
+                                painter.line_segment(
+                                    [Pos2::new(x, rect.top() + 23.0), Pos2::new(x, rect.bottom())],
+                                    Stroke::new(1.0, Color32::from_gray(42)),
+                                );
+                                painter.text(
+                                    Pos2::new(x + 4.0, rect.top() + 10.0),
+                                    Align2::LEFT_CENTER,
+                                    time(f64::from(seconds)),
+                                    FontId::monospace(11.0),
+                                    Color32::GRAY,
+                                );
+                            }
+                            painter.text(
+                                Pos2::new(rect.left() + 8.0, rect.top() + 52.0),
+                                Align2::LEFT_CENTER,
+                                "VIDEO",
+                                FontId::proportional(10.0),
+                                Color32::GRAY,
                             );
                             painter.text(
-                                Pos2::new(x + 4.0, rect.top() + 10.0),
+                                Pos2::new(rect.left() + 8.0, rect.top() + 110.0),
                                 Align2::LEFT_CENTER,
-                                time(f64::from(seconds)),
-                                FontId::monospace(11.0),
+                                "AUDIO",
+                                FontId::proportional(10.0),
                                 Color32::GRAY,
                             );
                         }
-                        painter.text(
-                            Pos2::new(rect.left() + 8.0, rect.top() + 52.0),
-                            Align2::LEFT_CENTER,
-                            "VIDEO",
-                            FontId::proportional(10.0),
-                            Color32::GRAY,
-                        );
-                        painter.text(
-                            Pos2::new(rect.left() + 8.0, rect.top() + 110.0),
-                            Align2::LEFT_CENTER,
-                            "AUDIO",
-                            FontId::proportional(10.0),
-                            Color32::GRAY,
-                        );
                         if let Some(id) = response.dnd_release_payload::<SourceId>()
                             && let Some(pointer) = ui.input(|i| i.pointer.latest_pos())
                         {
@@ -1868,18 +1941,11 @@ impl EditorApp {
                                 Vec2::new(rect.width() - 65.0, 24.0),
                             ),
                         );
-                        let x = origin + self.playhead as f32 * zoom;
-                        painter.line_segment(
-                            [Pos2::new(x, rect.top()), Pos2::new(x, rect.bottom())],
-                            Stroke::new(2.0, MINT),
-                        );
-                        if self.editor.timeline().clips().is_empty() {
-                            painter.text(
-                                rect.center(),
-                                Align2::CENTER_CENTER,
-                                "Drop recordings here",
-                                FontId::proportional(15.0),
-                                Color32::GRAY,
+                        if show_tracks {
+                            let x = origin + self.playhead as f32 * zoom;
+                            painter.line_segment(
+                                [Pos2::new(x, rect.top()), Pos2::new(x, rect.bottom())],
+                                Stroke::new(2.0, MINT),
                             );
                         }
                     });
@@ -2181,6 +2247,21 @@ impl EditorApp {
     }
     fn preview(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
+            if self.editor.metadata().sources.is_empty() {
+                for key in [
+                    "preview",
+                    "preview-viewport",
+                    "scrubber",
+                    "frame-back",
+                    "frame-forward",
+                    "position-label",
+                ] {
+                    self.controls.remove(key);
+                }
+                self.video.layout(0, 0, 1, 1, false);
+                return;
+            }
+
             ui.horizontal(|ui| {
                 ui.strong(if self.library_preview {
                     "Recording"
@@ -2205,17 +2286,38 @@ impl EditorApp {
                     } else {
                         ("SDR", "SDR reference preview")
                     };
-                    ui.small(mode).on_hover_text(detail);
+                    let source_id = if self.library_preview {
+                        self.library_selected
+                    } else {
+                        preview_at(self.timeline(), self.editor.metadata(), self.playhead)
+                            .map(|(_, id, _)| id)
+                    };
+                    let hdr_source = self
+                        .editor
+                        .metadata()
+                        .sources
+                        .iter()
+                        .find(|source| Some(source.id) == source_id)
+                        .is_some_and(|source| {
+                            source
+                                .interpreted(
+                                    self.editor
+                                        .metadata()
+                                        .interpretations
+                                        .get(&source.id)
+                                        .copied()
+                                        .unwrap_or_default(),
+                                )
+                                .hdr()
+                        });
+                    if hdr_source || mode == "HDR" {
+                        ui.small(mode).on_hover_text(detail);
+                    }
                 });
             });
-            let software=ui.checkbox(&mut self.software_preview,"Software preview").on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Uses CPU-rendered, tone-mapped video. Try this if native preview or capture compatibility causes problems.");
-            self.controls.insert("software-preview",software.rect);
-            if software.changed() && let Some(tools)=self.tools.clone(){
-                self.stepping=None;if self.playback.take().is_some(){self.playback=Some(Playback::new(tools,self.video.handle(),self.software_preview,ctx.clone()));}self.request_key.clear();
-            }
             let available = Vec2::new(
                 ui.available_width(),
-                (ui.available_height() - 140.0).max(1.0),
+                (ui.available_height() - 110.0).max(1.0),
             );
             let (viewport, _) = ui.allocate_exact_size(available, Sense::hover());
             let output = self.preview_output();
@@ -2231,12 +2333,22 @@ impl EditorApp {
                 .map(|p| p.status())
                 .unwrap_or_default();
             let mapped = if self.library_preview {
-                self.library_selected.map(|source|(ClipId(0),source,0.0))
-            } else { preview_at(self.timeline(), self.editor.metadata(), self.playhead) };
+                self.library_selected.map(|source| (ClipId(0), source, 0.0))
+            } else {
+                preview_at(self.timeline(), self.editor.metadata(), self.playhead)
+            };
             let has_source = mapped.is_some();
-            let preview_output=crate::playback::preview_output(self.preview_output(),rect.width()*ctx.pixels_per_point(),rect.height()*ctx.pixels_per_point(),self.software_preview||status.software);
-            let hdr_preview=self.hdr_preview && self.editor.metadata().output.profile==ColorProfile::Hdr10 && !status.software && status.display.as_ref().is_some_and(|d|d.hdr_active);
-            let expected_key=self.preview_key(mapped,&preview_output,hdr_preview);
+            let preview_output = crate::playback::preview_output(
+                self.preview_output(),
+                rect.width() * ctx.pixels_per_point(),
+                rect.height() * ctx.pixels_per_point(),
+                self.software_preview || status.software,
+            );
+            let hdr_preview = self.hdr_preview
+                && self.editor.metadata().output.profile == ColorProfile::Hdr10
+                && !status.software
+                && status.display.as_ref().is_some_and(|d| d.hdr_active);
+            let expected_key = self.preview_key(mapped, &preview_output, hdr_preview);
             let visible = has_source
                 && status.presentation_key.as_ref() == Some(&expected_key)
                 && status.error.is_none()
@@ -2249,7 +2361,9 @@ impl EditorApp {
                 (rect.top() * scale).round() as i32,
                 (rect.width() * scale).round() as i32,
                 (rect.height() * scale).round() as i32,
-                visible && !status.software && thumbnails::drag_bounds(ctx).is_none_or(|drag|!drag.intersects(rect)),
+                visible
+                    && !status.software
+                    && thumbnails::drag_bounds(ctx).is_none_or(|drag| !drag.intersects(rect)),
             );
             if visible && status.software {
                 if let Some(frame) = status.frame {
@@ -2285,7 +2399,7 @@ impl EditorApp {
                         );
                     }
                 }
-            } else if !visible && has_source {
+            } else if !visible && has_source && !ctx.is_popup_open() {
                 ui.painter().text(
                     rect.center(),
                     Align2::CENTER_CENTER,
@@ -2322,23 +2436,42 @@ impl EditorApp {
             }
             ui.horizontal(|ui| {
                 if ui
-                    .button(if self.play_intent() { "Pause" } else { "Play" }).on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .button(if self.play_intent() { "Pause" } else { "Play" })
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
                     .clicked()
                 {
                     self.toggle_playback();
                 }
-                let back = ui.button("◀ Frame").on_hover_cursor(egui::CursorIcon::PointingHand);
+                let back = ui
+                    .button("◀")
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .on_hover_text("Previous frame (←)");
+                back.widget_info(|| {
+                    egui::WidgetInfo::labeled(
+                        egui::WidgetType::Button,
+                        ui.is_enabled(),
+                        "Previous frame",
+                    )
+                });
                 self.controls.insert("frame-back", back.rect);
                 if back.clicked() {
                     self.step_frame(-1);
                 }
-                let next = ui.button("Frame ▶").on_hover_cursor(egui::CursorIcon::PointingHand);
+                let next = ui
+                    .button("▶")
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .on_hover_text("Next frame (→)");
+                next.widget_info(|| {
+                    egui::WidgetInfo::labeled(
+                        egui::WidgetType::Button,
+                        ui.is_enabled(),
+                        "Next frame",
+                    )
+                });
                 self.controls.insert("frame-forward", next.rect);
                 if next.clicked() {
                     self.step_frame(1);
                 }
-            });
-            ui.horizontal(|ui| {
                 let response = ui.label(
                     egui::RichText::new(format!("{} / {}", time(self.playhead), time(duration)))
                         .monospace()

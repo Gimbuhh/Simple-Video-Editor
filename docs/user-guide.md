@@ -2,6 +2,8 @@
 
 Simple Video Editor 1.1 edits local recordings non-destructively. Keep the executable, bin and docs folders together. The portable app needs no .NET runtime.
 
+The empty workspace keeps only the essentials visible. Import starts the workflow; search, playback and timeline controls appear when useful. File contains New project, Open project and Save as. Save and Export stay in the toolbar. The … menu (More options) contains Export settings, Software preview and Clear generated cache.
+
 ## Recordings and linked sections
 
 Import files or drop them into the window. Click a recording to preview it; double-click it, use Add to timeline, or drag it onto the timeline to add a section. Add all includes the entire library in library order, including search-hidden recordings, as one undoable edit. A hidden selection cannot be added by the single-recording button. Escape clears search.
@@ -18,7 +20,7 @@ Out points exclude the next frame. A split needs at least one retained frame on 
 
 ## Navigation and shortcuts
 
-Drag the recording scrubber or timeline ruler to seek. The pointer owns the playhead during the drag. Release submits the final seek and restores the previous play/pause intent after it settles. The last valid preview stays visible while a seek completes, and the picture keeps updating during a continuous drag. Releasing submits the exact final position. Native preview can accelerate AV1 decoding on supported hardware; Software preview retains CPU decoding. The timeline endpoint shows the final retained frame. Playback continues across sections and black/silent gaps.
+Drag the recording scrubber or timeline ruler to seek. The pointer owns the playhead during the drag. Release submits the final seek and restores the previous play/pause intent after it settles. The last valid preview stays visible while a seek completes, and the picture keeps updating during a continuous drag. Releasing submits the exact final position. Native preview can use hardware decoding for supported recordings; Software preview retains CPU decoding. The timeline endpoint shows the final retained frame. Playback continues across sections and black/silent gaps.
 
 | Shortcut | Action |
 | --- | --- |
@@ -48,13 +50,13 @@ Fit adds letterboxing. Fill covers the output frame. Crop uses normalized source
 
 Sources report transfer, primaries, matrix, range and pixel format. PQ and HLG are detected from transfer metadata; a 10-bit pixel format alone does not imply HDR. Unspecified YUV metadata defaults to SDR Rec.709 and unspecified RGB to sRGB. The selector under Recording color overrides incorrect source signaling and persists in the project.
 
-Choose SDR Rec.709 or HDR10/PQ output. PQ and HLG sources are deliberately tone-mapped for SDR preview/export and library thumbnails. HDR10 output uses 10-bit Rec.2020/PQ through AV1 or HEVC. H.264 remains SDR. Native HDR preview is requested only when Windows reports active HDR on the preview display; software rendering always uses SDR. The preview shows an HDR or SDR indicator; hover it for the rendering mode. Select Software preview to explicitly use CPU-rendered tone-mapped video if native playback or capture compatibility causes problems. Changing Windows/display state is detected on the playback worker without changing system settings.
+Choose SDR Rec.709 or HDR10/PQ output. PQ and HLG sources are deliberately tone-mapped for SDR preview/export and library thumbnails. HDR10 output uses 10-bit Rec.2020/PQ through AV1 or HEVC. H.264 remains SDR. Native HDR preview is requested only when Windows reports active HDR on the preview display; software rendering always uses SDR. HDR footage keeps an HDR or SDR indicator; hover it for the rendering mode. Select … → Software preview to explicitly use CPU-rendered tone-mapped video if native playback or capture compatibility causes problems. Changing Windows/display state is detected on the playback worker without changing system settings.
 
 Current-display HDR appearance is user-confirmed and local game/Shadowplay controls pass. The user-confirmed Windows/NVIDIA HDR-to-SDR game-switch recording issue is external to the editor. Broader display switching and DPI/assistive-technology combinations remain tracked in the rewrite ledger. A negotiated PQ target or ordinary screenshot alone does not prove physical HDR output.
 
 ## Export
 
-Choose dimensions, rational frame rate, color, codec, quality and GPU preference before exporting. Lower quality numbers preserve more detail. NVIDIA support is probed using the actual encoder; unsupported hardware falls back to CPU. Export freezes its project/settings snapshot, encodes sections and black/silent gaps consistently, then joins video with AAC audio.
+Choose dimensions, rational frame rate, color, codec, quality and GPU preference under … → Export settings before exporting. Lower quality numbers preserve more detail. NVIDIA support is probed using the actual encoder; unsupported hardware falls back to CPU. Export freezes its project/settings snapshot, encodes sections and black/silent gaps consistently, then joins video with AAC audio.
 
 Existing output is replaced only after duration/color/full-decode verification. Cancel preserves the prior destination. Project saves and exports reject source paths and source file identities, including hard links. Temporary .sve-export-* work folders are removed after completion or cancellation. An interrupted export may leave its own work folder beside the destination; remove it only once that editor is closed.
 
@@ -64,4 +66,4 @@ Opening schema-1 projects preserves library order, repeated recordings, gaps and
 
 Projects save stable identities, audio/framing/color choices and output settings. Atomic replacement protects the previous saved file if writing fails. Unsaved recovery sessions live under %LOCALAPPDATA%/SimpleVideoEditor/recovery, each with an independent exclusive lease. Recovery skips live windows and other active prompts. Closing/discarding affects only the current session; the legacy recovery file is recognized.
 
-Cache clears recognized generated thumbnails and waveform files. It preserves unrelated files, recovery and current source identities, and refuses linked cache folders. Native dependencies and decoded caches stay local; no recording is uploaded by the editor.
+Clear generated cache under … is optional disk-space maintenance; normal editing does not require it. It clears recognized generated thumbnails and waveform files. It preserves unrelated files, recovery and current source identities, and refuses linked cache folders. Native dependencies and decoded caches stay local; no recording is uploaded by the editor.

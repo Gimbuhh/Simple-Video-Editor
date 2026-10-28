@@ -60,6 +60,8 @@ The old implementation is removed from production source. Optional differential 
 
 This optional path restores the pinned .NET SDK solely to compile the independent C# test oracle. Fetch full Git history if the baseline commit is unavailable in a shallow checkout. Ordinary Rust builds and packaged startup require no .NET SDK/runtime.
 
+The workspace uses progressive disclosure: empty recordings hide search/add controls, and an empty preview hides its transport. The timeline shows tracks/ruler when it has sections or an active recording drag; Undo stays available when history exists. File contains project actions; More options contains export settings, the software renderer toggle and cache maintenance. Preview mode changes retain their actor restart behavior, source protection and keyboard shortcuts. The desktop verifier captures the empty workspace and settled More menu, opens/closes File with actual input, and toggles the relocated software option twice without editing the project. Frame-arrow buttons retain accessible names and tooltips. Scale checks cover timecode and frame-control separation.
+
 ## Portable build
 
 ```powershell

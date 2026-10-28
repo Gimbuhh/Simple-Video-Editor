@@ -107,6 +107,55 @@ impl EditorApp {
             } else {
                 match test.phase {
                     0 if self.tools.is_some() => {
+                        if [
+                            "recording-search",
+                            "add-selected",
+                            "software-preview",
+                            "clear-cache",
+                            "scrubber",
+                            "frame-forward",
+                        ]
+                        .iter()
+                        .any(|key| self.controls.contains_key(key))
+                        {
+                            return Err(
+                                "Empty workspace exposes controls before there is media".into()
+                            );
+                        }
+                        ctx.send_viewport_cmd(
+                            egui::ViewportCommand::Screenshot(Default::default()),
+                        );
+                        test.phase = 200;
+                    }
+                    200 => {
+                        for event in ctx.input(|i| i.events.clone()) {
+                            if let egui::Event::Screenshot { image, .. } = event {
+                                test.screenshot(&image)?;
+                                std::fs::copy(
+                                    test.directory.join("desktop.bmp"),
+                                    test.directory.join("empty-workspace.bmp"),
+                                )?;
+                                test.pointer(self.controls["file-menu"].center(), Some(true));
+                                test.phase = 201;
+                            }
+                        }
+                    }
+                    201 => {
+                        test.pointer(self.controls["file-menu"].center(), Some(false));
+                        test.phase = 202;
+                    }
+                    202 => {
+                        if ["file-new", "file-open", "file-save-as"]
+                            .iter()
+                            .any(|key| !self.controls.contains_key(key))
+                        {
+                            return Err("File menu lost its project actions".into());
+                        }
+                        test.key(egui::Key::Escape, false);
+                        test.checks.push("Empty workspace reveals only relevant controls; File menu preserves project actions".into());
+                        test.phase = 203;
+                    }
+                    203 => {
                         let mut paths = vec![test.source.clone()];
                         paths.extend(test.secondary.clone());
                         self.import(paths);
@@ -738,8 +787,42 @@ impl EditorApp {
                         }
                         test.checks.push("Legacy Ctrl+B/Ctrl+F shortcuts and frame-inclusive quick trim remain undoable".into());
                         test.was_software = self.software_preview;
-                        test.pointer(self.controls["software-preview"].center(), Some(true));
-                        test.phase = 80;
+                        test.pointer(self.controls["more-options"].center(), Some(true));
+                        test.phase = 210;
+                    }
+                    210 => {
+                        test.pointer(self.controls["more-options"].center(), Some(false));
+                        test.inspector_ready_at = Instant::now();
+                        test.phase = 211;
+                    }
+                    211 if test.inspector_ready_at.elapsed() >= Duration::from_millis(250) => {
+                        if ["export-settings", "software-preview", "clear-cache"]
+                            .iter()
+                            .any(|key| !self.controls.contains_key(key))
+                        {
+                            return Err("More options lost export or maintenance controls".into());
+                        }
+                        ctx.send_viewport_cmd(
+                            egui::ViewportCommand::Screenshot(Default::default()),
+                        );
+                        test.phase = 212;
+                    }
+                    212 => {
+                        for event in ctx.input(|i| i.events.clone()) {
+                            if let egui::Event::Screenshot { image, .. } = event {
+                                test.screenshot(&image)?;
+                                std::fs::copy(
+                                    test.directory.join("desktop.bmp"),
+                                    test.directory.join("more-options.bmp"),
+                                )?;
+                                test.pointer(
+                                    self.controls["software-preview"].center(),
+                                    Some(true),
+                                );
+                                test.checks.push("More options reveals export settings and maintenance without cluttering the workspace".into());
+                                test.phase = 80;
+                            }
+                        }
                     }
                     80 => {
                         test.pointer(self.controls["software-preview"].center(), Some(false));
@@ -759,6 +842,22 @@ impl EditorApp {
                                     .into(),
                             );
                         }
+                        if self.controls.contains_key("software-preview")
+                            || self.controls.contains_key("clear-cache")
+                        {
+                            return Err(
+                                "Maintenance options remain visible after closing More options"
+                                    .into(),
+                            );
+                        }
+                        test.pointer(self.controls["more-options"].center(), Some(true));
+                        test.phase = 213;
+                    }
+                    213 => {
+                        test.pointer(self.controls["more-options"].center(), Some(false));
+                        test.phase = 214;
+                    }
+                    214 => {
                         test.pointer(self.controls["software-preview"].center(), Some(true));
                         test.phase = 82;
                     }
@@ -1423,9 +1522,11 @@ impl EditorApp {
                 test.key(egui::Key::Q, false);
                 test.phase = 10;
             }
-            10 if ready => {
+            // The actor can publish ready between playback() and this check;
+            // the UI must consume that result and commit the trim first.
+            10 if ready && self.stepping.is_none() => {
                 if (self.editor.timeline().clips()[0].source_in - 0.38).abs() > 0.002 {
-                    return Err("VFR trim before ignored the actual preview timestamp".into());
+                    return Err(format!("VFR trim before ignored the actual preview timestamp: in={}, playhead={}, pending_step={:?}, generation={}, ready_generation={}", self.editor.timeline().clips()[0].source_in,self.playhead,self.stepping.as_ref().map(|s|s.generation),self.generation,self.playback.as_ref().unwrap().status().generation).into());
                 }
                 test.checks
                     .push("VFR trim before and undo preserve decoded frame boundaries".into());

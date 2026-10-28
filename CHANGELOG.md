@@ -20,7 +20,7 @@ Unreleased Rust candidate.
 
 - Scrubbing keeps the preview visible and updating while you drag, then settles on the exact frame when you release.
 - Preview seeks faster on ordinary SDR recordings and uses hardware decoding when supported.
-- Trimming takes priority in a simpler inspector, with expandable audio, framing and color controls. Tooltips keep extra detail out of the way, and enabled buttons show a pointing hand.
+- A simpler workspace keeps recordings and trims in focus, with fewer permanent controls and no repeated drop instructions. File and More options hold secondary actions; audio, framing and color settings expand when needed. Enabled buttons show a pointing hand.
 - The app has a new scissors icon with a blue play symbol.
 - The portable Rust app has a smaller download—about 25% in the compared candidate—and no bundled .NET runtime.
 - Frame stepping and quick trims follow actual frame boundaries in variable-frame-rate recordings.
