@@ -1,5 +1,6 @@
 mod interaction_verification;
 mod preview_benchmark;
+mod theme;
 mod thumbnails;
 use crate::playback::{Playback, Request};
 use editor_core::{Clip, ClipId, Command, Editor, SourceId, Timeline};
@@ -13,7 +14,7 @@ use std::{
     sync::{Arc, atomic::Ordering, mpsc},
     time::{Duration, Instant},
 };
-const MINT: Color32 = Color32::from_rgb(106, 218, 187);
+
 enum Event {
     Tools(Result<Tools, String>),
     Imported(Vec<MediaSource>, Vec<String>, Option<f64>),
@@ -130,16 +131,7 @@ impl EditorApp {
             _ => return Err("Windows is required".into()),
         };
         let video = platform_windows::VideoWindow::new(owner)?;
-        let mut visuals = egui::Visuals::dark();
-        visuals.panel_fill = Color32::from_rgb(24, 27, 31);
-        visuals.window_fill = Color32::from_rgb(30, 34, 39);
-        visuals.selection.bg_fill = Color32::from_rgb(36, 91, 79);
-        visuals.selection.stroke = Stroke::new(1.0, MINT);
-        cc.egui_ctx.set_visuals(visuals);
-        let mut style = (*cc.egui_ctx.style()).clone();
-        style.spacing.item_spacing = Vec2::new(8.0, 8.0);
-        style.spacing.button_padding = Vec2::new(12.0, 7.0);
-        cc.egui_ctx.set_style(style);
+        theme::configure(&cc.egui_ctx);
         let verification = crate::verification::Verification::arguments();
         let data = if let Some(test) = &verification {
             test.directory.join("data")
@@ -1215,89 +1207,108 @@ impl EditorApp {
         ] {
             self.controls.remove(key);
         }
-        egui::TopBottomPanel::top("header").show(ctx, |ui| {
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                let file = ui
-                    .menu_button("File", |ui| {
-                        let new = ui.add_enabled(!self.busy, egui::Button::new("New project"));
-                        self.controls.insert("file-new", new.rect);
-                        if new
-                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .clicked()
-                        {
-                            self.new_project();
-                            ui.close();
-                        }
-                        let open = ui.add_enabled(
-                            !self.busy && self.tools.is_some(),
-                            egui::Button::new("Open project…"),
-                        );
-                        self.controls.insert("file-open", open.rect);
-                        if open
-                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .clicked()
-                        {
-                            ui.close();
-                            if let Ok(paths) =
-                                platform_windows::choose_files(self.owner, false, true)
-                                && let Some(path) = paths.into_iter().next()
+        egui::TopBottomPanel::top("header")
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::PANEL)
+                    .inner_margin(egui::Margin::symmetric(14, 6)),
+            )
+            .show(ctx, |ui| {
+                ui.add_space(2.0);
+                ui.horizontal(|ui| {
+                    let file = ui
+                        .menu_button("File", |ui| {
+                            let new = ui.add_enabled(!self.busy, egui::Button::new("New project"));
+                            self.controls.insert("file-new", new.rect);
+                            if new
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .clicked()
                             {
-                                self.open(path);
+                                self.new_project();
+                                ui.close();
                             }
+                            let open = ui.add_enabled(
+                                !self.busy && self.tools.is_some(),
+                                egui::Button::new("Open project…"),
+                            );
+                            self.controls.insert("file-open", open.rect);
+                            if open
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .clicked()
+                            {
+                                ui.close();
+                                if let Ok(paths) =
+                                    platform_windows::choose_files(self.owner, false, true)
+                                    && let Some(path) = paths.into_iter().next()
+                                {
+                                    self.open(path);
+                                }
+                            }
+                            ui.separator();
+                            let save = ui.add_enabled(
+                                !self.busy && !self.editor.timeline().clips().is_empty(),
+                                egui::Button::new("Save as…"),
+                            );
+                            self.controls.insert("file-save-as", save.rect);
+                            if save
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .clicked()
+                            {
+                                self.save(true);
+                                ui.close();
+                            }
+                        })
+                        .response
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                    self.controls.insert("file-menu", file.rect);
+                    let title_width = (ui.available_width() - 270.0).clamp(0.0, 480.0);
+                    ui.add_sized(
+                        Vec2::new(title_width, 34.0),
+                        egui::Label::new(
+                            egui::RichText::new(format!(
+                                "{}{}",
+                                self.path
+                                    .as_ref()
+                                    .and_then(|p| p.file_stem())
+                                    .map(|p| p.to_string_lossy())
+                                    .unwrap_or("Untitled".into()),
+                                if self.dirty() { " •" } else { "" }
+                            ))
+                            .color(theme::SECONDARY),
+                        )
+                        .truncate(),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let export = ui
+                            .add_enabled(
+                                !self.busy && !self.editor.timeline().clips().is_empty(),
+                                egui::Button::new(
+                                    egui::RichText::new("Export").color(Color32::WHITE),
+                                )
+                                .fill(theme::PRIMARY)
+                                .frame(true)
+                                .min_size(Vec2::new(100.0, 34.0)),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        self.controls.insert("export", export.rect);
+                        if export.clicked() {
+                            self.export();
                         }
-                        ui.separator();
-                        let save = ui.add_enabled(
-                            !self.busy && !self.editor.timeline().clips().is_empty(),
-                            egui::Button::new("Save as…"),
-                        );
-                        self.controls.insert("file-save-as", save.rect);
-                        if save
+                        self.more_options(ui, ctx);
+                        if ui
+                            .add_enabled(
+                                !self.busy && !self.editor.timeline().clips().is_empty(),
+                                egui::Button::new("Save"),
+                            )
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .clicked()
                         {
-                            self.save(true);
-                            ui.close();
+                            self.save(false);
                         }
-                    })
-                    .response
-                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-                self.controls.insert("file-menu", file.rect);
-                ui.weak(format!(
-                    "{}{}",
-                    self.path
-                        .as_ref()
-                        .and_then(|p| p.file_stem())
-                        .map(|p| p.to_string_lossy())
-                        .unwrap_or("Untitled".into()),
-                    if self.dirty() { " •" } else { "" }
-                ));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    self.more_options(ui, ctx);
-                    if ui
-                        .add_enabled(
-                            !self.busy && !self.editor.timeline().clips().is_empty(),
-                            egui::Button::new("Export").fill(Color32::from_rgb(38, 99, 83)),
-                        )
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .clicked()
-                    {
-                        self.export();
-                    }
-                    if ui
-                        .add_enabled(
-                            !self.busy && !self.editor.timeline().clips().is_empty(),
-                            egui::Button::new("Save"),
-                        )
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .clicked()
-                    {
-                        self.save(false);
-                    }
+                    });
                 });
+                ui.add_space(4.0);
             });
-            ui.add_space(4.0);
-        });
         if self.busy || self.exporting || !self.message.is_empty() {
             egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
                 ui.horizontal(|ui| {
@@ -1356,17 +1367,25 @@ impl EditorApp {
         self.controls.insert("more-options", menu.rect);
     }
     fn library(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::left("recordings").resizable(true).default_width(280.0).width_range(240.0..=460.0).show(ctx,|ui| {
+        egui::SidePanel::left("recordings-graphite").frame(theme::panel(theme::PANEL)).resizable(true).default_width(280.0).width_range(250.0..=360.0).show(ctx,|ui| {
             if self.busy && !self.exporting{ui.disable();}
             for key in ["recording-search", "add-selected", "add-all", "first-recording"] { self.controls.remove(key); }
-            ui.heading("Recordings");
-            if ui.add_enabled(!self.busy && self.tools.is_some(),egui::Button::new("+ Import").min_size(Vec2::new(ui.available_width(),32.0))).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() && let Ok(paths)=platform_windows::choose_files(self.owner,false,false) { self.import(paths); }
+            ui.horizontal(|ui| {
+                ui.heading("Recordings");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.add_enabled(!self.busy && self.tools.is_some(), egui::Button::new("+ Import").frame(true).stroke(Stroke::new(1.0,theme::BORDER))).on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
+                        && let Ok(paths) = platform_windows::choose_files(self.owner,false,false) { self.import(paths); }
+                });
+            });
             if self.editor.metadata().sources.is_empty() { return; }
-            ui.horizontal(|ui|{
-                let response=ui.add(egui::TextEdit::singleline(&mut self.search).id(egui::Id::new("recording-search-input")).hint_text("Search recordings").desired_width((ui.available_width()-45.0).max(1.0)));
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                let clear = !self.search.is_empty();
+                let width = (ui.available_width()-if clear {42.0}else{0.0}).max(1.0);
+                let response=ui.add_sized(Vec2::new(width,30.0),egui::TextEdit::singleline(&mut self.search).id(egui::Id::new("recording-search-input")).hint_text("Search recordings").desired_width(width));
                 self.controls.insert("recording-search",response.rect);
                 if response.has_focus() && ui.input_mut(|i|i.consume_key(egui::Modifiers::NONE,egui::Key::Escape)){self.search.clear();response.surrender_focus();}
-                if ui.add_enabled(!self.search.is_empty(),egui::Button::new("×")).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Clear search").clicked(){self.search.clear();}
+                if clear && ui.button("×").on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Clear search").clicked(){self.search.clear();}
             });
             let sources=self.editor.metadata().sources.clone();
             let search=self.search.to_lowercase();
@@ -1377,22 +1396,26 @@ impl EditorApp {
             });
             if !search.is_empty(){ui.label(format!("{} of {} recordings",visible.len(),sources.len()));}
             ui.separator();
-            egui::ScrollArea::vertical().show_rows(ui,64.0,visible.len().max(1),|ui,rows| {
+            egui::ScrollArea::vertical().show_rows(ui,82.0,visible.len().max(1),|ui,rows| {
                 if visible.is_empty(){ui.label("No recordings match your search.");}
                 for source in visible.iter().skip(rows.start).take(rows.end-rows.start) {
                     let details=format!("{} · {} × {} · {}",time(source.duration),source.width,source.height,if source.hdr(){"HDR"}else{"SDR"});
-                    let (rect,response)=ui.push_id(("recording",source.id.0),|ui|ui.allocate_exact_size(Vec2::new(ui.available_width(),64.0),Sense::click_and_drag())).inner;
+                    let (rect,response)=ui.push_id(("recording",source.id.0),|ui|ui.allocate_exact_size(Vec2::new(ui.available_width(),82.0),Sense::click_and_drag())).inner;
                     if sources.first().is_some_and(|first|first.id==source.id){self.controls.insert("first-recording",rect);}
                     let selected=self.library_selected==Some(source.id);
                     response.widget_info(||egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel,ui.is_enabled(),selected,format!("{}, {details}",source.name())));
-                    ui.painter().rect_filled(rect,4.0,if selected{Color32::from_rgb(35,82,72)}else if response.hovered(){Color32::from_rgb(55,60,65)}else{Color32::from_rgb(39,43,48)});
-                    let thumbnail=Rect::from_min_size(rect.min+Vec2::new(8.0,9.0),Vec2::new(80.0,45.0));
+                    ui.painter().rect_filled(rect,5.0,if selected{theme::SELECTED}else if response.hovered(){theme::HOVER}else{Color32::TRANSPARENT});
+                    if selected {ui.painter().rect_stroke(rect.shrink(0.5),5.0,Stroke::new(1.0,theme::ACCENT),egui::StrokeKind::Inside);}
+                    let thumbnail=Rect::from_min_size(rect.min+Vec2::new(8.0,14.0),Vec2::new(96.0,54.0));
                     if let Some(texture)=self.thumbnails.get(&source.id){ui.painter().image(texture.id(),thumbnail,Rect::from_min_max(Pos2::ZERO,Pos2::new(1.0,1.0)),Color32::WHITE);}
                     let text=Rect::from_min_max(Pos2::new(thumbnail.right()+10.0,rect.top()+9.0),rect.max-Vec2::splat(8.0));
                     let painter=ui.painter().with_clip_rect(text);
-                    painter.text(text.min,Align2::LEFT_TOP,source.name(),FontId::proportional(13.0),Color32::WHITE);
+                    let mut title=egui::text::LayoutJob::simple(source.name(),FontId::proportional(14.0),theme::TEXT,text.width());
+                    title.wrap.max_rows=2;
+                    let title=ui.fonts(|fonts|fonts.layout_job(title));
+                    painter.galley(text.min,title,theme::TEXT);
                     let summary=if source.hdr(){format!("{} · HDR",time(source.duration))}else{time(source.duration)};
-                    painter.text(text.min+Vec2::new(0.0,24.0),Align2::LEFT_TOP,summary,FontId::proportional(11.0),Color32::LIGHT_GRAY);
+                    painter.text(Pos2::new(text.left(),rect.bottom()-23.0),Align2::LEFT_TOP,summary,FontId::proportional(12.5),theme::SECONDARY);
                     let response=response.on_hover_text(format!("{}\n{details}",source.path));
                     response.dnd_set_drag_payload(source.id);
                     if response.clicked() { self.library_selected=Some(source.id);self.library_preview=true;self.playing=false;self.seek(0.0); }
@@ -1412,8 +1435,9 @@ impl EditorApp {
     fn timeline_ui(&mut self, ctx: &egui::Context) {
         self.timeline_focus = None;
         egui::TopBottomPanel::bottom("timeline")
+            .frame(theme::panel(theme::PANEL))
             .resizable(true)
-            .default_height(260.0)
+            .default_height(220.0)
             .height_range(220.0..=450.0)
             .show(ctx, |ui| {
                 if self.busy && !self.exporting {
@@ -1496,7 +1520,7 @@ impl EditorApp {
                         let (rect, response) = ui
                             .allocate_exact_size(Vec2::new(width, height), Sense::click_and_drag());
                         let painter = ui.painter_at(rect);
-                        painter.rect_filled(rect, 4.0, Color32::from_rgb(17, 20, 24));
+                        painter.rect_filled(rect, 4.0, theme::CANVAS);
                         let origin = rect.left() + 65.0;
                         let second_step = if zoom > 180.0 {
                             0.5
@@ -1530,23 +1554,23 @@ impl EditorApp {
                                     Pos2::new(x + 4.0, rect.top() + 10.0),
                                     Align2::LEFT_CENTER,
                                     time(f64::from(seconds)),
-                                    FontId::monospace(11.0),
-                                    Color32::GRAY,
+                                    FontId::monospace(12.0),
+                                    theme::SECONDARY,
                                 );
                             }
                             painter.text(
                                 Pos2::new(rect.left() + 8.0, rect.top() + 52.0),
                                 Align2::LEFT_CENTER,
                                 "VIDEO",
-                                FontId::proportional(10.0),
-                                Color32::GRAY,
+                                FontId::proportional(12.0),
+                                theme::SECONDARY,
                             );
                             painter.text(
                                 Pos2::new(rect.left() + 8.0, rect.top() + 110.0),
                                 Align2::LEFT_CENTER,
                                 "AUDIO",
-                                FontId::proportional(10.0),
-                                Color32::GRAY,
+                                FontId::proportional(12.0),
+                                theme::SECONDARY,
                             );
                         }
                         if let Some(id) = response.dnd_release_payload::<SourceId>()
@@ -1568,7 +1592,7 @@ impl EditorApp {
                             );
                             let audio = Rect::from_min_size(
                                 Pos2::new(x, rect.top() + 82.0),
-                                Vec2::new(w, 52.0),
+                                Vec2::new(w, 38.0),
                             );
                             let linked = video.union(audio);
                             if !linked.intersects(visible)
@@ -1591,22 +1615,38 @@ impl EditorApp {
                                 video,
                                 4.0,
                                 if selected {
-                                    Color32::from_rgb(45, 112, 95)
+                                    theme::SELECTED
                                 } else {
-                                    Color32::from_rgb(39, 74, 68)
+                                    theme::SURFACE
                                 },
                             );
                             if let Some(source) = &source {
                                 self.paint_filmstrip(&painter, video, visible, &clip, source, zoom);
                             }
-                            painter.rect_filled(audio, 4.0, Color32::from_rgb(35, 57, 63));
+                            painter.rect_filled(audio, 4.0, theme::AUDIO);
                             if selected {
                                 painter.rect_stroke(
                                     linked.expand(1.0),
                                     4.0,
-                                    Stroke::new(1.5, MINT),
+                                    Stroke::new(1.5, theme::ACCENT),
                                     egui::StrokeKind::Inside,
                                 );
+                            }
+                            if selected && video.width() >= 16.0 {
+                                for x in [video.left(), video.right() - 6.0] {
+                                    let handle = Rect::from_min_size(
+                                        Pos2::new(x, video.top()),
+                                        Vec2::new(6.0, video.height()),
+                                    );
+                                    painter.rect_filled(handle, 2.0, theme::ACCENT);
+                                    painter.line_segment(
+                                        [
+                                            Pos2::new(x + 3.0, video.center().y - 6.0),
+                                            Pos2::new(x + 3.0, video.center().y + 6.0),
+                                        ],
+                                        Stroke::new(1.5, theme::TEXT),
+                                    );
+                                }
                             }
                             let cp = painter.with_clip_rect(video.intersect(visible));
                             cp.rect_filled(
@@ -1618,7 +1658,7 @@ impl EditorApp {
                                 video.min + Vec2::new(6.0, 3.0),
                                 Align2::LEFT_TOP,
                                 source.as_ref().map(|s| s.name()).unwrap_or_default(),
-                                FontId::proportional(11.0),
+                                FontId::proportional(12.0),
                                 Color32::WHITE,
                             );
                             if let Some(peaks) = self.waveforms.get(&clip.source)
@@ -1634,13 +1674,13 @@ impl EditorApp {
                                         .copied()
                                         .unwrap_or(0.0)
                                         .min(1.0);
-                                    let h = peak * 21.0;
+                                    let h = peak * 16.0;
                                     painter.line_segment(
                                         [
                                             Pos2::new(pixel as f32, audio.center().y - h),
                                             Pos2::new(pixel as f32, audio.center().y + h),
                                         ],
-                                        Stroke::new(1.0, MINT),
+                                        Stroke::new(1.0, theme::WAVE),
                                     );
                                 }
                             }
@@ -1945,7 +1985,7 @@ impl EditorApp {
                             let x = origin + self.playhead as f32 * zoom;
                             painter.line_segment(
                                 [Pos2::new(x, rect.top()), Pos2::new(x, rect.bottom())],
-                                Stroke::new(2.0, MINT),
+                                Stroke::new(2.0, theme::ACCENT),
                             );
                         }
                     });
@@ -1966,10 +2006,11 @@ impl EditorApp {
         {
             return;
         }
-        egui::SidePanel::right("inspector")
+        egui::SidePanel::right("inspector-graphite")
+            .frame(theme::panel(theme::PANEL))
             .resizable(true)
-            .default_width(245.0)
-            .width_range(220.0..=350.0)
+            .default_width(250.0)
+            .width_range(240.0..=350.0)
             .show(ctx, |ui| {
                 if self.busy && !self.exporting{ui.disable();}
                 egui::ScrollArea::vertical().show(ui, |ui| {
@@ -2246,249 +2287,280 @@ impl EditorApp {
         )
     }
     fn preview(&mut self, ctx: &egui::Context) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            if self.editor.metadata().sources.is_empty() {
-                for key in [
-                    "preview",
-                    "preview-viewport",
-                    "scrubber",
-                    "frame-back",
-                    "frame-forward",
-                    "position-label",
-                ] {
-                    self.controls.remove(key);
+        egui::CentralPanel::default()
+            .frame(theme::panel(theme::CANVAS))
+            .show(ctx, |ui| {
+                if self.editor.metadata().sources.is_empty() {
+                    for key in [
+                        "preview",
+                        "preview-viewport",
+                        "scrubber",
+                        "frame-back",
+                        "frame-forward",
+                        "position-label",
+                    ] {
+                        self.controls.remove(key);
+                    }
+                    self.video.layout(0, 0, 1, 1, false);
+                    return;
                 }
-                self.video.layout(0, 0, 1, 1, false);
-                return;
-            }
 
-            ui.horizontal(|ui| {
-                ui.strong(if self.library_preview {
-                    "Recording"
-                } else {
-                    "Timeline"
-                });
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let status = self
-                        .playback
-                        .as_ref()
-                        .map(|p| p.status())
-                        .unwrap_or_default();
-                    let (mode, detail) = if status.software {
-                        ("SDR", "SDR software preview")
-                    } else if self.hdr_preview
-                        && status.display.as_ref().is_some_and(|d| d.hdr_active)
-                        && status.gamma.as_deref() == Some("pq")
-                    {
-                        ("HDR", "Windows HDR preview")
-                    } else if self.hdr_preview {
-                        ("SDR", "SDR tone-mapped preview")
+                ui.horizontal(|ui| {
+                    ui.weak(if self.library_preview {
+                        "Recording"
                     } else {
-                        ("SDR", "SDR reference preview")
-                    };
-                    let source_id = if self.library_preview {
-                        self.library_selected
-                    } else {
-                        preview_at(self.timeline(), self.editor.metadata(), self.playhead)
-                            .map(|(_, id, _)| id)
-                    };
-                    let hdr_source = self
-                        .editor
-                        .metadata()
-                        .sources
-                        .iter()
-                        .find(|source| Some(source.id) == source_id)
-                        .is_some_and(|source| {
-                            source
-                                .interpreted(
-                                    self.editor
-                                        .metadata()
-                                        .interpretations
-                                        .get(&source.id)
-                                        .copied()
-                                        .unwrap_or_default(),
-                                )
-                                .hdr()
-                        });
-                    if hdr_source || mode == "HDR" {
-                        ui.small(mode).on_hover_text(detail);
-                    }
-                });
-            });
-            let available = Vec2::new(
-                ui.available_width(),
-                (ui.available_height() - 110.0).max(1.0),
-            );
-            let (viewport, _) = ui.allocate_exact_size(available, Sense::hover());
-            let output = self.preview_output();
-            let aspect = output.width as f32 / output.height as f32;
-            let width = available.x.min(available.y * aspect);
-            let rect = Rect::from_center_size(viewport.center(), Vec2::new(width, width / aspect));
-            self.controls.insert("preview", rect);
-            self.controls.insert("preview-viewport", viewport);
-            ui.painter().rect_filled(rect, 4.0, Color32::BLACK);
-            let status = self
-                .playback
-                .as_ref()
-                .map(|p| p.status())
-                .unwrap_or_default();
-            let mapped = if self.library_preview {
-                self.library_selected.map(|source| (ClipId(0), source, 0.0))
-            } else {
-                preview_at(self.timeline(), self.editor.metadata(), self.playhead)
-            };
-            let has_source = mapped.is_some();
-            let preview_output = crate::playback::preview_output(
-                self.preview_output(),
-                rect.width() * ctx.pixels_per_point(),
-                rect.height() * ctx.pixels_per_point(),
-                self.software_preview || status.software,
-            );
-            let hdr_preview = self.hdr_preview
-                && self.editor.metadata().output.profile == ColorProfile::Hdr10
-                && !status.software
-                && status.display.as_ref().is_some_and(|d| d.hdr_active);
-            let expected_key = self.preview_key(mapped, &preview_output, hdr_preview);
-            let visible = has_source
-                && status.presentation_key.as_ref() == Some(&expected_key)
-                && status.error.is_none()
-                && self.startup_recovery.is_none()
-                && !ctx.is_popup_open();
-            let visible = visible && self.relink.is_none();
-            let scale = ctx.pixels_per_point();
-            self.video.layout(
-                (rect.left() * scale).round() as i32,
-                (rect.top() * scale).round() as i32,
-                (rect.width() * scale).round() as i32,
-                (rect.height() * scale).round() as i32,
-                visible
-                    && !status.software
-                    && thumbnails::drag_bounds(ctx).is_none_or(|drag| !drag.intersects(rect)),
-            );
-            if visible && status.software {
-                if let Some(frame) = status.frame {
-                    if self
-                        .preview_frame
-                        .as_ref()
-                        .is_none_or(|previous| !Arc::ptr_eq(previous, &frame))
-                    {
-                        let mut rgb = Vec::with_capacity(frame.width * frame.height * 3);
-                        for row in frame.pixels.chunks(frame.stride).take(frame.height) {
-                            for pixel in row[..frame.width * 4].chunks_exact(4) {
-                                rgb.extend_from_slice(&[pixel[2], pixel[1], pixel[0]]);
-                            }
-                        }
-                        let image = egui::ColorImage::from_rgb([frame.width, frame.height], &rgb);
-                        if let Some(texture) = &mut self.preview_texture {
-                            texture.set(image, egui::TextureOptions::LINEAR);
+                        "Timeline"
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let status = self
+                            .playback
+                            .as_ref()
+                            .map(|p| p.status())
+                            .unwrap_or_default();
+                        let (mode, detail) = if status.software {
+                            ("SDR", "SDR software preview")
+                        } else if self.hdr_preview
+                            && status.display.as_ref().is_some_and(|d| d.hdr_active)
+                            && status.gamma.as_deref() == Some("pq")
+                        {
+                            ("HDR", "Windows HDR preview")
+                        } else if self.hdr_preview {
+                            ("SDR", "SDR tone-mapped preview")
                         } else {
-                            self.preview_texture = Some(ctx.load_texture(
-                                "software-preview",
-                                image,
-                                egui::TextureOptions::LINEAR,
-                            ));
+                            ("SDR", "SDR reference preview")
+                        };
+                        let source_id = if self.library_preview {
+                            self.library_selected
+                        } else {
+                            preview_at(self.timeline(), self.editor.metadata(), self.playhead)
+                                .map(|(_, id, _)| id)
+                        };
+                        let hdr_source = self
+                            .editor
+                            .metadata()
+                            .sources
+                            .iter()
+                            .find(|source| Some(source.id) == source_id)
+                            .is_some_and(|source| {
+                                source
+                                    .interpreted(
+                                        self.editor
+                                            .metadata()
+                                            .interpretations
+                                            .get(&source.id)
+                                            .copied()
+                                            .unwrap_or_default(),
+                                    )
+                                    .hdr()
+                            });
+                        if hdr_source || mode == "HDR" {
+                            ui.small(mode).on_hover_text(detail);
                         }
-                        self.preview_frame = Some(frame);
-                    }
-                    if let Some(texture) = &self.preview_texture {
-                        ui.painter().image(
-                            texture.id(),
-                            rect,
-                            Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
-                            Color32::WHITE,
-                        );
-                    }
-                }
-            } else if !visible && has_source && !ctx.is_popup_open() {
-                ui.painter().text(
-                    rect.center(),
-                    Align2::CENTER_CENTER,
-                    "Preparing preview…",
-                    FontId::proportional(19.0),
-                    Color32::GRAY,
-                );
-            }
-            let duration = self.preview_duration();
-            let mut position = self.playhead;
-            let slider_width = ui.spacing().slider_width;
-            ui.spacing_mut().slider_width = ui.available_width() - 16.0;
-            let scrubber = ui.add(
-                egui::Slider::new(&mut position, 0.0..=duration.max(0.001))
-                    .show_value(false)
-                    .trailing_fill(true),
-            );
-            ui.spacing_mut().slider_width = slider_width;
-            self.controls.insert("scrubber", scrubber.rect);
-            if !self.ignore_scrub_until_release
-                && (scrubber.drag_started()
-                    || scrubber.is_pointer_button_down_on()
-                    || scrubber.changed())
-            {
-                self.begin_scrub(1);
-                if position != self.playhead {
-                    self.seek(position);
-                }
-            }
-            if self.scrub.as_ref().is_some_and(|s| s.owner == 1)
-                && !ui.input(|i| i.pointer.primary_down())
-            {
-                self.end_scrub(None);
-            }
-            ui.horizontal(|ui| {
-                if ui
-                    .button(if self.play_intent() { "Pause" } else { "Play" })
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .clicked()
-                {
-                    self.toggle_playback();
-                }
-                let back = ui
-                    .button("◀")
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .on_hover_text("Previous frame (←)");
-                back.widget_info(|| {
-                    egui::WidgetInfo::labeled(
-                        egui::WidgetType::Button,
-                        ui.is_enabled(),
-                        "Previous frame",
-                    )
+                    });
                 });
-                self.controls.insert("frame-back", back.rect);
-                if back.clicked() {
-                    self.step_frame(-1);
-                }
-                let next = ui
-                    .button("▶")
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .on_hover_text("Next frame (→)");
-                next.widget_info(|| {
-                    egui::WidgetInfo::labeled(
-                        egui::WidgetType::Button,
-                        ui.is_enabled(),
-                        "Next frame",
-                    )
-                });
-                self.controls.insert("frame-forward", next.rect);
-                if next.clicked() {
-                    self.step_frame(1);
-                }
-                let response = ui.label(
-                    egui::RichText::new(format!("{} / {}", time(self.playhead), time(duration)))
-                        .monospace()
-                        .size(11.0),
+                let available = Vec2::new(
+                    ui.available_width(),
+                    (ui.available_height() - 104.0).max(1.0),
                 );
-                self.controls.insert("position-label", response.rect);
-            });
-            ui.horizontal(|ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add(
-                        egui::Slider::new(&mut self.volume, 0.0..=100.0)
-                            .text("Volume")
-                            .show_value(false),
+                let (viewport, _) = ui.allocate_exact_size(available, Sense::hover());
+                let output = self.preview_output();
+                let aspect = output.width as f32 / output.height as f32;
+                let width = available.x.min(available.y * aspect);
+                let rect =
+                    Rect::from_center_size(viewport.center(), Vec2::new(width, width / aspect));
+                self.controls.insert("preview", rect);
+                self.controls.insert("preview-viewport", viewport);
+                ui.painter().rect_filled(rect, 4.0, Color32::BLACK);
+                let status = self
+                    .playback
+                    .as_ref()
+                    .map(|p| p.status())
+                    .unwrap_or_default();
+                let mapped = if self.library_preview {
+                    self.library_selected.map(|source| (ClipId(0), source, 0.0))
+                } else {
+                    preview_at(self.timeline(), self.editor.metadata(), self.playhead)
+                };
+                let has_source = mapped.is_some();
+                let preview_output = crate::playback::preview_output(
+                    self.preview_output(),
+                    rect.width() * ctx.pixels_per_point(),
+                    rect.height() * ctx.pixels_per_point(),
+                    self.software_preview || status.software,
+                );
+                let hdr_preview = self.hdr_preview
+                    && self.editor.metadata().output.profile == ColorProfile::Hdr10
+                    && !status.software
+                    && status.display.as_ref().is_some_and(|d| d.hdr_active);
+                let expected_key = self.preview_key(mapped, &preview_output, hdr_preview);
+                let visible = has_source
+                    && status.presentation_key.as_ref() == Some(&expected_key)
+                    && status.error.is_none()
+                    && self.startup_recovery.is_none()
+                    && !ctx.is_popup_open();
+                let visible = visible && self.relink.is_none();
+                let scale = ctx.pixels_per_point();
+                self.video.layout(
+                    (rect.left() * scale).round() as i32,
+                    (rect.top() * scale).round() as i32,
+                    (rect.width() * scale).round() as i32,
+                    (rect.height() * scale).round() as i32,
+                    visible
+                        && !status.software
+                        && thumbnails::drag_bounds(ctx).is_none_or(|drag| !drag.intersects(rect)),
+                );
+                if visible && status.software {
+                    if let Some(frame) = status.frame {
+                        if self
+                            .preview_frame
+                            .as_ref()
+                            .is_none_or(|previous| !Arc::ptr_eq(previous, &frame))
+                        {
+                            let mut rgb = Vec::with_capacity(frame.width * frame.height * 3);
+                            for row in frame.pixels.chunks(frame.stride).take(frame.height) {
+                                for pixel in row[..frame.width * 4].chunks_exact(4) {
+                                    rgb.extend_from_slice(&[pixel[2], pixel[1], pixel[0]]);
+                                }
+                            }
+                            let image =
+                                egui::ColorImage::from_rgb([frame.width, frame.height], &rgb);
+                            if let Some(texture) = &mut self.preview_texture {
+                                texture.set(image, egui::TextureOptions::LINEAR);
+                            } else {
+                                self.preview_texture = Some(ctx.load_texture(
+                                    "software-preview",
+                                    image,
+                                    egui::TextureOptions::LINEAR,
+                                ));
+                            }
+                            self.preview_frame = Some(frame);
+                        }
+                        if let Some(texture) = &self.preview_texture {
+                            ui.painter().image(
+                                texture.id(),
+                                rect,
+                                Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+                                Color32::WHITE,
+                            );
+                        }
+                    }
+                } else if !visible && has_source && !ctx.is_popup_open() {
+                    ui.painter().text(
+                        rect.center(),
+                        Align2::CENTER_CENTER,
+                        "Preparing preview…",
+                        FontId::proportional(19.0),
+                        theme::SECONDARY,
                     );
-                });
+                }
+                let duration = self.preview_duration();
+                let mut position = self.playhead;
+                let slider_width = ui.spacing().slider_width;
+                ui.spacing_mut().slider_width = ui.available_width() - 16.0;
+                let scrubber = ui.add(
+                    egui::Slider::new(&mut position, 0.0..=duration.max(0.001))
+                        .show_value(false)
+                        .trailing_fill(true),
+                );
+                ui.spacing_mut().slider_width = slider_width;
+                self.controls.insert("scrubber", scrubber.rect);
+                if !self.ignore_scrub_until_release
+                    && (scrubber.drag_started()
+                        || scrubber.is_pointer_button_down_on()
+                        || scrubber.changed())
+                {
+                    self.begin_scrub(1);
+                    if position != self.playhead {
+                        self.seek(position);
+                    }
+                }
+                if self.scrub.as_ref().is_some_and(|s| s.owner == 1)
+                    && !ui.input(|i| i.pointer.primary_down())
+                {
+                    self.end_scrub(None);
+                }
+                let wide = ui.available_width() >= 570.0;
+                if wide {
+                    ui.columns(3, |columns| {
+                        columns[0].with_layout(
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                self.transport_time(ui, duration);
+                            },
+                        );
+                        columns[1].with_layout(
+                            egui::Layout::left_to_right(egui::Align::Center)
+                                .with_main_align(egui::Align::Center),
+                            |ui| {
+                                self.transport_buttons(ui);
+                            },
+                        );
+                        columns[2].with_layout(
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                Self::preview_volume(ui, &mut self.volume);
+                            },
+                        );
+                    });
+                } else {
+                    ui.horizontal(|ui| {
+                        self.transport_buttons(ui);
+                        self.transport_time(ui, duration);
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        Self::preview_volume(ui, &mut self.volume);
+                    });
+                }
             });
-        });
+    }
+    fn transport_time(&mut self, ui: &mut egui::Ui, duration: f64) {
+        let response = ui.label(
+            egui::RichText::new(format!("{} / {}", time(self.playhead), time(duration)))
+                .monospace()
+                .size(13.0)
+                .color(theme::TEXT),
+        );
+        self.controls.insert("position-label", response.rect);
+    }
+    fn transport_buttons(&mut self, ui: &mut egui::Ui) {
+        let back =
+            theme::transport_button(ui, theme::TransportIcon::Previous, "Previous frame (←)");
+        self.controls.insert("frame-back", back.rect);
+        if back.clicked() {
+            self.step_frame(-1);
+        }
+        let play = theme::transport_button(
+            ui,
+            if self.play_intent() {
+                theme::TransportIcon::Pause
+            } else {
+                theme::TransportIcon::Play
+            },
+            if self.play_intent() {
+                "Pause (Space)"
+            } else {
+                "Play (Space)"
+            },
+        );
+        self.controls.insert("transport-play", play.rect);
+        if play.clicked() {
+            self.toggle_playback();
+        }
+        let next = theme::transport_button(ui, theme::TransportIcon::Next, "Next frame (→)");
+        self.controls.insert("frame-forward", next.rect);
+        if next.clicked() {
+            self.step_frame(1);
+        }
+    }
+    fn preview_volume(ui: &mut egui::Ui, volume: &mut f64) {
+        let width = ui.spacing().slider_width;
+        ui.spacing_mut().slider_width = 80.0;
+        ui.add(
+            egui::Slider::new(volume, 0.0..=100.0)
+                .text("Volume")
+                .show_value(false),
+        );
+        ui.spacing_mut().slider_width = width;
     }
     fn playback(&mut self, ctx: &egui::Context) {
         let elapsed = self.last_tick.elapsed().as_secs_f64().min(0.25);
@@ -3090,7 +3162,10 @@ impl Drop for EditorApp {
 fn trim_input(ui: &mut egui::Ui, value: &mut f64, id: (&'static str, u64)) -> egui::Response {
     let original = *value;
     ui.push_id(id, |ui| {
-        ui.add(
+        ui.visuals_mut().button_frame = true;
+        ui.visuals_mut().widgets.inactive.weak_bg_fill = theme::SURFACE;
+        ui.add_sized(
+            Vec2::new(132.0, 32.0),
             egui::DragValue::new(value)
                 .speed(0.01)
                 .fixed_decimals(3)

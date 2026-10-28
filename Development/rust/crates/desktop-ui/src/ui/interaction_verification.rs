@@ -1353,12 +1353,42 @@ impl EditorApp {
                             test.phase = 62;
                         }
                     }
-                    62 => {
+                    62 if self.playback.as_ref().is_some_and(|player| {
+                        let status = player.status();
+                        status.ready && status.generation == self.generation
+                    }) =>
+                    {
+                        // Let a completed frame reach the UI before capturing
+                        // the new layout, rather than recording its loading state.
+                        test.inspector_ready_at = Instant::now();
+                        test.phase = 215;
+                    }
+                    215 if test.inspector_ready_at.elapsed() >= Duration::from_millis(50)
+                        && self.playback.as_ref().is_some_and(|player| {
+                            let status = player.status();
+                            status.ready && status.generation == self.generation
+                        }) =>
+                    {
                         let rect = self.controls["preview"];
                         let viewport = self.controls["preview-viewport"];
                         let screen = ctx.screen_rect();
                         let output = self.preview_output();
                         let ppp = ctx.pixels_per_point();
+                        let export = self.controls["export"];
+                        if export.right() > screen.right()
+                            || screen.right() - export.right() > 24.0
+                            || export.top() > 24.0
+                            || export.width() < 99.0
+                            || export.height() < 33.0
+                        {
+                            return Err(format!(
+                                "Export is not readable at the top right: {export:?} in {screen:?}"
+                            )
+                            .into());
+                        }
+                        if test.layout == 0 && test.scale == 0 {
+                            test.checks.push("Graphite header keeps the readable Export action at the top right across layouts".into());
+                        }
                         let expected_bounds = (
                             (rect.left() * ppp).round() as i32,
                             (rect.top() * ppp).round() as i32,

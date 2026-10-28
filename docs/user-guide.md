@@ -2,7 +2,9 @@
 
 Simple Video Editor 1.1 edits local recordings non-destructively. Keep the executable, bin and docs folders together. The portable app needs no .NET runtime.
 
-The empty workspace keeps only the essentials visible. Import starts the workflow; search, playback and timeline controls appear when useful. File contains New project, Open project and Save as. Save and Export stay in the toolbar. The … menu (More options) contains Export settings, Software preview and Clear generated cache.
+The empty workspace keeps only the essentials visible. Import starts the workflow; search, playback and timeline controls appear when useful. File contains New project, Open project and Save as. Save stays in the toolbar, and the blue Export button stays at the top right. The … menu (More options) contains Export settings, Software preview and Clear generated cache.
+
+The graphite workspace uses high-contrast text and Windows UI fonts when available, with a built-in font fallback. Recording names wrap to two lines; hover for the full filename and details. A narrow library and compact Trim sidebar leave more room for the video. Blue timeline edges identify the selected section and its trim handles.
 
 ## Recordings and linked sections
 

@@ -232,7 +232,7 @@ impl EditorApp {
             egui::Order::Tooltip,
             egui::Id::new("recording-drag-preview"),
         ));
-        painter.rect_filled(rect, 4.0, Color32::from_rgb(30, 34, 39));
+        painter.rect_filled(rect, 4.0, theme::SURFACE);
         if let Some(texture) = self.thumbnails.get(id.as_ref()) {
             painter.image(
                 texture.id(),
@@ -245,7 +245,7 @@ impl EditorApp {
             pos + Vec2::new(8.0, 102.0),
             Align2::LEFT_TOP,
             source.name(),
-            FontId::proportional(12.0),
+            FontId::proportional(13.0),
             Color32::WHITE,
         );
         self.controls.insert("drag-thumbnail", rect);
