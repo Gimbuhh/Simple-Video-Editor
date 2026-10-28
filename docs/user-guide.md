@@ -46,6 +46,8 @@ Tab moves keyboard focus between controls, including timeline sections; Enter se
 
 The inspector keeps In/Out and quick trims visible. Expand Audio, Framing or Recording color when needed; opening these groups does not change the project. Reset beside Trim restores the full recording.
 
+Preview uses the Windows default audio output. If the device becomes unavailable during playback, the status bar explains the problem and the editor retries; check the selected Windows output if sound does not return.
+
 Audio selects one source audio stream per section; the default uses the first stream. Gain, mute and fades are saved, undoable, previewed and exported. Output audio is stereo AAC at 48 kHz. Video-only sources receive silence. Separate music tracks and arbitrary mixing are later work.
 
 Fit adds letterboxing. Fill covers the output frame. Crop uses normalized source coordinates; rotation is non-destructive. Intrinsic display rotation and non-square pixels are normalized before user framing. Export always reads original recordings.
@@ -54,7 +56,7 @@ Sources report transfer, primaries, matrix, range and pixel format. PQ and HLG a
 
 Choose SDR Rec.709 or HDR10/PQ output. PQ and HLG sources are deliberately tone-mapped for SDR preview/export and library thumbnails. HDR10 output uses 10-bit Rec.2020/PQ through AV1 or HEVC. H.264 remains SDR. Native HDR preview is requested only when Windows reports active HDR on the preview display; software rendering always uses SDR. HDR footage keeps an HDR or SDR indicator; hover it for the rendering mode. Select … → Software preview to explicitly use CPU-rendered tone-mapped video if native playback or capture compatibility causes problems. Changing Windows/display state is detected on the playback worker without changing system settings.
 
-Current-display HDR appearance is user-confirmed and local game/Shadowplay controls pass. The user-confirmed Windows/NVIDIA HDR-to-SDR game-switch recording issue is external to the editor. Broader display switching and DPI/assistive-technology combinations remain tracked in the rewrite ledger. A negotiated PQ target or ordinary screenshot alone does not prove physical HDR output.
+Current-display HDR appearance is user-confirmed and local game/Shadowplay controls pass. The user-confirmed Windows/NVIDIA HDR-to-SDR game-switch recording issue is external to the editor. Native/software round trips between the connected HDR and SDR monitors pass. Manual HDR toggles, mixed-DPI transitions and full screen-reader workflows remain tracked in the release checklist. A negotiated PQ target or ordinary screenshot alone does not prove physical HDR output.
 
 ## Export
 

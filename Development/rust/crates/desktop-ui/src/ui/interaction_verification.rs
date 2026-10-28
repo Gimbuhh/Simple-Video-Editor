@@ -89,6 +89,34 @@ impl EditorApp {
                 return Err(error.into());
             }
             if test.capture_hold && test.phase == 80 {
+                if test.track_display
+                    && test.inspector_ready_at.elapsed() >= Duration::from_millis(250)
+                {
+                    let status = self
+                        .playback
+                        .as_ref()
+                        .ok_or("Missing held preview")?
+                        .status();
+                    let rect = self.controls["preview"];
+                    let ppp = ctx.pixels_per_point();
+                    let display = status.display.as_ref();
+                    std::fs::write(
+                        test.directory.join("display-state.json"),
+                        serde_json::to_vec_pretty(&serde_json::json!({
+                            "ready": status.ready && status.generation == self.generation,
+                            "display": display.map(|d| &d.name),
+                            "hdrActive": display.is_some_and(|d| d.hdr_active),
+                            "stateKnown": display.is_some_and(|d| d.state_known),
+                            "gamma": status.gamma,
+                            "software": status.software,
+                            "pixelsPerPoint": ppp,
+                            "bounds": self.video.bounds()?,
+                            "expectedBounds": [(rect.left()*ppp).round() as i32, (rect.top()*ppp).round() as i32,
+                                (rect.width()*ppp).round() as i32, (rect.height()*ppp).round() as i32],
+                        }))?,
+                    )?;
+                    test.inspector_ready_at = Instant::now();
+                }
                 if test.directory.join("capture-stop").exists() {
                     test.checks
                         .push("Preview held until capture stop request".into());
@@ -324,6 +352,14 @@ impl EditorApp {
                         let source = &self.editor.metadata().sources[0];
                         if let Some(audio) = source.audio.first() {
                             let status = self.playback.as_ref().unwrap().status();
+                            if test.audio_recovery {
+                                if status.audio_recovery_attempts == 0
+                                    || status.audio_output.is_none()
+                                {
+                                    return Ok(());
+                                }
+                                test.checks.push("An unavailable player audio endpoint recovers automatically without editing the project or resetting the video clock".into());
+                            }
                             if status.audio_output.as_deref().is_none_or(|ao| ao == "null")
                                 || status.audio_stream != Some(audio.index)
                             {
@@ -1509,6 +1545,19 @@ impl EditorApp {
                             if let egui::Event::Screenshot { image, .. } = event {
                                 test.screenshot(&image)?;
                                 test.checks.push("Actual desktop layout captured".into());
+                                // This isolated project is disposable; avoid a discard prompt.
+                                self.saved = SavedProject::capture(&self.editor);
+                                self.update_dirty();
+                                self.new_project();
+                                if self.playback.is_some()
+                                    || self.timeline_thumbnails.is_some()
+                                    || self.preview_texture.is_some()
+                                    || !self.thumbnails.is_empty()
+                                    || !self.waveforms.is_empty()
+                                {
+                                    return Err("New project retained preview resources from the previous project".into());
+                                }
+                                test.checks.push("New project releases playback, filmstrip textures and library preview caches".into());
                                 test.report();
                                 self.close_approved = true;
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);

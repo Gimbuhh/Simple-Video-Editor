@@ -313,14 +313,18 @@ impl EditorApp {
     fn fail(&mut self, message: impl ToString) {
         self.message = message.to_string();
     }
+    fn clear_preview(&mut self) {
+        drop(self.playback.take());
+        self.timeline_thumbnails = None;
+        self.preview_frame = None;
+        self.preview_texture = None;
+    }
     fn new_project(&mut self) {
         if self.busy || !self.discard() {
             return;
         }
         self.cancel.store(true, Ordering::Release);
-        drop(self.playback.take());
-        self.preview_frame = None;
-        self.preview_texture = None;
+        self.clear_preview();
         self.cancel = uncancelled();
         self.editor =
             Editor::with_metadata(Timeline::default(), ProjectMetadata::default()).unwrap();
@@ -1081,6 +1085,7 @@ impl EditorApp {
                     match result {
                         Ok((document, path, legacy)) => match document.clone().editor() {
                             Ok(editor) => {
+                                self.clear_preview();
                                 self.editor = editor;
                                 let restored = self.restoring.is_some();
                                 self.saved = if restored {
@@ -1307,13 +1312,22 @@ impl EditorApp {
                 });
                 ui.add_space(4.0);
             });
-        if self.busy || self.exporting || !self.message.is_empty() {
+        let audio_warning = self
+            .playback
+            .as_ref()
+            .and_then(|p| p.status().audio_warning);
+        if self.busy || self.exporting || !self.message.is_empty() || audio_warning.is_some() {
             egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     if self.busy {
                         ui.spinner();
                     }
-                    ui.label(&self.message);
+                    if !self.message.is_empty() {
+                        ui.label(&self.message);
+                    }
+                    if let Some(warning) = &audio_warning {
+                        ui.label(warning);
+                    }
                     if self.busy
                         && ui
                             .add(theme::button("Cancel"))
@@ -2111,13 +2125,13 @@ impl EditorApp {
                         let mut start = clip.source_in;
                         let mut end = clip.source_out;
                         egui::Grid::new("trim-fields").show(ui, |ui| {
-                            ui.label("In");
-                            let response = trim_input(ui, &mut start, ("trim-in", clip.id.0));
+                            let label = ui.label("In");
+                            let response = trim_input(ui, &mut start, ("trim-in", clip.id.0), label.id);
                             self.controls.insert("trim-in", response.rect);
                             if response.changed() { self.trim(Some(start), None); }
                             ui.end_row();
-                            ui.label("Out");
-                            let response = trim_input(ui, &mut end, ("trim-out", clip.id.0));
+                            let label = ui.label("Out");
+                            let response = trim_input(ui, &mut end, ("trim-out", clip.id.0), label.id);
                             self.controls.insert("trim-out", response.rect);
                             if response.changed() { self.trim(None, Some(end)); }
                             ui.end_row();
@@ -2455,11 +2469,7 @@ impl EditorApp {
                 let mut position = self.playhead;
                 let slider_width = ui.spacing().slider_width;
                 ui.spacing_mut().slider_width = ui.available_width() - 16.0;
-                let scrubber = ui.add(
-                    egui::Slider::new(&mut position, 0.0..=duration.max(0.001))
-                        .show_value(false)
-                        .trailing_fill(true),
-                );
+                let scrubber = preview_scrubber(ui, &mut position, duration);
                 ui.spacing_mut().slider_width = slider_width;
                 self.controls.insert("scrubber", scrubber.rect);
                 if !self.ignore_scrub_until_release
@@ -2993,6 +3003,7 @@ impl eframe::App for EditorApp {
         self.top(ctx);
         self.controls.remove("drag-thumbnail");
         if self.timeline_thumbnails.is_none()
+            && !self.editor.metadata().sources.is_empty()
             && let Some(tools) = self.tools.clone()
         {
             self.timeline_thumbnails =
@@ -3157,7 +3168,22 @@ impl Drop for EditorApp {
         }
     }
 }
-fn trim_input(ui: &mut egui::Ui, value: &mut f64, id: (&'static str, u64)) -> egui::Response {
+fn preview_scrubber(ui: &mut egui::Ui, position: &mut f64, duration: f64) -> egui::Response {
+    let response = ui.add(
+        egui::Slider::new(position, 0.0..=duration.max(0.001))
+            .show_value(false)
+            .trailing_fill(true),
+    );
+    response
+        .widget_info(|| egui::WidgetInfo::slider(ui.is_enabled(), *position, "Preview position"));
+    response
+}
+fn trim_input(
+    ui: &mut egui::Ui,
+    value: &mut f64,
+    id: (&'static str, u64),
+    label: egui::Id,
+) -> egui::Response {
     let original = *value;
     ui.push_id(id, |ui| {
         ui.visuals_mut().button_frame = true;
@@ -3179,6 +3205,7 @@ fn trim_input(ui: &mut egui::Ui, value: &mut f64, id: (&'static str, u64)) -> eg
         )
     })
     .inner
+    .labelled_by(label)
 }
 fn read_thumbnail(path: PathBuf) -> media_engine::Result<image::DynamicImage> {
     if std::fs::metadata(&path)?.len() > 128_000 {
@@ -3195,4 +3222,61 @@ fn read_thumbnail(path: PathBuf) -> media_engine::Result<image::DynamicImage> {
 fn time(seconds: f64) -> String {
     let ms = (seconds.max(0.0) * 1000.0).round() as u64;
     format!("{:02}:{:02}.{:03}", ms / 60000, ms / 1000 % 60, ms % 1000)
+}
+#[cfg(test)]
+mod accessibility_tests {
+    use super::*;
+    #[test]
+    fn primary_editing_controls_expose_names_roles_and_values() {
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let mut start = 0.125;
+        let mut end = 2.875;
+        let mut position = 1.5;
+        let output = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let label = ui.label("In");
+                trim_input(ui, &mut start, ("trim-in", 1), label.id);
+                let label = ui.label("Out");
+                trim_input(ui, &mut end, ("trim-out", 1), label.id);
+                preview_scrubber(ui, &mut position, 3.0);
+                theme::transport_button(ui, theme::TransportIcon::Play, "Play (Space)");
+            });
+        });
+        let tree = output
+            .platform_output
+            .accesskit_update
+            .expect("Missing accessibility tree");
+        for (name, value) in [("In", 0.125), ("Out", 2.875)] {
+            let control = tree
+                .nodes
+                .iter()
+                .find_map(|(_, node)| {
+                    (node.role() == egui::accesskit::Role::SpinButton
+                        && node.numeric_value() == Some(value))
+                    .then_some(node)
+                })
+                .expect("Trim field lost its spinbox role or exact value");
+            assert!(
+                control.labelled_by().iter().any(|id| tree
+                    .nodes
+                    .iter()
+                    .any(|(label_id, label)| label_id == id && label.value() == Some(name))),
+                "Trim field is not associated with its visible label"
+            );
+        }
+        assert!(
+            tree.nodes
+                .iter()
+                .any(|(_, node)| node.role() == egui::accesskit::Role::Slider
+                    && node.label() == Some("Preview position")
+                    && node.numeric_value() == Some(1.5))
+        );
+        assert!(
+            tree.nodes
+                .iter()
+                .any(|(_, node)| node.role() == egui::accesskit::Role::Button
+                    && node.label() == Some("Play (Space)"))
+        );
+    }
 }

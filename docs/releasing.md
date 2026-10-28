@@ -2,7 +2,7 @@
 
 The private repository is [Gimbuhh/simple-video-editor](https://github.com/Gimbuhh/simple-video-editor). The application version in `Development/rust/crates/desktop-ui/Cargo.toml` owns executable metadata, project application-version fields and package names. The 1.1.0 Rust candidate is unreleased; preserve published 1.0.x assets and original schema-1 projects for rollback.
 
-Before approving 1.1, review the current-display HDR and bounded game/Shadowplay acceptance already recorded in the [rewrite ledger](rust-rewrite-status.md), and collect the outstanding monitor/HDR-toggle, physical DPI and accessibility evidence. Metadata and screenshots do not prove physical HDR. This PR is not authorization to merge, tag or publish.
+Before approving 1.1, review the [release checklist](release-readiness.md). Current-display HDR appearance is user-confirmed; connected HDR/SDR monitor round trips and bounded game/Shadowplay checks are recorded. Manual HDR-toggle, genuine mixed-DPI and full screen-reader acceptance remain outstanding. Metadata and screenshots do not prove physical HDR. Release preparation does not authorize merging, tagging or publishing.
 
 ## Initial repository upload
 

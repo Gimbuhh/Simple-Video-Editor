@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.0 — 2026-10-23
+## 1.1.0 — 2026-10-28
 
 Unreleased Rust candidate.
 
@@ -21,6 +21,7 @@ Unreleased Rust candidate.
 - Scrubbing keeps the preview visible and updating while you drag, then settles on the exact frame when you release.
 - Preview seeks faster on ordinary SDR recordings and uses hardware decoding when supported.
 - A graphite workspace puts video and trimming first, with clearer text, centered action labels, larger thumbnails, blue trim handles and Export at the top right. Secondary controls stay in menus or expandable sections; enabled buttons show a pointing hand.
+- Preview uses the Windows audio output and retries when it becomes unavailable.
 - The app has a new scissors icon with a blue play symbol.
 - The portable Rust app has a smaller download—about 25% in the compared candidate—and no bundled .NET runtime.
 - Frame stepping and quick trims follow actual frame boundaries in variable-frame-rate recordings.
@@ -28,7 +29,8 @@ Unreleased Rust candidate.
 ### Known limitations
 
 - Some workflows use more memory than 1.0.4. See the [C#/Rust comparison](docs/rust-csharp-comparison.md) for measured results and remaining acceptance checks.
-- Further visual refinement is planned, with matching or improving on the C# interface as the goal. Transition effects remain follow-up work.
+- Sections join with hard cuts; transition effects remain planned.
+- Final checks remain for Windows HDR toggles, monitors with different scaling, and screen-reader workflows.
 
 ## 1.0.4 — 2026-10-09
 

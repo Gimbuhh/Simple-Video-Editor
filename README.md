@@ -6,7 +6,7 @@ A portable Windows editor for trimming and combining local recordings. Edits lea
 
 Version 1.1.0 is the Rust release candidate on this branch. The latest published 1.0.x release remains available for rollback. Current-display HDR preview is user-confirmed and local game/Shadowplay controls pass. The user confirmed the separate HDR-to-SDR game-switch recording issue is external to this project. The PR stays open for remaining testing and approval.
 
-Current startup checks pass. Remaining display, DPI and accessibility testing, along with the earlier debug-build crash investigation, is tracked in the [rewrite status](docs/rust-rewrite-status.md).
+Current startup checks pass. The current candidate includes automatic audio-output recovery, accessible playback/trim labels and preview-cache cleanup when changing projects. Connected HDR/SDR monitor round trips pass. The [release checklist](docs/release-readiness.md) separates automated checks from the remaining physical DPI/HDR-toggle and screen-reader acceptance.
 
 The Rust candidate opens project/media filenames and places library/File Explorer drops at the timeline pointer. Idle previews sleep between updates and use display-sized processing while exports retain their chosen resolution. The [C#/Rust comparison](docs/rust-csharp-comparison.md) records the verified benefits, resource measurements and remaining tradeoffs. Keep the C# release and original projects for rollback while testing continues.
 

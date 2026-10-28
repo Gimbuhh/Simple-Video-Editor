@@ -1,394 +1,44 @@
-# Rust rewrite status
+# Rust 1.1.0 status — 2026-10-28
 
-Target **1.1.0**. Started 2026-10-20. Production source/build cutover is implemented on the PR branch. Current-display HDR preview and bounded game capture checks pass. The user independently confirmed the HDR-game-to-SDR-game recording problem is external to this project; it no longer blocks the rewrite. Current DX12 startup checks pass; the earlier Glow debug failure remains unattributed, and broader display/DPI/accessibility acceptance needs follow-up. This is an unreleased candidate; no merge, tag or publication is authorized or performed.
+The Rust production cutover, graphite interface and identified software fixes are implemented on PR #8. Version 1.1.0 remains an unreleased candidate prepared for final user acceptance. No merge, release tag or publication is authorized by this preparation.
 
-**Preview audio and editor audit — 2026-10-28:** Embedded playback leaves audio-driver selection at the platform default instead of forcing the nonexistent `auto` driver. An audible two-track fixture checks a real negotiated Windows output and selection of the probed track in native/software preview. Action labels center independently of their panel alignment, and recording-color undo/redo regenerates library previews. Empty preview-worker batches return immediately; thumbnail/waveform result validation shares one source check. See the [focused audit](editor-audit.md) for findings, deliberate retentions and remaining acceptance work.
+## Verified candidate
 
-Formatting, strict Clippy, **40 workspace/executable tests**, **507 desktop checks across 18 runs**, **61 checks across 40 layouts at 100–200% app scale**, **48 native/software playback checks**, GPU/media integrations, three normal filename launches, relocated portable verification and nine packaging safeguards pass. Before/after probes reproduce the rejected audio driver and the working WASAPI default; a rendered-shape test reproduces the left-aligned wide label before the fix. These checks do not measure physical headphone/speaker loudness or certify device switching. Evidence: rust-desktop/6e718cf0ce7a4eda840f4f4e28834aa9, rust-desktop/eaf6eb592dde42cb9a6b0aae97a94c9e, rust-package-verification/b6d7c0e111e048c1b920dc255c84210f and ignored audio-ui-audit/verification.json. Verified executable SHA-256: `f1cf0c6d0e3bd9c3100e5885e8f1fa195ebad78bd7096573c7b704f07c3ef395`.
+Executable SHA-256: `1e3599a09e3537098ffcfbe097d05d549496e754a427be90f46459e30dfc05b0`. Cargo's desktop-ui version remains the single source of application/package versioning.
 
-**Graphite design — 2026-10-28:** The chosen dark concept is implemented with narrow recording/Trim sidebars, a larger preview area, quieter controls, blue selection/trim handles and a blue Export button at the far top right. Installed Windows UI/semibold/monospace fonts are used when available, with bundled font fallbacks; Windows font files are not redistributed. Body/button text is 14 logical pixels, metadata 12.5 and timecode 13. Recording names wrap to two lines with full tooltip details. Transport icons retain accessible names and keyboard alternatives. The guide screenshot uses generated media; private game footage stays in ignored local QA artifacts.
-
-Strict formatting/Clippy and **39 workspace/executable tests** pass, including normal-text/Export contrast of at least 4.5:1 for the chosen palette pairs. **428 desktop checks across 16 native/software SDR/PQ/HLG/geometry/VFR runs**, **59 checks across 40 layouts at 100–200% app scale**, ordinary filename launches, relocated persistence/export/playback, repository consistency and nine packaging checks pass. Export position and minimum size are asserted at every layout. A local three-second SDR excerpt of the previously supplied game recording passes 30 additional UI checks; the original recording remains unchanged. The fixture runner's full-recording drag attempt is excluded because that sequence assumes short media with free timeline space. Layout captures now wait for a completed preview to reach the UI. No media/export processing changes or additional physical HDR/display-switch/DPI/screen-reader acceptance are claimed. Evidence: rust-desktop/f143715830dd412aadbaee97c750f8d7, rust-desktop/26f5d67874ec4cd7811ab67570c9c7a8, rust-package-verification/688dad28394746aeb54e1d57c6b0d8ed and ignored graphite-ui/verification.json. Canonical `App` executable SHA-256: `44158c36fc1ea57fb4fc2d805d8c90fa21efbdc10dc04fe617a2ff1f0a044d56`.
-
-**Minimal workspace — 2026-10-28:** The empty app shows Import without repeated drop instructions, an unused black preview, transport controls, search/add controls or an empty track grid. Tracks and the ruler appear for timeline content or a recording drag; Undo stays available when history exists. File contains project actions; Save and Export remain in the toolbar. More options (… with an accessible name) holds export settings, Software preview and optional generated-cache cleanup. Recording rows keep filename/duration and an HDR marker where relevant; extra metadata stays in tooltips. The preview uses a compact frame/timecode row, and HDR footage retains its color-mode indicator. The guide screenshot is from the rendered app using generated media.
-
-Formatting, strict Clippy, **38 workspace/executable tests**, **414 desktop checks across 16 native/software SDR/PQ/HLG/geometry/VFR runs**, **57 checks across 40 layouts at 100–200% app scale**, three ordinary filename launches, relocated persistence/export/playback and nine packaging checks pass. Actual input verifies the empty workspace, File menu, More options, relocated renderer toggle, exact scrubbing/trimming, search, keyboard focus and recording drops. The VFR verifier waits for the UI to consume its queued quick trim before asserting the exact boundary, matching its other asynchronous trim checks. No media/export processing changes or additional physical HDR/monitor/DPI/screen-reader acceptance are claimed. Evidence: rust-desktop/12d9654ee4104b43bb02aed46c607f7d, rust-desktop/c806f4b0c0fc4b56bba3f35a1ad08313, rust-package-verification/4ba563eb5e5b440383ae5246ceaf66fd and ignored minimal-ui/verification.json. Canonical `App` executable SHA-256: `520c76e6b9f1636cff1716132a85465d249a4bbb0368c8f104045fd8173c238e`.
-
-**Ordinary SDR seek follow-up — 2026-10-24:** Ordinary unmodified Rec.709 SDR now takes a direct preview path that avoids CPU color conversion/scaling and allows native D3D11 decoding without frame downloads. Software preview also avoids the unnecessary transform. HDR, other color spaces, cropping/fill, rotation/anamorphic input and output aspect changes retain the shared graph. Exact seeking, frame steps, source interpretation, trim boundaries and export are preserved. Canonical `App` executable SHA-256: `db9cea859d2d851457650cf3cdec931aeed09f66eb64489575699e03915a9f5e`.
-
-The final build passes **38 workspace/executable tests**, **six media integrations**, **159 desktop checks**, **56 injected native-fallback checks**, ordinary filename launches and relocated packaging. The extended matrix passes **386 checks** on executable d51492c7…3caea61; only playback comments changed before the final build. The direct-path integration compares 8/10-bit full/limited-range colors and gray levels with the original graph, including missing tags, CPU/direct-GPU output, exact seek positions and source preservation. Evidence: seek-parity/core.log, seek-parity/media.log, rust-desktop/162ac8c49db74f94b1470e16a4edc478, rust-desktop/854013e4007840caba4520078712f777, rust-desktop/541fce343a5b4cb49c3ac1027622481e and rust-package-verification/d78d97be9edf4457971430b974068656. No additional physical HDR, monitor/DPI or accessibility acceptance is claimed.
-
-On the generated 4K HEVC ten-second-GOP fixture, 24 exact seeks give median/p95 **514.9/855.9 ms** in the pinned C# playback/renderer reference, **502.7/827.3 ms** in current Rust software preview and **332.0/541.5 ms** in native preview using d3d11va. Software is comparable in this case; native median is about 42% below the previous Rust build. Both pointer gestures present multiple frames and settle exactly. The C# reference excludes WPF input/presentation; this is not a matched full-interface comparison or universal speed claim. AV1/HDR remains on the processed path and passes its final timing/gesture checks. [Comparison details](rust-csharp-comparison.md#ordinary-sdr-seeking-follow-up--2026-10-24), raw samples and hashes are recorded; ignored seek-parity/verification.json indexes them. All recording files remain unchanged.
-
-**Timeline and scrub follow-up — 2026-10-24:** Library drags paint a floating thumbnail; timeline sections show sampled source frames aligned with their trims and zoom. One cancellable worker admits at most 128 visible samples, including cache hits, to prevent repeated decoding on crowded timelines. Library images no longer wait for waveform decoding. Continuous scrubbing finishes an in-flight frame before taking the newest target; release seeks the exact final frame. Same-presentation seeks retain the last valid image and HDR indicator, while source/interpretation/framing changes invalidate it. Native AV1 uses copied hardware decoding when available; other codecs and Software preview retain CPU decoding. Preview scales before color processing; export retains its full-resolution graph. Canonical `App` executable SHA-256: `8dfd419ab8266e1bdc777803688f03b77e927e5c2cd525056979654241c65dc5`.
-
-Formatting, strict Clippy, **37 workspace/executable tests**, **five GPU/media integrations**, **386 desktop checks across 16 native/software runs**, **53 checks across 40 layouts at 100–200% app UI scale**, three ordinary filename launches and relocated package checks pass. These cover actual thumbnail drags/insertion/undo, multiple sampled frames, cache bounds/cleanup, source protection and hardware-copy AV1 colors/neutral ramps. Evidence: rust-desktop/cc000ece05c6448aa253f673a194d460, rust-desktop/aece2b2250664c8ca889498b9fdd0ef3, rust-package-verification/5ffe2dc35cb94351aab30d73e30cec01 and timeline-frozen-media.log. Generated-media screenshots were visually inspected. These do not add physical HDR, monitor/DPI or screen-reader acceptance.
-
-Production-preview measurements complete 24 exact seeks per run. On the same supplied 1440p60 AV1/HDR recording, prior/new Rust native median/p95 are **280.9/469.4 ms and 100.0/150.0 ms**; Software preview is **278.6/468.4 ms and 215.3/369.4 ms**. The final build presents 18 native AV1, 8 software AV1 and 4 native HEVC completed frames during separate two-second pointer gestures and settles exactly on release. A negative control with the previous cancellation policy completed zero frames during its HEVC gesture. Generated 4K HEVC with a ten-second GOP still takes **575.0/916.6 ms** median/p95; no universal or substantial HEVC speedup is claimed. Timing includes the production preview graph and UI acknowledgement, not physical display latency; caching/load are uncontrolled. This compares Rust before/after, not a new C# speed comparison. Reproduce with benchmark-preview.ps1; ignored timeline-verification.json indexes raw reports and hashes.
-
-**Inspector refinement — 2026-10-23:** Trim boundaries and quick trims stay visible, with Reset beside the Trim heading. Audio, Framing and Recording color start collapsed; their controls remain available on expansion, while source-color warnings remain visible. In/Out fields align, redundant labels are removed and expanded volume controls fit the narrow sidebar. Actual input checks verify disclosure changes do not edit the project and a mute change undoes exactly. The guide screenshot comes from the rendered app with generated media. The canonical build is `App`, executable SHA-256 `db604d10988120a771efe80063c0c7e9c5110101fa525690b1f7b44e45f5f91f`.
-
-Formatting, strict Clippy, 36 workspace/executable tests, **161 desktop checks across eight native/software SDR/PQ/HLG/VFR runs**, **49 checks across 40 layouts at 100–200% app UI scale**, three ordinary filename launches and relocated persistence/export/playback checks pass. Expanded and collapsed layouts were visually inspected; these are app-scale checks, not physical monitor/DPI or screen-reader acceptance. Evidence: rust-desktop/2253c620ed22473a8b18535333d90232, rust-desktop/5bc18ead436a4bacbc2ccd0788546e14, rust-launch/5e38b126529946df9617a95c8e410804 and rust-package-verification/c666672480dc42c09f34b14f75b34c42. Media/rendering implementations are unchanged; broader GPU and comparison evidence remains tied to its earlier artifacts.
-
-**Cursor refinement — 2026-10-23:** Enabled toolbar, transport, menu and dialog buttons, dropdowns, choices and toggles show a pointing hand on hover. Disabled controls, text inputs and custom timeline drag surfaces retain their existing cursors. This uses response-level cursor handling because the pinned egui release does not consume its global interaction-cursor field. A disposable headless probe checks nine actual pointer-output cases; no new permanent test harness is added. The executable SHA-256 is `c5adb21cd9367dee543ce54d09f56e867b28d0988f8901b596f0f707647804cb`. Formatting, strict Clippy, 36 workspace/executable tests, three ordinary filename launches and 141 desktop checks across six native/software SDR/PQ/HLG runs pass, along with relocated persistence/export/playback checks. Evidence: cursor-probe.log, rust-desktop/5defb950ad344aa88ccb0c779c541e31 and rust-package-verification/25b7de2589bd4a859e7483740500c62e. Layout, editing commands and media implementations are unchanged; prior scaling/GPU/resource evidence remains tied to its named artifacts.
-
-**Visual refinement — 2026-10-23:** The first pass removes duplicate application branding, the linked-lane subtitle, instructional paragraphs, redundant status/empty-preview copy and permanent shortcut suffixes. Controls and layout carry the primary meaning; optional metadata, quality guidance, timeline position and shortcuts move to contextual tooltips. Preview modes use concise HDR/SDR indicators, and visible warnings/errors/progress remain. Selected values use readable format names. The interface-copy rule is recorded in the development guide and the guide screenshot comes from the rendered app using generated media. The user's running `App` session is preserved; the review build is `App-Updated`, executable SHA-256 `d3528fa93c91dcfff5bbfa594eec81c923a14d479b548b1f43c118d81c31aab2`.
-
-Formatting, strict Clippy, 36 workspace/executable tests, three ordinary filename-startup cases, relocated persistence/export/playback checks and **344 desktop checks across 16 runs** pass for this executable. **47 checks across 40 layouts** pass at 100–200% app UI scale, with small and scaled software layouts inspected. Evidence: rust-desktop/6f1f789fce314c6f855c81fcd2c9d804, rust-desktop/6641689935f14576b5fda766cd115a1f, rust-package-verification/6ee35e04c648443ea8b8ce381d592bef and rust-launch/fd8586e88ef6469f9498343025b15ee1. These cover actual input/editing, native/software SDR/PQ/HLG, geometry and VFR paths; they do not add physical monitor/DPI or screen-reader acceptance. Media/core implementations and project formats are unchanged.
-
-**Icon update — 2026-10-23:** The approved white scissors and blue play symbol replace the source PNG, ten-size Windows ICO and runtime window icon. Current `App` executable SHA-256 is `3f2ff681b92e66d89d44dde6dfc36fcbec0153cfe4a47bcea49f349518d364a0`. All ten embedded icon resources match the generated ICO, transparency is retained, and the running window supplies the selected icon. Formatting, strict Clippy, workspace/executable tests and inspector smoke checks pass. The relocated portable build passes three ordinary filename-startup cases, 141 desktop checks across six native/software SDR/PQ/HLG runs, persistence/export/playback verification and nine packaging guards. Evidence: rust-desktop/fbd32b816da54686ac7c22b798d509b7, rust-package-verification/729d523fd82b4da9b8417a45f17da2cb and rust-launch/efac9ac0630f4b738553a2e5436c122b. Editing/media implementations are unchanged; earlier stress, GPU and resource measurements below describe their recorded artifacts and were not repeated for this icon update.
-
-**Project cleanup — 2026-10-23:** The verified Rust executable is now in the canonical `App` folder, with its hash unchanged. Superseded app copies, candidate ZIPs, relocated test bundles, stale C# build output and disposable experiments were removed. Compact verification/comparison reports, final desktop screenshots, projects, the original C# release ZIP and Git history remain; the optional parity oracle restores frozen source when needed. Historical paths below describe the original runs and may refer to generated files removed during cleanup. The redundant candidate-build wrapper and temporary Rust-guide redirect were removed; the normal build and user guide are authoritative.
-
-**Comparison follow-up — 2026-10-23:** The known launch-file and timeline-drop regressions are corrected. Project/media filenames, including relative paths, use the normal startup path; linked drops use the pointer and each recording's frame rate, independent of the output rate. Pure and actual desktop input tests cover placement, mixed rates, gaps and undo. The original C# release ZIP, main/history, original projects and frozen oracle remain available while user acceptance continues. Resource results and tradeoffs are in the [comparison](rust-csharp-comparison.md).
-
-The UI now wakes from worker/playback events instead of repainting continuously. Paused playback sleeps, software rendering wakes from callbacks, and the player is created only for a recording. Display-sized preview transforms and a memory-oriented DX12 allocation hint reduce unnecessary work without changing export settings. A dequeued request survives native failure and reaches software fallback. The user explicitly plans a later visual refinement pass to match or improve on C#; current appearance is not claimed as a Rust advantage. Release notes summarize capabilities and package size, with technical evidence kept in the comparison.
-
-The corrected candidate's application source is `30357523b854b0d8ce82ce689c748c54ed414a32`; executable SHA-256 is `d17a3bf01c215171605f9505eba825b82a0f3daf50b020d8b3e875902e2598e8`. Fresh checks pass: strict formatting/Clippy, **36 workspace/executable tests**, **48 native lifecycle/backend checks**, five GPU/media integrations, and normal project/multiple-recording/relative-filename startup. The relocated portable executable passes **344 desktop checks in 16 runs**, including the new mixed-rate drop cases; two failure-injection runs pass **50 checks**. Evidence: rust-package-verification/912f93dbfe7c414786d6a00b71bebe3f, rust-desktop/9631c463c4b44769947ba457d774e8e0 and rust-desktop/d659d42f0dc144b2b5c5598c3c0f6e9e. The portable check also caught and now verifies corrected nested release-note links. Older results below remain historical evidence for their named artifacts.
-
-The same executable also passes **47 checks across 40 scaled layouts** at 100–200% UI scale and **20 repeated PQ import/seek/split/undo/shutdown cycles**. Evidence: rust-desktop/534dbdde96634be98703421a525abf37 and startup-stress/3b7014e4004040c68ad5ee85db6d1a47. These are isolated app UI-scale checks, not physical monitor/DPI transitions or a universal startup-crash guarantee. Buffered screenshot writes keep verification output efficient without changing its image data.
-
-Generated 4K SDR previews become ready on their requested native and software backends, and native PQ preview reports an active HDR display with `pq` output parameters. All three helpers close normally and preserve source/executable hashes: optimized-preview-hold/8336dc65e4b3458d96778474a0b3e838. This verifies current backend/output state; the user's earlier physical appearance confirmation remains separate from these metadata checks. Five GPU/media integrations pass again on the corrected source, including full/limited-range AV1/PQ color and VFR tests.
-
-The final approved comparison completes **15 visible, non-minimized normal launches**, opening the same generated project in each app. Empty Rust measures 0.00% of one logical core, 143.9 MiB working set and 251.5 MiB private commit; C# measures 0.34%, 119.2 MiB and 127.6 MiB. The previous Rust empty-window result was 33.74%, 154.4 MiB and 571.1 MiB: the continuous CPU cost is removed and private commit falls about 56%, while resident memory falls about 7%. Final paused native/software Rust CPU is also low (0.26%/0.09% of one core). Memory remains above C# in these bounded cases; no general encoding-speed or total CPU/GPU-memory advantage is claimed. Evidence: version-comparison/01c3189ec1144935bb10c162aac37f73; scope and full table are in the comparison. C# rollback remains preserved pending user acceptance.
-
-## Current implementation — 2026-10-22
-
-Rust owns the desktop, timeline commands/history, persistence/recovery/relinking, source authorization, native playback coordination, shared color/framing transforms, cache and export. The normal build now packages the Rust executable. `Development/rust/crates/desktop-ui/Cargo.toml` is the sole application-version authority; project metadata and Windows resources derive from it. Private core/tool crates retain version 0.1.0.
-
-The superseded C#/WPF production tree and old production UI harness are removed. The optional C# reader oracle restores v1.0.4 source from Git commit `dd65df13a41490e8168a624b65fcff6a27956940` into ignored verification output, compiles it with the pinned SDK, and compares legacy import semantics. It is excluded from production and portable packages. Git and the exact previous release retain rollback. The authored icon source moved to Development/assets.
-
-The current UI candidate uses egui/eframe 0.32.3 with wgpu 25.0.2 restricted to Direct3D 12, plus AccessKit. It replaces the Glow/OpenGL UI after the capture controls below; current-display HDR and bounded local capture acceptance are recorded below. Pinned Rust 1.90.0 uses checksum-pinned LLVM-MinGW 20260616 tools and LLD with the self-contained CRT. A real GNU-ld startup failure from mixed Windows import tables was reproduced and corrected. Native FFmpeg/FFprobe/libmpv pins and MediaMirrorTag are unchanged. Dependency/font/runtime notices accompany the package.
-
-## Current contract and ownership evidence
-
-| Contracts | Authoritative owner | Verification |
-| --- | --- | --- |
-| Project/media filename startup, ordered relative/Unicode paths | desktop-ui startup + existing media-engine/project-store load | Real normal-launch project/library comparisons from a relocated Unicode bundle; source/project hashes unchanged |
-| Source-rate-aware library/File Explorer timeline drops | desktop-ui coordinates + editor-core Insert | Pure mixed-rate/gap/undo tests and actual egui drop dispatch with a different output rate |
-| Exact legacy trims, gaps, ordered/unused library and repeated recordings | project-store + editor-core | Frozen C# differential oracle, encoding/parser fixtures and exact schema-2 roundtrips |
-| Linked split/delete/move/trim/swap/duplicate and bounded history | editor-core | Pure command tests, actual desktop keys/pointer drags, one-step undo/redo and Escape |
-| Trim pointer anchoring and retained preview frame | editor-core + desktop-ui | Left edge preview holds right edge/followers; commit ripples once; removed preview frames clamp; Escape restores bounds/frame |
-| Search focus, hidden selection, Add all library order | desktop-ui | Actual text/pointer input; hidden selection disabled; Add all includes filtered sources as one undo step |
-| Scrub ownership, pause intent, endpoint and native clock | desktop-ui playback actor | Held cross-recording ruler, interleaved rapid seeks, final-generation settling, playing/paused cases and last retained frame |
-| Source timestamps and video selection | native-mpv + media-engine | Known VFR PTS forward/reverse steps; multiple-video/default-track fixture; explicit stream mapping in preview, thumbnails and export |
-| Source safety and local-only paths | media-path + platform-windows | Namespace/reparse checks, source hashes, save/export identity rejection, cancel preservation and hard-link-aware cache protection |
-| Atomic persistence, recovery, relinking | project-store + media-engine | UTF-8/16/32, schema rejection, exclusive live-session leases, revision cancellation, recovery claim ownership and immutable relink/load |
-| SDR/PQ/HLG, source interpretation, geometry | shared media-engine graph | CPU/NVIDIA exports, tagged 10-bit HDR10 decode, rotation/SAR/RGB pixel comparisons, deliberate SDR software transform |
-| Preview delivery and lifecycle | native-mpv + playback actor | Bounded latest-request/frame mailboxes, post-seek software render serials, narrow FFI, render-thread join before core/window destruction |
-| Display-aware HDR fallback | platform-windows + playback actor | Read-only active-monitor queries and SDK-layout tests; HDR requires active HDR mode, not WCG; unsupported/unknown state chooses SDR |
-| Portable artifact and rollback | build.ps1 + portable verifier | Exact native hashes, PE/version/no-CLR checks, Unicode/space relocation, actual packaged persistence/export/playback; previous release SHA retained |
-
-The packaged desktop matrix passed **310 checks across 16 runs**: native/software SDR, PQ, HLG, rotated, anamorphic, RGB, multiple-video and VFR fixtures. The main cases exercise actual input and four window sizes each. VFR cases additionally prove seek completion between timestamps, actual next-frame boundaries for trim-after, trim-before and undo. Native/software preview mode switches preserve the project. The production review executable's SHA-256 at that run was `9ec19c66fdefc7e9645c3634c7129ce3573dd09bce5a9710736c8419ebeddb55`. Reports/screenshots: ignored rust-desktop/c5c4634cf1a64d5a903fddd3a6e16704; portable proof: rust-package-verification/6bef32a1d6af4b9da7e73eb0df06ed0e.
-
-Strict formatting/Clippy and **32 workspace/executable tests** pass, together with the frozen C# import comparisons and **48 native lifecycle/backend checks**. Five media integration tests pass through CPU and available NVIDIA paths, covering pixel geometry, VFR, phase/delay-aware waveforms, exact frame counts, black/silent gaps, gain, atomic cancellation, relinking, source preservation and semantic full/limited-range AV1/PQ color checks. Nine packaging safeguard checks pass. These generated tests do not measure physical HDR; the user's current-display appearance confirmation is recorded below.
-
-The production ZIP passed embedded version, exact native pins, no CLR/.NET, Unicode/space relocation, packaged persistence/export/playback, documentation links and missing-native-tool rejection without borrowing checkout tools. The shipping App folder and any running user editor are preserved by using App-Rust-11-Review. Local package replacement/pruning follows verified version/layout/checksum checks; published assets remain unchanged.
-
-Current Rust inventory is 31 source/test/build modules, 10,995 nonblank lines and 449,478 bytes of text. The desktop UI is the largest production module (2,863 nonblank lines); the actual input verifier is separate (1,324). Growth versus the 1.x baseline includes HDR/color/audio/framing behavior, explicit worker/native/OS boundaries and integration tests, with the latest additions covering filename startup, source-rate placement and idle scheduling. There are zero tracked files under the superseded production source/test directories, and the Rust crates contain no TODO/unimplemented stubs. The earlier Glow executable was 16,440,832 bytes; the corrected Direct3D candidate is 23,296,512 bytes. Size is not evidence of faster encoding or seeking.
-
-The library-row virtualization follow-up passed 137 targeted desktop checks (executable fc88ed12498b8162f99679b633884cd79b5de3ee0525b4f2dd68858b50d806b4). After recovery, timestamp-precision and quick-trim fixes, the current executable **7fdcbe804f03e444d9b56deb5da75abfc7ea29940f3d8b007830f3154a09af93** passed **316 checks across 16 relocated packaged desktop runs**, plus **86 checks across four generated 4K SDR/PQ runs**. Reports: rust-desktop/9b1097eaf1eb410182e855a9bf548a14 and rust-desktop/80ec8096d05a4f339e4561aa979a6294; portable proof: rust-package-verification/e64fcc85c0fb4418b5f7cf92ee857272. ZIP/native-pin/no-.NET/relocation checks and all nine packaging safeguards passed. Strict formatting/Clippy, workspace tests and frozen C# comparisons passed again. Windows CI passed at quick-trim commit 1bbdfefa62edc1079370237d699800964213d7b6 (run 39611269237), as well as earlier cutover/follow-up commits. Documentation and the independent benchmark tool are checked separately before handoff.
-
-## Outstanding acceptance gates
-
-- Diagnose the historical graphics/startup access violation observed in a debug Glow desktop process. The matching executable now resolves its application stacks, and the faulting Windows COM worker made a null callback before libmpv loaded; its owner is still unknown. Current DX12 startup stress has not reproduced it. Loaded overlays alone do not establish causation or a fix.
-- Real display movement and Windows HDR toggles beyond the user-confirmed correct HDR appearance on the current display. Physical luminance has not been measured; an OS HDR flag, PQ target or ordinary screenshot is insufficient proof.
-- Broader capture hardware/driver coverage beyond the passed local controls. The user-confirmed Windows/NVIDIA game-switch recording issue is external and is not a rewrite blocker.
-- Physical per-monitor 100–200% DPI transitions and assistive-technology navigation. Automated five-scale UI layouts, actual native bounds and keyboard navigation supplement AccessKit integration; they do not replace those physical checks.
-- Representative game-footage/cold-cache performance acceptance and unavailable AMD/Intel encoder combinations. Generated 4K/long-GOP diagnostics below do not establish a universal latency guarantee.
-- User testing and explicit merge/release approval. Keep PR #8 open; do not tag or publish.
-
-Hard cuts remain the default. Transitions/audio crossfades follow after rewrite/HDR verification. Proxy editing, markers, export queues, independent music tracks and other platforms are outside the accepted parity scope.
-
-### Follow-up correctness and startup investigation
-
-Actual native/software VFR input checks now cover retrying a locked recovery write while export is busy, clearing obsolete recovery after a successful asynchronous save, and accepting unchanged in/out fields without rounding stored timestamps. Selecting a different section for a move anchors its preview to that section's retained start. These checks pass in both preview modes.
-
-A later packaged native HLG run exposed a quick-trim race: a seek clears its request key before the following UI tick advances the generation, so a shortcut could read the previous generation's ready timestamp. Both quick trims now wait for the requested decoded frame. The playback acknowledgement carries its actual pre-step timestamp separately from the next frame used as an exclusive out boundary. Native/software VFR checks include trim-before while a seek is pending, and the normal desktop matrix presses trim-after before its seek completes. The legacy loader also derives application-version metadata from the same authoritative Cargo manifest.
-
-The access violation remains a separate unresolved investigation; the quick-trim failure was a test assertion with a normal exit, not that native crash. The original crash's Windows report identifies execute access violation `0xc0000005`, no usable stack, graphics/capture/overlay modules and no libmpv in its loaded-module list. Module presence/absence alone does not establish the cause or exclude an earlier native teardown. One hundred startup/load/seek/shutdown cycles, one hundred early split/undo/redo cycles, two hundred isolated release graphics-startup cycles and two hundred packaged graphics-startup cycles passed without recurrence. Debug graphics startup produced 126 passing reports before executor interruption, followed by a completed 74-cycle run; the interrupted runner's final exit was not retained. Reports: startup-stress/c481b03e9180439eb502e47cc679d9c7, edit-stress/ec6ec1608efb47fe981421eab4e5affd, startup-stress/e1726fc94d93406d8691c7772a4a4d0c, startup-stress/fcb0a1c8ad044f65ade532ef2f41c004, startup-stress/08df50ad452e4e9ea800003d616a866c and startup-stress/fcf3d781bc9b40b1a22ba239fa860dc8. Instrumentation is confined to explicit verification processes and never changes another application's hooks, capture or HDR settings. Passing repetitions do not establish a fix. The user has agreed to test HDR and game/Shadowplay; results and merge approval remain pending.
-
-### Generated 4K/long-GOP diagnostic
-
-Twelve-second 3840×2160/30 fps HEVC fixtures have actual keyframes at zero and ten seconds. The PQ fixture applies a real floating-point color transform. Each backend/profile has 24 completed exact seeks across three player lifecycles, at eight nonsequential positions spanning the recording. Host: Ryzen 7 9800X3D, with an RTX 5070 Ti reported by Windows (driver 32.0.16.1714). Decoding is deliberately CPU; native rendering reports D3D11. The isolated run began with zero other automated desktop verifications. Filesystem caching and unrelated system load are uncontrolled. These timings exclude desktop input and the application's shared project filter graph; they are diagnostic evidence, not an improvement comparison or hardware acceptance result.
-
-| Profile/backend | Median seek acknowledgement | p95 | Maximum |
-| --- | --- | --- | --- |
-| SDR / software | 607 ms | 1,463 ms | 1,705 ms |
-| SDR / native SDR | 540 ms | 1,333 ms | 1,387 ms |
-| PQ / native SDR | 360 ms | 874 ms | 1,088 ms |
-| PQ / native automatic | 379 ms | 931 ms | 1,200 ms |
-
-Reproduce with benchmark-rust-playback.ps1. Raw targets, samples, library pins, hardware inventory and source hashes are in ignored playback-benchmark/fbe6453b83964028a3a2dc100e36396a. A preceding run overlapped other desktop checks and is not the isolated comparison. Source files remained unchanged. Separately, the actual portable editor passed its input/geometry/quick-trim workflow on three-second 4K SDR/PQ sections (86 checks above); that does not substitute for representative recording benchmarks or physical HDR observation.
-
-### User-supplied HDR report — investigation
-
-The supplied 2560×1440 AV1/PQ recording (10-bit, full range, BT.2020 nonconstant-luminance matrix) shows the same rainbow corruption in standalone FFmpeg before tone mapping. CPU libdav1d and NVIDIA CUVID produce byte-identical raw YUV frames at the reported position; a separate Direct3D 11 hardware decode also produces the same appearance. Disabling FFmpeg SIMD and using an independent tone-map graph do not change it. This locates the corruption before the editor's conversion. The user confirmed the same corruption in other players and that the editor was open during capture. The recording's before/after hash is unchanged. The private recording, extracted frames, filenames and raw diagnostic logs remain local/ignored and are not included in the PR or package.
-
-A fresh recording made after fully closing the editor has normal colors in independent raw RGB/SDR samples. Four samples spanning the recording also look normal through the exact production SDR conversion/framing graph; its source hash remains unchanged. This control has the same resolution, bit depth, range, primaries, transfer and AV1 level as the corrupt recording, at approximately 60 fps. A fresh recording after reopening the Review app and loading the healthy clip is corrupt again in raw RGB and all four SDR samples. The open/corrupt → closed/healthy → reopened/corrupt sequence strongly implicates editor/capture coexistence in this setup; it does not identify the responsible renderer, library, driver or hook.
-
-Selecting Software SDR preview in that process is not a reliable workaround. One manual recording changes from rainbow corruption to mostly normal colors with severe block artifacts near its end; a second fresh recording after waiting at least 15 seconds remains corrupt at all three sampled positions. The user confirms manual start/stop rather than Instant Replay. A fresh process started with software preview enabled also produces corruption, with intermittent mostly normal colors and block artifacts. Native video output is not required for the reproduction. Both modes retain the main OpenGL interface, making that UI/capture path a leading hypothesis. All source hashes remain unchanged. Automated graphics helpers are withheld during capture controls; no game, overlay, driver or capture configuration is changed. These SDR samples do not certify physical HDR presentation.
-
-The next candidate replaces Glow/OpenGL with wgpu restricted to Direct3D 12 for the main interface. The unused Glow/glutin dependencies are removed; no parallel UI backend remains. Existing native HDR video and software SDR video paths retain their owners. Opt-in desktop verification requires the actual DX12 backend and records its adapter and surface format. This is an isolation candidate, not a confirmed capture or startup fix. Capture results follow below; the existing Review app is preserved in a separate output folder.
-
-The Direct3D candidate executable is 23,216,640 bytes, SHA-256 `cd46f64c77bb3a65fa3c3ff349bc43b560a5e6e8b44070e0445e74be5f69d7d7`. It passed **316 desktop checks across 16 relocated packaged runs**, including native/software SDR/PQ/HLG, geometry, VFR and actual input at four window sizes. Every run selected DX12 on the RTX 5070 Ti with an eight-bit BGRA interface surface. Software-preview screenshots show normal test-pattern colors; native child-window pixels are not certified by the UI's readback. Portable persistence/export/playback, missing-tool rejection, exact native hashes, no-.NET/version/layout and all nine packaging safeguards passed. Reports: rust-desktop/61dca27b5fff468b9b293c74f6d4e896 and rust-package-verification/4c06e0aa2aec40caa2a5e5f926710d1d. The candidate ZIP is about 149 MB; rendering dependencies add 34 locked packages and remove 11 unused OpenGL packages without upgrading retained package versions. The package includes the matching licenses. The standalone portable verifier now initializes its own workspace paths, removing its dependency on the wrapper's PowerShell scope.
-
-Strict formatting/Clippy, all 32 workspace/executable tests and both frozen C# import fixtures passed for the Direct3D dependency graph. All five media integrations passed with NVIDIA paths, including the semantic 1440p AV1/PQ regression. One hundred isolated graphics-startup/render/shutdown cycles passed (startup-stress/f62cfce24bfe43db9ed270e1be7858a5), with DX12 selected on every cycle. This is new-backend verification, not proof that the earlier intermittent access violation is fixed. Capture and physical HDR acceptance remain open, and no user app was stopped or replaced.
-
-Windows CI at documentation commit 83dad62 failed in persistence-test directory cleanup with NotFound, after the roundtrip/encoding assertions passed. The test helper now accepts NotFound only when its root is absent, retries transient missing-child errors when the root remains, and still reports persistent cleanup failures. Formatting/Clippy and 30 repeated runs of the three persistence integration tests pass. Full Windows CI passed at fa22220 (run 39655076528). The cleanup change does not alter production persistence or establish a capture/startup fix; the Direct3D candidate is verified separately.
-
-A generated AV1/PQ color-chart regression now checks both full and limited range, with CPU libaom and available NVIDIA encoding. The NVIDIA case matches the reported capture's 2560×1440 resolution and 60000/1001 frame rate; CPU CI retains a small fixture. It asserts primary-color separation, neutral white, and a monotonic neutral gray ramp through the shared transform, thumbnails, actual post-seek software preview, SDR export and decoded HDR10 AV1 export. Both encoder runs pass. This semantic check is stronger than a nonblack-frame check and is included in normal media CI. It does not substitute for physical HDR/capture observation. No production color adjustment has been made to compensate for the suspect input.
-
-The documentation-only package refresh retained executable 7fdcbe804f03e444d9b56deb5da75abfc7ea29940f3d8b007830f3154a09af93 and passed relocation/media/no-.NET/native-pin verification plus nine packaging safeguards (rust-package-verification/c8446d5435b1489583c739b4a5e49764). Windows CI also passed documentation/benchmark commit 6050e2eb17b92480e59a08dd048b4f1a4606b9a6. The user's open App-Rust-11-Review session remains running; packaging refreshes use a separate App-Rust-11-Verified output.
-
-### Automated capture investigation — 2026-10-22
-
-The user requested automated testing with the game already open. NVIDIA App's already-enabled local MCP API can start/stop manual recordings and report the game target. While a desktop-control capture session was active, NVIDIA reported a separate Protected Content abort even with the editor closed. Ending that control session and using only the local recording API produced a valid HDR game recording. No capture-protection or NVIDIA settings were changed.
-
-`test-shadowplay.ps1` is an explicit live-capture runner, excluded from ordinary CI. It refuses an existing recording or an unexpected game process, respects API limits, stops its own capture and requires a new stable video with the expected duration/HDR tags. API acknowledgement alone is insufficient. Reports, paths, hashes and media stay local/ignored. The isolated `--capture-hold` desktop verifier imports a clip through production paths, keeps its preview loaded without taking foreground focus, and closes on its own stop marker or bounded timeout. `--capture-hdr` additionally requires active display HDR and native PQ output before declaring readiness; software remains an SDR fallback.
-
-Initial DX12 comparisons of the game's map recorded the game rather than the editor, in both native and software preview modes. Samples at 0.5, 5 and 10 seconds have no rainbow corruption. Map reports: shadowplay/fe436f817f3143fda1c685acf1420e7c and shadowplay/cd033c72c94742219f5118043b989c95. Native preview also produced clean samples in a live game scene (shadowplay/91a55813ec5440879780aa7ce7aaffc8), compared with an editor-closed baseline (shadowplay/ec55b12edaf245499f46785749c73590). These checks initially used the default SDR output profile; they are not native HDR presentation proof. The source/scene and physical-display limitations must remain explicit when assessing further captures.
-
-The live scene also recorded without rainbow/block corruption in software preview (shadowplay/c2ca76114e80471b9b6b88e6e75ba7e4). Its warmer lighting persisted in a subsequent editor-closed control (shadowplay/65eb4195992d46bdbb65a0e51a10794b) and was independently visible in the game after recording stopped. This was not a reversible software-preview color failure in these controls.
-
-The final capture-harness executable, SHA-256 `bda4f8a85f4c1d55cd6f3949081ddb253ae9519d61491f9e9eff0c0fbb5190af`, also passed both HDR10-output comparisons. Native readiness explicitly reported Windows HDR active, known display state and PQ output. The resulting game recording (shadowplay/ab23084ee04f4694a29c42282a900c46) and HDR-output/software-fallback recording (shadowplay/2a7b291f8ca2440c88f5cc77f0e52b1e) retain valid AV1/PQ HDR tags and show the game without the reported corruption at all three sampled positions. Both isolated preview processes stayed loaded until their explicit stop markers and closed successfully. The healthy input and original Review executable retain their prior hashes.
-
-These are successful bounded capture checks on this game/driver/session with the game in the foreground. They support the DX12 candidate; they do not establish every-frame correctness, switching capture targets mid-recording, physical HDR luminance, or the cause of the historical startup crash. The earlier report of the editor being recorded was not reproduced under these controlled foreground conditions. No private footage, screenshots, filenames or source hashes are included in tracked evidence.
-
-The same final executable passed strict formatting/Clippy, 32 workspace/executable tests, both frozen C# import comparisons, all five GPU-enabled media integrations and nine packaging safeguards. Its actual ZIP passed native-pin/version/no-.NET checks, relocation, persistence/export/playback and **129 desktop checks across six native/software SDR/PQ/HLG runs**. Reports: rust-package-verification/5363c645dec74437993fbf6b27d63ca5 and rust-desktop/ffd97f0442ee4509ac96d0318fead00e. The prior extended geometry/VFR matrix remains recorded above; the capture harness adds no normal-session input or rendering alternative. The final documentation refresh is verified separately with the identical executable.
-
-### Ordinary-session replay follow-up — 2026-10-22
-
-The user confirmed that the healthy clip's colors and brightness look correct in the ordinary candidate with Windows HDR preview active. This is acceptance of that clip on the current display, not measured luminance, monitor/HDR-toggle coverage or merge approval. The user's editor remains running and is not replaced by capture tests.
-
-With the ordinary editor still open, additional manual recording samples show the actual game's map and live scene without rainbow/block corruption. The live-scene report is shadowplay/3dec700135694aa1b48c35e49556e291. A fresh Instant Replay buffer also produces healthy early and late live-scene samples with valid AV1/PQ tags. The earlier three-minute replay spans a game/desktop transition, so only its game tail is used as game evidence. Desktop control is ended before capture. Instant Replay was found off after desktop control; a save attempt was refused and is excluded. It was re-enabled to its initial state before collecting the fresh replay.
-
-Capture acceptance remains **open**: the user reported a different, severely red-clipped replay from another game while the ordinary HDR editor was open. Its HDR/PQ interpretation produces the problem through both the shared SDR graph and an independent libplacebo BT.2390/perceptual-gamut conversion. A forced SDR interpretation gives plausible colors, that game's current configuration disables HDR output, and an earlier recording has SDR/BT.709 tags. These observations suggest a capture color-interpretation mismatch; they do not establish that the editor caused it, that the file is irreparably damaged, or that overriding all HDR inputs is correct. Matched ordinary-editor native/software controls follow below. No production color heuristic or original-media rewrite has been applied. Private paths, frames and source hashes remain ignored.
-
-Fresh same-lobby controls with the second game now pass in the current session: an editor-closed manual recording (shadowplay/2b38b5e9bd7149bd8daeff25bb81f15e), an editor-closed replay, an ordinary native-HDR-preview replay and an ordinary software-preview replay all have SDR/BT.709 tags and healthy sampled colors. The previous review session was already closed when these tests began; a new ordinary candidate was opened in isolated data with the same healthy HDR project. This comparison uses normal activation/rendering rather than the nonactivating capture harness. Native HDR preview was restored afterward. Original recordings and user data were preserved.
-
-These passes do not explain the earlier HDR-tagged failure. An attempted continuous-buffer foreground switch is excluded: desktop control stopped Instant Replay even without requested screenshots, and the helper restarted it after returning to the game. That recording is another fresh-start control, not proof of continuous capture across the switch. The user was asked for one manual editor/game switch with replay already running; analysis requires replay to remain enabled and refuses to restart it for that test. The existing per-recording SDR interpretation also produces plausible colors from the old clip through the production graph, but has not been applied automatically or treated as verified recovery of the intended source colors.
-
-The user then performed the manual switch. The first saved replay was filed as HDR/PQ desktop footage after the return to chat; it contains only a brief foreground-game segment and is not a settled game-capture pass. Leaving the game foreground for the follow-up produced a 32-second actual-gameplay replay with SDR/BT.709 tags. Replay was enabled before and after the wait, no restart action was issued, and both game and HDR editor remained running. Eight samples spanning 0.5–31 seconds show normal game colors without the reported red/rainbow corruption. NVIDIA saved a new game segment after the HDR desktop segment; this is successful target/color recovery while replay remains enabled, not proof that NVIDIA retained one continuous encoded buffer. Current-game PID alone was insufficient to identify what the earlier desktop file captured. Private reports and frames remain local.
-
-Current-display visual HDR and these bounded game/editor capture checks pass for the tested candidate. The historical incorrectly colored replay is still unexplained and has not been reproduced in the matched controls; no new production fix is claimed. Broader monitor/HDR-toggle coverage and the other acceptance gates above remain open.
-
-### User-confirmed HDR acceptance and external capture issue
-
-The user independently confirmed that the HDR-game-to-SDR-game recording failure belongs to Windows/NVIDIA and is not a fault of this project, and requested continuation of the rewrite. Together with the prior physical-display confirmation and native/software/manual/replay controls, this closes the local HDR/capture investigation as a rewrite blocker. The classification is user-confirmed; no unperformed reproduction is claimed, and no editor color heuristic or Shadowplay reset is added. The historical observations above are retained. Unmeasured display combinations and the separate startup/DPI/accessibility work remain explicit follow-up.
-
-### Keyboard focus and recovered startup evidence
-
-A new actual-input regression reproduced a blocked split after Tab/Enter selected a timeline section: egui's wants_keyboard_input is true for any focused widget, so the old guard treated focused sections as text fields. Editing shortcuts now remain available for a focused section, Space is consumed once before it can also activate the section, and a visible inner outline marks keyboard focus. Native/software SDR checks pass for split/undo/delete, playback/pause, selection and search typing. Isolated injected-input checks explicitly simulate a focused egui context; ordinary sessions retain native OS focus. This is not a claim of full screen-reader acceptance.
-
-The retained original debug executable matches the crash dump's debug identity, allowing application frames to be resolved. Its main thread was in the removed Glow/OpenGL first-render path while eframe resized its application icon; another application thread was discovering/hashing native tools. The faulting thread made a null call through Windows COM worker code, with no application or libmpv frame on that faulting stack and no libmpv module loaded. This is stronger evidence about the original failure's timing than the earlier unsymbolized report, but it does not identify the callback owner or prove the DX12 candidate fixes it. The historical startup issue remains documented; no speculative library/driver workaround is added.
-
-The retained minidump does not contain the COM work item's heap memory, so its callback owner cannot be recovered from that object. The matching debug executable and debugger reports are preserved in ignored investigation evidence before reproducible build-tool cleanup. A future recurrence needs richer crash data; repeatedly passing the current startup path cannot establish the old callback's cause.
-
-### Portable candidate follow-up — 2026-10-23
-
-The final keyboard-menu follow-up is production reachable in the Rust candidate. Shift+F10 now opens a keyboard-focused section's menu, retains its anchor across frames, and Escape returns focus to the section. While the menu owns input, ordinary timeline shortcuts cannot edit the underlying project. Actual-input regressions reproduced the blocked menu and lost-focus behavior before their fixes; native and software checks now cover menu lifetime, shortcut isolation and subsequent frame stepping/editing. Non-capture verification excludes native user events from its injected sequence while retaining renderer screenshots. Capture-hold and ordinary sessions keep their native input behavior.
-
-Executable SHA-256 `b6404bc435ff381f166dbfd8ed36cc72f2fce58b699881fef2333a9e8d28034a` is **23,248,896 bytes**, version 1.1.0. Its relocated ZIP passed **330 desktop checks across 16 native/software SDR, PQ, HLG, geometry and VFR runs**. Version/layout/checksum, exact native pins, no CLR/.NET, documentation links, Unicode/apostrophe/space relocation, schema-2 persistence, export with a black/silent gap, preview/seek, original-source preservation and missing-native-tool rejection also pass. Reports: rust-desktop/502564946b5441b68129dda3bebe1134 and rust-package-verification/bf4eb68c72db4b8192c4c8a8c96d69b8. An earlier packaged HLG held-ruler assertion failed and its unchanged rerun passed; the final matrix passes after verification input isolation, but that alone does not establish the earlier event's cause.
-
-Strict formatting/Clippy, 32 workspace/executable tests, both frozen C# import comparisons and repository consistency passed again for the keyboard-menu source. The previously passing media integrations and nine packaging safeguards remain applicable to unchanged media and packaging owners. Windows CI passed commit 52929ed (run 39835473274); the menu follow-up is commit 2137df2. The separate App-Rust-11-Candidate bundle preserves existing app folders and user sessions. No merge, release tag or publication is included.
-
-The identical relocated executable also passed **45 checks across two five-scale runs**, with **40 rendered layouts**: four window sizes at each of 100/125/150/175/200% UI scale, in native and software preview modes. Actual Windows child bounds match the preview's scaled coordinates; aspect ratio, transport containment and non-overlapping controls pass. The software 200% minimum-size rendering was inspected. The renderer reports DX12 on the NVIDIA RTX 5070 Ti. Reports: rust-desktop/1622a30a9c0c49c98c39aa388b58c1f9. These app-local zoom checks do not change Windows settings or certify physical per-monitor DPI/assistive-technology transitions. Documentation-only repackaging must retain the tested executable hash and pass portable verification again.
-
-### Completion audit
-
-| Gate | Evidence / remaining work |
+| Gate | Result and scope |
 | --- | --- |
-| One new authoritative owner per responsibility | Current ownership table above; Rust desktop, core, persistence, media and Windows boundaries are production reachable. |
-| Superseded owner and temporary bridges | C#/WPF production files are removed. The pinned C# reader remains test-only; build-rust.ps1 delegates to the one authoritative builder as a compatibility entry point. No C# runtime bridge is packaged. |
-| Retained contracts and differential differences | Exact legacy imports, editing/history, source protection, persistence, geometry and actual input checks pass. Explicit parser/resource hardening and schema-2 additions are documented; broader physical display/DPI/accessibility gates remain open. |
-| Rebuild and artifact identity | Locked Cargo graph, pinned Rust/LLVM/native binaries, normal build.ps1 and passing Windows CI. Byte-identical clean builds/ZIP timestamps are not promised. Exact tested executable hash is recorded above. |
-| Actual artifact and application harness | Current relocated portable persistence/export/playback and 330 desktop checks pass. Earlier 86 generated 4K checks and nine packaging safeguards remain recorded. The historical startup failure remains unattributed despite stress passes. |
-| Live-target scope | Generated fixtures plus user-authorized local game captures through NVIDIA's existing API, with isolated editor processes. Private recordings stay local. Current-display HDR appearance is user-confirmed; broader display-state acceptance remains open. No remote production data was modified. |
-| Rollback/restoration | Exact 1.0.4 release ZIP/hash retained and its relocated restoration previously verified; original schema-1 projects are preserved and upgrade saves use a new path. |
-| Dead-code and metrics audit | Zero tracked superseded production files; no Rust TODO/unimplemented stubs. Current inventory, largest modules and artifact sizes are recorded above. The permanent native/software render alternatives serve distinct presentation/fallback purposes. |
-| Metadata and publication | Cargo 1.1.0 owns version resources and package naming. README/changelog/guides/release notes describe an unreleased candidate and known blockers. PR #8 stays open; no merge, tag or publication occurred. |
+| Core and source protection | 42 workspace/executable tests; strict formatting/Clippy; immutable recordings, exact trim/gap/history contracts. |
+| Full desktop matrix | 525 checks across 18 native/software SDR, PQ, HLG, geometry, two-track audio and VFR runs. |
+| Audio recovery | 67 checks across two isolated runs, including recovery from an unavailable player endpoint. Windows audio settings remain untouched. |
+| Native failure fallback | 68 checks across two runs; dequeued requests survive a forced native failure and reach software rendering. |
+| Layout and accessibility | 63 checks across 40 layouts at 100–200% app scale; named position/transport controls and labelled exact-valued trim spinboxes in the accessibility tree. |
+| Physical monitor movement | Native/software round trips between connected HDR and SDR displays preserve child bounds and select PQ/SDR correctly; both displays use 96 DPI. |
+| Lifecycle | 20 generated PQ startup/import/seek/edit/shutdown cycles; New project releases playback, library previews and filmstrip resources. Opening a project uses the same preview-release path. |
+| Media and packaging | GPU/media integrations, source hashes, export/cancel safety, ordinary filename startup, relocated portable verification and nine packaging safeguards pass. |
+| Resource comparison | Three visible launches per case on the current executable. Native preview working set is lower in the generated 4K case; empty/software cases retain a memory tradeoff. |
 
-Implementation cutover is present, but full rewrite acceptance is **not complete**: the historical startup access violation remains unattributed, and monitor/HDR-toggle, physical DPI/accessibility and representative-footage acceptance require the outstanding evidence listed above. Current-display HDR appearance is user-confirmed, bounded capture checks pass, and the independently confirmed Windows/NVIDIA game-switch recording issue is external to this project.
+The [editor audit](editor-audit.md) describes the fixes. The [C#/Rust comparison](rust-csharp-comparison.md) gives measurement conditions and avoids claiming a universal memory or speed win. The [release checklist](release-readiness.md) records approval and physical acceptance gates.
 
-The dated foundation record below preserves original measurements and migration decisions. Its future-owner language and missing-feature statements describe the old foundation, not the current Rust production implementation.
+## Contracts retained
 
-## Historical foundation record — 2026-10-20
+- `editor-core` owns linked sections, exact source timestamps, gaps, snapping, ripple rules and undo/redo.
+- `project-store` owns bounded legacy import, schema-2 persistence, project validation and recovery metadata. Schema-1 originals and the published C# app remain available for rollback.
+- `media-engine` owns the shared color/framing graph, probing, thumbnails/waveforms, verified atomic exports and cancellation. Export always reads original recordings.
+- `media-path` and `platform-windows` enforce local file/source identity boundaries and Windows display/window integration.
+- `native-mpv` owns the verified DLL, thread-confined control handle and renderer teardown. The desktop actor owns asynchronous generations, latest-request/frame delivery and audio-output recovery.
+- The UI preserves keyboard focus, named transport controls, exact trim fields, drop placement and progressive disclosure. Ordinary startup and idle work use production event wakeups.
 
-## Scope and version ownership
+## Remaining physical acceptance
 
-The [implementation plan](rust-rewrite-plan.md) tracks parity, HDR and release
-gates. Hard cuts remain the default. Cross dissolve and optional audio crossfade
-are follow-up work after the rewrite. No transition settings or schema are added
-in this slice. Recommended additions and stretch work remain subject to capacity;
-they must not delay parity and HDR verification.
+Current-display HDR appearance is user-confirmed. Bounded game/Shadowplay checks pass; the user independently confirmed the separate HDR-to-SDR game-switch recording corruption is external to this project. That investigation remains closed.
 
-`Development/src/SimpleVideoEditor/SimpleVideoEditor.csproj` still owns the
-shipping version, **1.0.4**. Cargo's **0.1.0** identifies private migration tools,
-not an application release or a second source of application version authority.
-The release metadata changes to 1.1.0 only at verified cutover. Project schema
-versions are independent of both values.
+Manual Windows HDR toggles, genuine mixed-DPI monitor transitions and a complete screen-reader workflow still require the corresponding setup and user observation before final release approval. Current tests cover actual HDR/SDR monitor movement at 96 DPI, app scaling and accessibility-tree semantics. They do not measure physical HDR luminance, headphone loudness or every device hotplug combination.
 
-## Frozen baseline
+An earlier Glow startup access violation remains unattributed. Production uses DX12; current startup stress passes. Prior investigation reports remain available rather than being described as a proven fix.
 
-- Published reference: [v1.0.4](https://github.com/Gimbuhh/Simple-Video-Editor/releases/tag/v1.0.4),
-  source commit `dd65df13a41490e8168a624b65fcff6a27956940`.
-- Starting checkout: `fb1fbf7641146d7a1d9211c56ad77bb44f1ec46b`; app source,
-  existing tests, scripts and SDK pin have no changes relative to v1.0.4.
-- Exact release artifact: `SimpleVideoEditor-1.0.4-win-x64.zip`, 199,337,788 bytes.
-  SHA-256: `5503f27981238c9d38e9e0b31fce8075b0c26511727fdfd16f6c0ef772e86493`.
-  Downloaded ZIP matches both the published digest and companion checksum.
-- Baseline inventory: 34 tracked source/test files, 1,380,616 bytes including
-  authored icon assets, 4,369 text lines in C#/XAML/project/manifest files.
-- .NET SDK: 10.0.401, pinned in `global.json` and `dependencies.json`.
-  Native tools and exact hashes remain pinned in `Development/scripts/dependencies.json`.
-- Rust tools: rustc 1.90.0 (`1159e78c4`), Cargo 1.90.0 (`840b83a10`), GNU x64
-  host for this foundation. Workspace-local installation avoids system changes
-  and does not settle the desktop UI/FFI toolchain choice. Bootstrap origin and
-  SHA-256 are pinned in `Development/scripts/rust-tools.json`.
-- Rebuild: `./Development/scripts/build.ps1 -Zip -OutputName App-Rewrite-Baseline -PackageDirectory Development/artifacts/rewrite-baseline/rebuilt`.
-  Rebuilt executable SHA-256: `235f1561aa4401aa1b3d77bf38a0ac72ea02003bc4d93ee5b8ee46ff06aed58f`.
-  Rebuilt ZIP SHA-256: `a8e10756e3198f742d1bc3eb227ba0dcaa25c4ab92dc3778355bc2b1196ab9ec`.
-  ZIP byte identity with the published archive is not claimed; generated archive
-  metadata and current documentation can differ. The downloaded release remains
-  the exact rollback artifact, separate from the reproduced build.
+## Evidence and history
 
-Local archives, reports, fixtures generated from the media tools, and test app
-folders are ignored. No private recordings were imported or committed.
+Current ignored artifacts: release-1.1/verification.json; rust-desktop/8c631cba89544efb9cfc785fb644d000, 1ab5904c15cb44d1a6a1556c82fbb0f8, 1ca59d874db84310955cd26ddf949d24 and 1b83dccc8b6f4651977b0219593b9e4d; rust-displays/987f0a6c2a2f4bd1b1f193e90cfd52fd; startup-stress/a87096facb1a45dd94496473720e4719; version-comparison/b7c46c74995e41e5909d73231255fe97; rust-package-verification/f9324bb3860c4d0a9dd7d7c47552edaa.
 
-## Verification recorded on 2026-10-20
-
-| Check | Result |
-| --- | --- |
-| Repository metadata/scripts | Passed before and after migration edits. |
-| Existing core/media harness | 103 passed using generated fixtures, CPU encoding and software playback. |
-| Existing desktop UI harness | 233 passed; callback-driven WPF harness, not external OS drag automation. |
-| Reproduced portable artifact | Layout, embedded version, checksum, native pins, documentation, relocated project preview and clean close passed. |
-| Packaging safeguards | 9 passed using the isolated baseline package directory. |
-| Rust foundation and native boundary | 23 tests passed, formatting and Clippy passed, optimized inspector smoke passed. |
-| C#/Rust differential import | Both committed fixtures passed exact numeric field comparisons against unchanged C# ProjectStore/TimelineLayout. |
-| Exact release rollback | Downloaded original ZIP extracted and passed relocated saved-project preview/native pin/clean-close verification. |
-| Rust software playback | 9 checks passed: generated SDR frames, serialized reload/seek/pause intent, missing-input failure, active-playback shutdown, and explicit PQ/HLG rejection. |
-| Native D3D11 experiment | 48 checks passed across generated SDR/PQ/HLG, native SDR and automatic targets, including the software checks. Local automatic-mode reports show 10-bit PQ/BT.2020. |
-| Physical HDR/toolkit/display changes/capture | Not verified. No UI framework selected and no full HDR presentation claim. |
-
-Commands and fixture locations are in the [development guide](development.md).
-No application source changed, so the baseline UI/media evidence remains valid
-for this foundation PR. Rust behavior has its own separate evidence.
-
-## Contracts and ownership
-
-All C# production owners remain active in the shipping application. The new
-owners below currently serve the Rust inspector or pure tests, not the desktop
-entry point. Rust has no dependency on the C# runtime; `RustParityOracle` is
-test-only and must remain outside app packaging.
-
-| ID | Contract and reference owner | Intended Rust owner | Evidence / state |
-| --- | --- | --- | --- |
-| C01 | Saved trims keep their exact values; Models/ProjectStore | editor-core + project-store | Bit-preserving import test and direct C# comparison; verified in inspector only. |
-| C02 | Legacy projects without Sources/TimelineStart reconstruct library and sequential placement | project-store | sequential.json, mixed-case test and C# oracle; verified in inspector only. |
-| C03 | Leading/intermediate gaps, unused sources and repeated sections survive | project-store + editor-core | gaps-library.json, C# oracle, distinct clip IDs and exclusive-end mapping tests. |
-| C04 | Split keeps both linked parts, surrounding placement and undo identity; MainWindow.SplitAt | editor-core | Pure split/undo/redo test; not connected to desktop UI. |
-| C05 | Delete closes only the joined local group; MainWindow.Remove_Click / TimelineLayout.JoinedFollowing | editor-core | Tests cover joined group, separated group and undo; not connected to desktop UI. |
-| C06 | Add-all is one edit independent of search filtering; MainWindow.AppendSources | editor-core command; future library owner | Batch append/undo test; library UI/filter behavior still belongs to C#. |
-| C07 | Reject invalid/overlapping/extreme timeline values before media work; ProjectStore.ReadAsync | project-store + editor-core | Invalid input, bounded stream/count, future-schema and failed-command tests. |
-| C08 | Original recordings remain untouched; LocalRecordingPath/ExportService | media-path + future export | Rust lab validates local drives/link targets and hashes generated sources before/after. Inspector still has no media access. Export source-as-output protection remains unported. |
-| C09 | Pointer owns scrubbing; stale decoder events cannot change play/pause intent; MainWindow/NativePlayer | future playback + desktop-ui | Baseline harness only; not ported. |
-| C10 | Save/recovery/relink/cache and concurrent-session isolation | future project-store/cache | Baseline harness only; Rust importer cannot save or upgrade projects. |
-| C11 | Exact exclusive cuts, silent/black gaps, linked audio and cancellation | future export/playback | Rust lab verifies decode and serialized seeking only. Timeline playback/export, frame-exact presentation, audio sync and cancellation remain unported. |
-| C12 | Portable version/layout/native pins and safe replacement | future Rust packaging | Existing packaging retained; inspector is not included in App or release ZIP. |
-
-Intentional importer hardening: 8 MiB input limit, explicit collection limits,
-control-character rejection, nonnegative placements, and rejection of ambiguous
-mixed-case duplicate keys. These do not establish full parser parity. Windows
-ordinal Unicode path comparison, UTF-16/32 input, duplicate-property edge cases,
-and platform drive/reparse-point authorization require additional fixtures before
-the importer can replace the production reader. Source/clip IDs are stable only
-within the imported document/undo history; persistent schema-2 IDs remain future work.
-
-## Migration and deletion gates
-
-| Slice | Implemented | Production reachable | Verified | Legacy owner removed |
-| --- | --- | --- | --- | --- |
-| M0 baseline/ledger | Yes | Existing 1.0.4 artifact | Baseline checks above | Not applicable |
-| Rust timeline foundation | Split/delete/append/undo subset | Pure tests only | Focused contracts | No; C# editor still owns the application |
-| Rust schema-1 importer | Read-only subset | sve-inspect executable only | Unit, CLI and C# differential checks | No; saves/recovery/media authorization remain unported |
-| M1 rendering/HDR spike | Native/software backend experiment | sve-playback-lab only, not editor UI | CPU/native tests; physical HDR and toolkit integration pending | No |
-| Full M2 domain/persistence | No | No | No | No |
-| M3-M8 desktop/cutover | No | No | No | No |
-
-There are no runtime bridges between the applications. The C# test oracle is
-retained until differential migration coverage is complete, then removed when
-fixtures provide an independent sufficient oracle. Delete C# production owners
-only after their Rust replacements are connected to the desktop entry point,
-verified in the actual package, and no remaining production callers use them.
-
-Next: connect a UI candidate to the native/software backend experiment, compare
-video-surface integration and generation-safe pointer scrubbing, and test actual
-HDR presentation. The standalone native windows establish a backend baseline;
-they do not prove embedding, widget interaction, accessibility or DPI behavior.
-Validate on a physical HDR display before freezing the desktop framework or
-promising full HDR preview. Full UI migration still waits for the M1 gate.
-
-Initial metrics: four Rust source/test modules, approximately 750 lines including
-tests, three workspace packages and eleven locked registry dependencies. The
-optimized inspector is about 1.65 MB. No legacy production code has been removed
-and no duplicate runtime event handlers or C#/Rust bridges have been introduced.
-This expected temporary source growth must be reversed at verified desktop
-cutover; the current tests and inspector do not justify removing the C# app.
-
-Rollback for this slice is the unchanged 1.0.4 release and original projects.
-No schema upgrades or source-file writes occur. Keep the PR open for user review
-and testing; no merge, release tag or publication is authorized yet.
-
-## M1 backend experiment
-
-The Rust runtime now owns its libmpv handle and render-worker lifecycle in the
-standalone lab. It loads only the existing checksum-pinned DLL, disables config,
-scripts, external references and audio output, and never invokes the C# app.
-The loader uses the library directory and system directory, without changing
-the process-wide DLL search path. ABI declarations use official 0.41 headers;
-the runtime client API major version is checked separately.
-
-Unsafe application code is confined to `native-mpv` and the local-drive query in `media-path`.
-The domain, parser, inspector and lab entry point retain the unsafe-code ban.
-The software renderer uses an aligned allocation, one-frame mailbox and an
-atomic-only callback. Its thread unregisters callbacks and frees the render
-context before the player is destroyed. Source authorization supports local
-links and rejects network/device namespaces before media access. It retains the
-baseline's filesystem race limitations and is not yet wired into project loading.
-
-Generated three-second FFV1 fixtures include real linear-light conversion to
-10-bit PQ and HLG. The native SDR mode reports sRGB/BT.709 for each source; the
-automatic mode reports a 10-bit PQ/BT.2020 output target on this machine. This is
-libmpv pipeline evidence, not a measured luminance or visual correctness result.
-The machine exposes NVIDIA RTX 5070 Ti (driver 32.0.16.1714), AMD integrated
-graphics and a virtual display adapter; adapter-specific behavior, mixed-display
-movement and Shadowplay alongside a game are not established by those reports.
-
-The software reference is deliberately SDR-only. A CPU tone-mapped HDR fallback
-still needs implementing and matching against native preview/export. UI toolkit
-prototypes, HDR/SDR display-state handling, pointer latency, color/geometry visual
-checks and preview/export agreement remain M1 exit conditions. No C# production
-owner can be removed yet. The shipping App and release metadata remain 1.0.4.
-
-After this slice: ten Rust source/test modules, 1,725 lines including tests, six
-workspace packages and twenty Windows registry dependencies (additional target
-dependencies remain in Cargo.lock). The optimized playback lab is about 1.74 MB.
-The original production source/tests and native pins are unchanged. Package
-size growth is limited to documentation because Rust is not bundled in App.
-
-## Bounded seek measurements
-
-The post-acknowledgement lab run on this desktop used generated 320x180 FFV1 recordings, CPU decoding, three player lifecycles and four local seeks per lifecycle. These 12-sample summaries measure native seek completion, not pointer latency or physical HDR presentation. Concurrent verification was active; cache was not flushed. They are diagnostic observations rather than a controlled comparison with 1.0.4.
-
-| Lab mode | Median ms | p95 / max ms |
-| --- | --- | --- |
-| software-sdr | 2.55 | 28.09 |
-| native-sdr-sdr | 248.93 | 500.27 |
-| native-sdr-pq | 247.12 | 497.96 |
-| native-sdr-hlg | 245.44 | 511.25 |
-| native-auto-pq | 247.31 | 510.68 |
-| native-auto-hlg | 247.11 | 501.03 |
-
-Native completion varied into the hundreds of milliseconds on these small fixtures, so no universal seek-speed improvement is claimed. The UI keeps pointer ownership while decoding and offers Software SDR preview as an explicit option. Long-GOP/4K, physical display and game-capture performance acceptance remain open.
+The [previous ledger](https://github.com/Gimbuhh/Simple-Video-Editor/blob/3817dd3002c495f64f92f18c7d0b6ef94d64ce4c/docs/rust-rewrite-status.md) preserves the detailed rewrite, HDR/capture, seek and startup investigation history. Earlier measurements keep their original scope and artifact hashes; they are not silently reassigned to this executable. Native pins/licenses remain unchanged. Published assets and original recordings are preserved.

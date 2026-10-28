@@ -157,6 +157,8 @@ pub struct Verification {
     pub scrub_frames: u64,
     pub scrub_release_ms: f64,
     pub fail_native: bool,
+    pub audio_recovery: bool,
+    pub track_display: bool,
 }
 impl Verification {
     pub fn arguments() -> Option<Self> {
@@ -223,6 +225,8 @@ impl Verification {
             scrub_frames: 0,
             scrub_release_ms: 0.0,
             fail_native: args.iter().any(|a| a == "--fail-native-preview"),
+            audio_recovery: args.iter().any(|a| a == "--verify-audio-recovery"),
+            track_display: args.iter().any(|a| a == "--track-display"),
         })
     }
     pub fn key(&mut self, key: egui::Key, command: bool) {

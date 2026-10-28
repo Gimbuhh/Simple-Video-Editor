@@ -87,3 +87,11 @@ Physical HDR luminance/color accuracy, monitor movement/HDR toggles, 100–200% 
 Use feature branches and open PRs. Enable the tracked guard with `git config --local core.hooksPath .githooks`; never push directly to main. Keep PRs open until the user finishes testing and approves merge. Tags come from merged main, after checks, and workflows prepare draft releases only. See [release instructions](releasing.md).
 
 The [2026-10-28 editor audit](editor-audit.md) records preview audio, action-label alignment, color-history refresh and focused cleanup findings.
+
+## Release hardware checks
+
+`test-rust-desktop.ps1 -AppPath 'App/Simple Video Editor.exe' -Fixtures audio.mkv -AudioRecovery` temporarily selects an unavailable endpoint in each isolated test player, then checks that production recovery reopens the default output while preserving the video clock. It never changes Windows audio settings. Ordinary desktop runs also check that New project releases the player, library previews and filmstrip worker/cache. An accessibility-tree unit test checks the preview-position slider, associated In/Out labels, exact values and named transport control.
+
+`test-rust-displays.ps1 -AppPath 'App/Simple Video Editor.exe'` requires two connected monitors. It moves only its own native/software HDR-preview helpers out and back, checks fresh display state, the expected PQ/SDR transfer and actual child-window bounds, and closes those helpers. It preserves Windows settings and original recordings. With the current two 96-DPI monitors it establishes physical monitor movement, not a mixed-DPI transition. `--track-display` writes diagnostics only inside explicit held desktop verification.
+
+Use the [release checklist](release-readiness.md) for the current gates and physical acceptance scope.

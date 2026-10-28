@@ -56,9 +56,43 @@ pub struct Status {
     // Only present once a real audio output has negotiated its sample format.
     pub audio_output: Option<String>,
     pub audio_stream: Option<u32>,
+    pub audio_warning: Option<String>,
+    pub audio_recovery_attempts: u64,
     pub error: Option<String>,
     pub display: Option<platform_windows::DisplayColor>,
 }
+#[derive(Default)]
+struct AudioRecovery {
+    missing_since: Option<Instant>,
+    last_attempt: Option<Instant>,
+    attempts: u64,
+}
+impl AudioRecovery {
+    fn update(&mut self, needed: bool, available: bool, now: Instant) -> bool {
+        if !needed || available {
+            self.missing_since = None;
+            self.last_attempt = None;
+            return false;
+        }
+        let missing = *self.missing_since.get_or_insert(now);
+        if now.duration_since(missing) < Duration::from_secs(1)
+            || self
+                .last_attempt
+                .is_some_and(|last| now.duration_since(last) < Duration::from_secs(2))
+        {
+            return false;
+        }
+        self.last_attempt = Some(now);
+        self.attempts += 1;
+        true
+    }
+    fn warning(&self) -> Option<String> {
+        self.last_attempt.map(|_| {
+            "Audio output unavailable. Check the Windows output device; preview will retry.".into()
+        })
+    }
+}
+
 type SubmissionKey = (u64, bool, u64, i32, bool);
 
 pub struct Playback {
@@ -78,6 +112,10 @@ impl Playback {
             .nth(1)
             .is_some_and(|a| a == "--verify-desktop")
             && std::env::args_os().any(|a| a == "--fail-native-preview");
+        let fail_audio = std::env::args_os()
+            .nth(1)
+            .is_some_and(|a| a == "--verify-desktop")
+            && std::env::args_os().any(|a| a == "--verify-audio-recovery");
         let worker = std::thread::spawn(move || {
             for attempt in 0..if forced { 1 } else { 2 } {
                 let software = forced || attempt > 0;
@@ -93,6 +131,9 @@ impl Playback {
                         window,
                     )?;
                     let mut current: Option<Request> = None;
+                    let mut audio_track = None;
+                    let mut audio_recovery = AudioRecovery::default();
+                    let mut audio_fault_injected = false;
                     let mut display = None;
                     let mut display_tick = Instant::now() - Duration::from_secs(2);
                     while !stopped.load(Ordering::Acquire) {
@@ -151,6 +192,7 @@ impl Playback {
                                 if !reuse {
                                     current = None;
                                     player.command(&["stop"])?;
+                                    audio_track = None;
                                     for _ in 0..1024 {
                                         if player.poll_event(0.0)? == 0 {
                                             break;
@@ -287,7 +329,11 @@ impl Playback {
                                         if player.property("vid").as_deref() != Some(&vid) {
                                             player.set("vid", &vid)?;
                                         }
+                                        if stream.is_some() && aid.is_none() {
+                                            return Err("The selected audio stream is unavailable in the preview".into());
+                                        }
                                         player.set("aid", aid.as_deref().unwrap_or("no"))?;
+                                        audio_track = aid;
                                         let duration = next.end - next.start;
                                         let mut audio = format!(
                                             "lavfi=[volume={}dB",
@@ -406,36 +452,69 @@ impl Playback {
                             current = Some(next);
                         }
                         player.poll_event(0.0)?;
-                        if let Some(position) =
-                            player.property("time-pos").and_then(|s| s.parse().ok())
-                        {
-                            state.lock().unwrap().position = position;
+                        let needs_audio = current.as_ref().is_some_and(|r| {
+                            r.playing
+                                && !r.adjustment.muted
+                                && r.volume > 0.0
+                                && r.source.as_ref().is_some_and(|s| !s.audio.is_empty())
+                        });
+                        if fail_audio && needs_audio && !audio_fault_injected {
+                            // Isolated verifier only: fail this player's endpoint, never Windows settings.
+                            player.set(
+                                "audio-device",
+                                "wasapi/{00000000-0000-0000-0000-000000000000}",
+                            )?;
+                            audio_fault_injected = true;
                         }
-                        state.lock().unwrap().ended =
-                            player.property("eof-reached").as_deref() == Some("yes");
-                        state.lock().unwrap().paused =
-                            player.property("pause").as_deref() == Some("yes");
-                        if let Some(frame) = player.take_frame() {
-                            state.lock().unwrap().frame = Some(Arc::new(frame));
-                            changed = true;
-                        }
-                        state.lock().unwrap().gamma = player.property("video-out-params/gamma");
-                        state.lock().unwrap().decoder = player.property("hwdec-current");
-                        {
+                        let retry_audio = {
+                            // Publish one coherent snapshot rather than many separately locked fields.
                             let mut updated = state.lock().unwrap();
+                            if let Some(position) =
+                                player.property("time-pos").and_then(|s| s.parse().ok())
+                            {
+                                updated.position = position;
+                            }
+                            updated.ended =
+                                player.property("eof-reached").as_deref() == Some("yes");
+                            updated.paused = player.property("pause").as_deref() == Some("yes");
+                            if let Some(frame) = player.take_frame() {
+                                updated.frame = Some(Arc::new(frame));
+                                changed = true;
+                            }
+                            updated.gamma = player.property("video-out-params/gamma");
+                            updated.decoder = player.property("hwdec-current");
                             updated.audio_output = player.property("current-ao").filter(|_| {
                                 player.property("audio-out-params/samplerate").is_some()
                             });
                             updated.audio_stream = player
                                 .property("current-tracks/audio/ff-index")
                                 .and_then(|s| s.parse().ok());
-                        }
-                        {
-                            let updated = state.lock().unwrap();
+                            let retry = audio_recovery.update(
+                                needs_audio && !updated.ended,
+                                updated
+                                    .audio_output
+                                    .as_deref()
+                                    .is_some_and(|ao| ao != "null"),
+                                Instant::now(),
+                            );
+                            updated.audio_warning = audio_recovery.warning();
+                            updated.audio_recovery_attempts = audio_recovery.attempts;
                             changed |= previous.position != updated.position
                                 || previous.ended != updated.ended
                                 || previous.paused != updated.paused
-                                || previous.gamma != updated.gamma;
+                                || previous.gamma != updated.gamma
+                                || previous.audio_warning != updated.audio_warning;
+                            retry
+                        };
+                        if retry_audio && let Some(track) = audio_track.as_deref() {
+                            if fail_audio {
+                                player.set("audio-device", "auto")?;
+                            }
+                            // A missing endpoint is recoverable. Re-select a disabled audio track
+                            // and re-open only AO, preserving the video clock and project state.
+                            // Failed attempts leave the warning visible; actual output is checked again.
+                            let _ = player.set("aid", track);
+                            let _ = player.command(&["ao-reload"]);
                         }
                         let playing = current
                             .as_ref()
@@ -545,6 +624,26 @@ pub fn preview_output(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn audio_recovery_is_delayed_throttled_and_clears_on_recovery_or_intentional_silence() {
+        let now = Instant::now();
+        let mut health = AudioRecovery::default();
+        assert!(!health.update(true, false, now));
+        assert!(health.warning().is_none());
+        assert!(health.update(true, false, now + Duration::from_secs(1)));
+        assert!(health.warning().is_some());
+        assert!(!health.update(true, false, now + Duration::from_secs(2)));
+        assert!(health.update(true, false, now + Duration::from_secs(3)));
+        assert_eq!(health.attempts, 2);
+        assert!(!health.update(true, true, now + Duration::from_secs(4)));
+        assert!(health.warning().is_none());
+        assert!(!health.update(true, false, now + Duration::from_secs(5)));
+        assert!(!health.update(false, false, now + Duration::from_secs(6)));
+        assert!(health.warning().is_none());
+        assert!(!health.update(true, false, now + Duration::from_secs(7)));
+        assert_eq!(health.attempts, 2);
+    }
+
     #[test]
     fn preview_sizes_follow_display_preserve_profile_rate_and_leave_export_unchanged() {
         let output = OutputSettings {
