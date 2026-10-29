@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.1.0 — 2026-10-29
+
+Unreleased Rust candidate.
+
+### Breaking Changes
+
+- Newly saved projects use a format that 1.0.x cannot open. Keep original project files for rollback.
+
+### Added
+
+- Timeline filmstrips show sampled video frames, and dragged recordings preview their placement before dropping.
+- HDR recordings support native HDR preview, HDR10 export and scene-aware SDR conversion with consistent preview, thumbnail and export colors. SDR conversion keeps normal scene brightness around tiny bright cursors.
+- Audio can be separated from video and edited independently, with volume, mute, fades and track selection for each item.
+- Individual sections support fit, fill, crop and rotation without changing the original recordings.
+- HEVC output joins H.264 and AV1.
+
+### Changed
+
+- Scrubbing keeps the preview visible and updating while you drag, then settles on the exact frame when you release.
+- Preview uses hardware decoding for supported SDR and fitted HDR recordings, keeping scrubbing responsive during SDR conversion.
+- A graphite workspace puts video and trimming first, with clearer text, aligned button labels, larger thumbnails, blue trim handles and Export at the top right. Quick trims are available in clip menus. Secondary controls stay in menus or expandable sections; enabled buttons show a pointing hand and clip edges show a resize cursor.
+- Preview uses the Windows audio output and retries when it becomes unavailable.
+- The app has a new scissors icon with a blue play symbol.
+- The portable Rust app has a smaller download—about 25% in the compared candidate—and no bundled .NET runtime.
+- Frame stepping and quick trims follow actual frame boundaries in variable-frame-rate recordings.
+
+### Known limitations
+
+- Scene-aware HDR-to-SDR conversion requires compatible graphics hardware. Standard software conversion remains available.
+- Some workflows use more memory than 1.0.4. See the [C#/Rust comparison](docs/rust-csharp-comparison.md) for measured results and remaining acceptance checks.
+- Sections join with hard cuts; transition effects remain planned.
+- Final checks remain for Windows HDR toggles, monitors with different scaling, and screen-reader workflows.
+
 ## 1.0.4 — 2026-10-09
 
 ### Changed

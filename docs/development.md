@@ -1,72 +1,131 @@
 # Development
 
-## Setup and build
+Run scripts from the repository root in PowerShell. Source is in `Development/rust`; the application package is `crates/desktop-ui`. Its Cargo version is authoritative. Tool crates use their separate private workspace version. Native pins and their exact recovery mirror remain in `Development/scripts/dependencies.json`.
 
-Use Windows x64 and PowerShell. Run commands from the repository root. No globally installed .NET SDK or video tools are required.
-
-The canonical repository is [Gimbuhh/simple-video-editor](https://github.com/Gimbuhh/simple-video-editor). This local project is its Git checkout; use commits and that remote for future work rather than source-backup ZIPs. For a new checkout:
-
-```powershell
-git clone https://github.com/Gimbuhh/simple-video-editor.git
-cd simple-video-editor
-git config --local core.hooksPath .githooks
-```
+## Setup and verification
 
 ```powershell
 ./Development/scripts/setup.ps1
 ./Development/scripts/check-repository.ps1
 ./Development/scripts/test.ps1
-./Development/scripts/build.ps1 -Zip
-./Development/scripts/verify-package.ps1
+./Development/scripts/test.ps1 -Ui -Gpu -Extended
 ```
 
-`global.json` and `Development/scripts/dependencies.json` pin the same SDK version. Setup downloads it into `Development/.tools/`, verifies the archive, and removes the download afterward. On a fresh checkout, setup downloads verified libmpv and FFmpeg binaries into `Development/vendor/`. When an existing `App/` has those exact files, setup reuses them.
+Setup installs pinned Rust 1.90.0 and checksum-pinned LLVM-MinGW 20260616 inside `Development/.tools`. GNU x64 Rust uses the pinned LLD linker and self-contained CRT. LLVM supplies dlltool and Windows resource tools; it is excluded from the portable app. Rust dependencies are locked in Cargo.lock. FFmpeg/FFprobe/libmpv are restored with their existing hashes; upstream rolling downloads may fall back to the release named by MediaMirrorTag. Authenticate GitHub CLI and set GH_REPO for the private mirror, or pass `-MediaBundlePath` to setup with an exact matching portable ZIP.
 
-Build produces the self-contained app under `App/`, a version-named local shortcut for the chosen output folder, and optionally `Releases/SimpleVideoEditor-<version>-win-x64.zip` plus its SHA-256 checksum. The version comes from the app project. The portable ZIP has four top-level entries: `Simple Video Editor.exe`, `README.txt`, `bin/`, and `docs/`. The executable bundles the .NET runtime; `bin` contains libmpv, FFmpeg, FFprobe, and their libraries, while `docs` contains guides and licenses. Keep the extracted folder together. Builds stage a complete bundle before replacing a generated output and refuse to overwrite a running editor. ZIP builds verify the replacement's embedded app version, contents and checksum before removing older generated package pairs from the local package directory. Unrelated files and published GitHub assets stay intact.
+Default tests check formatting, strict Clippy, Rust unit/executable tests, native playback lifecycle, generated SDR/PQ/HLG media exports, pixel geometry, VFR stepping, audio/gaps/cancellation and persistence. `-Gpu` exercises available NVIDIA encoders. `-Ui` runs actual egui input and captures app framebuffers. `-Extended` adds portrait, anamorphic, RGB and multiple-video recordings to the desktop matrix. Generated fixtures and screenshots stay ignored. No user editor is stopped and no private recording is required.
 
-Upstream rolling media releases can remove old assets. Setup never silently changes versions: if a pinned download fails, CI tries the portable ZIP on this repository's pinned `MediaMirrorTag` release and verifies every native binary before restoring it. It accepts versioned assets and the unversioned names on older releases. Locally, supply a matching ZIP with `./Development/scripts/setup.ps1 -MediaBundlePath ./Releases/SimpleVideoEditor-1.0.4-win-x64.zip`. To use a private mirror automatically, authenticate GitHub CLI and set `GH_REPO` to the repository's `owner/name`. The first repository upload should preserve the verified portable ZIP in a draft release; see the release guide.
+The AV1/PQ integration fixture checks full and limited range with known primary colors and a neutral gray ramp through thumbnails, post-seek software preview, SDR export and HDR10 AV1 export. CPU runs generate a small fixture with libaom; `-Gpu` uses NVIDIA encoding at 2560×1440 and 60000/1001 fps. A recognizable/nonblack frame alone is not treated as color correctness.
 
-Run `./Development/scripts/test-packaging.ps1` after building a ZIP. These checks cover stale-package cleanup, a failed replacement retaining the previous package, unrelated-file preservation, misleading filenames and extra bundled apps. Both Windows workflows run them. For isolated packaging experiments, pass the same `-PackageDirectory` to build and package verification; this keeps the published local download unchanged.
+Use `. ./Development/scripts/rust-environment.ps1` before direct Cargo commands. Build from the pinned workspace environment rather than a system toolchain.
 
-When the app is open, use `./Development/scripts/build.ps1 -Zip -OutputName App-Updated`. Save and close the existing editor before switching builds. This alternative output is also ignored by Git.
+`test-rust-desktop.ps1 -AppPath <candidate-exe> -Fixtures sdr.mkv -ScaleLayouts` checks four window sizes at 100/125/150/175/200% egui UI scale in native and software preview modes. It verifies actual Windows child-window bounds against scaled preview coordinates and saves each rendered layout. This changes only the isolated editor's UI zoom; it does not change Windows display settings or prove per-monitor DPI transitions. Injected input targets the isolated egui context without depending on another app surrendering OS focus. Native user input is excluded from that verification sequence; renderer screenshots are retained. Capture-hold and ordinary sessions retain native input. The default desktop matrix includes an audible two-track fixture and requires a working Windows audio output. It checks negotiated output and selection of the first probed track even when another track is marked default; this is separate from export-audio tests and null-output lab playback. Normal desktop runs also check Tab/Enter timeline selection, Shift+F10/Escape menus, keyboard edits/undo and Space transport while preserving text-entry ownership.
 
-## Verification
+For desktop startup failures, `test-rust-startup.ps1 -AppPath <candidate-exe> -Cycles 100` repeats generated PQ import, exact seek, split, undo/redo and shutdown. Add `-GraphicsOnly` to isolate initial rendered frames without importing media. These isolated `--verify-desktop` processes write their phase and native exception/module addresses on failure; ordinary app sessions do not install the diagnostic handler. Reports remain in ignored artifacts, and the runner closes or times out only its own helper process.
+
+`test-rust-launch.ps1 -AppPath <candidate-exe>` exercises ordinary filename startup with a Unicode/space project, multiple recording filenames and relative filenames. It opts into isolated recovery data and reporting through `SVE_VERIFY_LAUNCH_DIRECTORY`; normal startup parsing and dispatch still run. This mode relies on production event wakeups rather than the desktop verifier's frame timer. The desktop matrix also injects library and external-file timeline drops and verifies placement and undo. `verify-package.ps1 -Desktop` runs these against the relocated portable executable.
+
+The UI sleeps while idle. Worker events and playback changes wake it; transport/seek gestures keep a short frame timer, unsaved projects keep the recovery deadline, and the playback actor checks display/HDR state once per second while paused. Software rendering wakes from libmpv's callback, explicit refresh/resize and shutdown. The video player is created only when there is a recording to preview. DX12 uses wgpu's memory-oriented allocation hint. Preview transforms follow the available physical display area in size tiers; project settings and export resolution stay unchanged. Native failures retain the dequeued/latest queued request for software fallback. Add `-NativeFallback` to `test-rust-desktop.ps1` for the opt-in failure-after-dequeue case. These scheduling choices require lifecycle, seek, import/recovery and actual resource checks; they are not an encoding-speed claim.
+
+`compare-implementations.ps1 -LegacyApp <extracted-CSharp-1.0.4-bundle> -RustApp App -Source <generated-SDR-recording> -Visible -OrdinaryStartup` compares process resource use in C# 1.0.4 and Rust 1.1.0. Extract the original release ZIP into an ignored temporary directory when needed; obsolete baseline app folders are no longer required. Run it only when visible test windows are wanted. It samples separate launches, checks window state, records immutable artifact/native hashes and closes only its own children. `-OrdinaryStartup` opens the same generated project through each app's filename path; omit it only for older candidates that need the preview-hold harness. Ordinary preview readiness is not separately instrumented by this runner: first run the launch/desktop checks. It writes raw samples and means to ignored comparison output. Hidden launches are diagnostic because the toolkits can choose different minimized states. Preview sizes/backends differ; these samples are not an export-speed or cold-start benchmark. See the [comparison and retirement decision](rust-csharp-comparison.md) before removing legacy evidence.
+
+`benchmark-rust-playback.ps1 -Gpu` generates twelve-second 3840×2160 SDR/PQ HEVC fixtures, verifies actual keyframes at zero and ten seconds, then records 24 exact seeks per backend/profile through three native lifecycles. Omit `-Gpu` to generate fixtures with libx265, or use `-ReuseFixturesFrom <previous-report-directory>` to reuse those generated files without rewriting them. Reports record CPU decoding, hardware/driver inventory, hashes, startup/load time, seek targets and median/p95/max acknowledgement times. Filesystem caching is uncontrolled. This backend diagnostic excludes desktop input and the shared project transform graph; it is not a latency guarantee for real recordings. Run it after other automated desktop checks finish for an isolated comparison.
+
+`benchmark-preview.ps1 -AppPath 'App/Simple Video Editor.exe' -Source <local-recording>` measures the actual editor pipeline from UI request to playback-ready acknowledgement over 24 exact seeks. Add `-Software` for the CPU fallback. Native acknowledgement is not a physical display measurement; software requires the post-seek rendered frame. The isolated helper also streams actual pointer motion for two seconds, requires new preview frames during the gesture, checks exact release settling and verifies that same-presentation seeks retain the last valid frame, records actual decoder/backend, executable/source hashes and raw timings, and preserves the original recording. Run sequentially after other desktop/media work finishes; caching and system load remain uncontrolled. The older playback-lab benchmark excludes the project filter graph and cannot substitute for this check. `pwsh -File Development/scripts/benchmark-legacy-preview.ps1 -Source <SDR-recording>` restores the pinned 1.0.4 playback classes and runs their software renderer through the same 24 target positions. It requires a recording longer than 9.2 seconds and the pinned native DLL in App/bin. Only DLL resolution and a restart counter are instrumented; this reference excludes WPF input/presentation and is not a full-app latency comparison. Both helpers preserve recordings and record source/native hashes. See the comparison document for the bounded results.
+
+Timeline filmstrips request only visible source-time samples, quantized to 100 ms. One cancellable worker processes the current bounded queue; the UI admits at most 128 visible samples, including cache hits, retains at most 128 sample textures and uses the library image while samples load. Counting cache hits in that budget prevents repeated decoding and eviction on crowded timelines. File cache entries include source identity, metadata and timestamp. Library images and waveform decoding use independent jobs. Background image decodes use two codec threads and one filter thread. Clearing the generated thumbnail cache includes filmstrip samples. Preview alone scales pixels before color conversion; exports retain the full-resolution graph. Ordinary Rec.709 YUV 4:2:0 SDR clips with square pixels, no rotation, Fit framing and matching output aspect use mpv's metadata-only `format` filter; the renderer handles scaling. Explicit tags preserve the shared graph's defaults for untagged video. Native direct preview requests `hwdec=auto`, allowing direct D3D11 surfaces with automatic CPU fallback. Processed AV1 still requests copied hardware frames; processed non-AV1 and Software preview retain CPU decoding. HDR, other color spaces, rotated/anamorphic sources, cropping/fill and aspect changes keep the shared transform. Export is unchanged. The direct-preview integration compares full/limited-range 8/10-bit primary colors and gray levels with the shared graph on CPU and direct GPU paths, including untagged metadata and exact seeks. Presentation signatures include source interpretation, section framing, output and HDR mode so pending seeks can retain a valid image and its HDR indicator without displaying a previous source or transform. During continuous pointer scrubbing, an in-flight frame finishes before taking the newest same-presentation target; pointer release, source/transform changes and frame steps interrupt immediately. The single pending-request slot stays bounded.
+
+### HDR-to-SDR rendering
+
+`Tools` selects a compatible tone/gamut mapping policy for preview, thumbnails and exports. The first HDR-to-SDR job runs a bounded, hidden probe against the pinned FFmpeg bundle using a 10-bit PQ frame. Compatible Vulkan graphics enable libplacebo scene-aware tone/gamut mapping. Eligible fitted PQ/HLG recordings use the persistent D3D11 gpu-next renderer with matching scene-peak and gamut settings, keeping hardware decoding active across seeks. Software preview and complex geometry use the shared processing graph. Otherwise the existing CPU graph remains available. Ordinary SDR and HDR-to-HDR paths do not trigger this probe. CPU video decoding/software presentation can still use GPU color conversion; the export GPU preference controls encoding separately.
+
+Source chroma location is probed and preserved in project metadata; older projects default the optional field. HDR-to-SDR graphs retain supported explicit locations and normalize missing/unknown values to left before scaling. mpv otherwise infers center where standalone FFmpeg uses left, which can change detected scene peaks despite identical decoded plane checksums. HDR pixels retain their source precision into the mapper. Both processors use the 99.99th brightness percentile to keep very small HDR cursor/specular outliers from compressing the whole image; this can discard detail in that tiny highlight fraction. Peak smoothing is disabled and delayed peak use is disallowed so seeking does not depend on a previous scene. SDR output is limited-range Rec.709; thumbnail bitmap conversion explicitly uses Rec.709 and full-range RGB. Cache identity includes processor selection and chroma metadata, and the new generation replaces earlier generated images.
+
+`test-rust-media.ps1 -Gpu` includes an independent literal-renderer comparison for full/limited-range PQ/HLG AV1 at low/high HDR peaks, native/software previews, repeated seeks, thumbnails and CPU/NVIDIA H.264/AV1 exports. An independent 170-nit white / 5,000-nit tiny-cursor regression checks that adding the cursor does not turn normal white gray through native/software preview, thumbnails and SDR export. Matching a generic reference renderer alone did not catch this scene-exposure failure. The separate absolute-luminance regression forces the CPU graph and checks HDR-to-HDR exposure. To reproduce the reported recording locally, the ignored `adaptive_sdr` test also accepts `SVE_HDR_SDR_SOURCE` and `SVE_HDR_SDR_TIME`; keep private paths/images in ignored artifacts. Color comparisons use the actual presented frame time and appropriate output resampling; native window readback is compared with an independent sRGB target, while SDR file/software frames use Rec.709 coding. They do not measure physical HDR luminance.
+
+### Opt-in Shadowplay capture checks
+
+With NVIDIA App's local MCP server already enabled, run `test-shadowplay.ps1 -LiveCapture -RecordingDirectory <game-recordings-folder> -ExpectedGameProcessId <pid> -Seconds 12 -RequireHdr`. It waits one minute for the API budget, refuses an existing recording or a different target, records briefly, stops its own recording and checks the new file's duration and HDR tags. It never enables API access, changes NVIDIA settings or deletes recordings. Reports, paths and media hashes stay in ignored artifacts. A passing report covers these checks only; inspect decoded frames to establish the actual recorded target and color correctness.
+
+For a controlled editor comparison, launch an isolated `--verify-desktop <recording> <new-report-directory> --capture-hold` process. This uses the production import/preview paths and an isolated recovery directory, opens without taking focus from the game, and writes `capture-ready.json` when the preview settles. Add `--software-preview` for the SDR fallback. Add `--capture-hdr` to select HDR10/HEVC output; native verification then requires active display HDR and a PQ output transfer before signaling readiness. The report records the actual output gamma and display HDR state. Create `capture-stop` in that report directory to close the owned helper; it also times out after five minutes. It holds the imported clip without further timeline edits. Keep desktop screenshot/control sessions shut down during Shadowplay recording: NVIDIA reported Protected Content while one was active in the observed setup, and recording succeeded after ending it. Do not disable capture protection to run this check.
+
+## Interface copy
+
+Let layout and control names explain the editor. Avoid repeated headings, secondary descriptions and permanent shortcut legends; put optional technical detail and shortcuts in contextual tooltips. Keep action labels, source identity, active HDR/SDR state, meaningful metadata, warnings, errors and progress visible where they affect a decision. Preserve accessible names and keyboard behavior when simplifying the presentation.
+
+Keep trim boundaries and quick trims visible in the inspector. Audio, framing and source color start collapsed; expanding a group must not create a project edit or hide color warnings. Keep expanded controls within the resizable sidebar.
+
+Video and independent-audio context menus share Split and quick trims. A timeline menu selects its item without moving the playhead and pauses playback; a library preview switches to the item's timeline start. Video trim eligibility leaves decoded VFR boundaries to the existing seek/step operation. Menu tests inject secondary clicks and Shift+F10, check stable placement and disabled states, dispatch each action, and verify Escape.
+
+Enabled buttons, dropdowns and toggles use the pointing hand cursor on hover. Set it on their responses with `on_hover_cursor`: the pinned egui version does not consume `Visuals::interact_cursor`. Keep text-entry and drag cursors specific to their interactions.
+
+## Frozen legacy oracle
+
+The old implementation is removed from production source. Optional differential tests restore only its source from Git commit `dd65df13a41490e8168a624b65fcff6a27956940` into ignored `Development/artifacts/rewrite-baseline/source`. The Rust application never loads it.
 
 ```powershell
-# Generated fixtures, CPU encoding, and software playback; no NVIDIA GPU required.
-./Development/scripts/test.ps1
-
-# Verify the NVIDIA AV1 path with a compatible GPU and driver.
-./Development/scripts/test.ps1 -Gpu
-
-# Actual WPF window and editing; run in a desktop session.
-./Development/scripts/test.ps1 -Ui
-
-# Optional private recordings, supplied explicitly.
-./Development/scripts/test.ps1 -Gpu -Clips @('D:/recordings/first.mp4', 'D:/recordings/second.mp4')
-./Development/scripts/test.ps1 -Ui -Clips @('D:/recordings/first.mp4', 'D:/recordings/second.mp4')
+./Development/scripts/setup.ps1 -LegacyOracle
+./Development/scripts/test-rust.ps1 -LegacyParity
 ```
 
-The core real-recording check needs at least 22 seconds in each recording. Optional UI gameplay/performance checks expect two SDR 1440p/60 fps AV1 recordings with audio: at least 40 seconds in the first and 20 seconds in the second. Omit `-Clips` for portable generated-fixture checks. Missing explicit paths fail instead of silently skipping verification.
+This optional path restores the pinned .NET SDK solely to compile the independent C# test oracle. Fetch full Git history if the baseline commit is unavailable in a shallow checkout. Ordinary Rust builds and packaged startup require no .NET SDK/runtime.
 
-Run core tests before UI tests; core tests generate the fixtures consumed by the UI harness. UI checks dispatch WPF control/pointer callbacks in-process; they do not automate external operating-system drag gestures or file pickers. Default CI runs core/media checks and builds the portable app. GPU and desktop UI checks remain local integration checks.
+Graphite styling lives in `desktop-ui/src/ui/theme.rs`. It reads installed Segoe UI/Segoe UI Semibold/Consolas faces when available, retains egui fallback fonts, and never redistributes Windows font files. Body/button text is 14 logical pixels; metadata is 12.5 and timecode 13. The palette test requires at least 4.5:1 contrast for normal primary/secondary text and the enabled Export label. The real-input scale verifier checks Export stays within the top-right margin at a readable minimum size while transport/timecode and native preview bounds fit. These are app-scale checks, not full assistive-technology or physical DPI-transition certification.
 
-Reports, screenshots, media fixtures, recovery files, and benchmarks stay under ignored `Development/artifacts/verification/`. Reports may contain private paths or recording frames; do not commit them. The curated README screenshot under `docs/images/` shows Arc Raiders gameplay captured in the editor; the original recordings remain outside Git.
+The workspace uses progressive disclosure: empty recordings hide search/add controls, and an empty preview hides its transport. The timeline shows tracks/ruler when it has sections or an active recording drag; Undo stays available when history exists. File contains project actions; More options contains export settings, the software renderer toggle and cache maintenance. Preview mode changes retain their actor restart behavior, source protection and keyboard shortcuts. The desktop verifier captures the empty workspace and settled More menu, opens/closes File with actual input, and toggles the relocated software option twice without editing the project. Frame-arrow buttons retain accessible names and tooltips. Scale checks cover timecode and frame-control separation.
 
-Core checks cover exact non-keyframe cuts, frame counts, joins, gap silence, source protection, cancellation, CPU encoding, projects, relinking, recovery, cache cleanup, and native software playback. UI checks cover linked-track editing, playback, undo/redo, search, relinking, cache dialogs, dark loading states, text alignment, and layout.
-
-## Local files and cleanup
-
-Git ignores packaged apps, release ZIPs, build tools, native dependencies, build output, local source backups, shortcuts, projects, and verification artifacts. Only source, tests, scripts, authored assets, and repository documentation belong in commits. Git history replaces source-backup ZIPs after the repository is in use; existing local backups are retained.
+## Portable build
 
 ```powershell
-./Development/scripts/clean.ps1 -BuildTools
+./Development/scripts/build.ps1 -Zip -OutputName App-Updated
+./Development/scripts/verify-package.ps1 -OutputName App-Updated -Desktop -Extended
+./Development/scripts/test-packaging.ps1
 ```
 
-Cleanup verifies the `App/` media bundle, stops build servers, and removes reproducible build output, vendor copies, and workspace build tools. It preserves the app, releases, source, local history, and verification reports. Run setup before building again.
+The build stages a complete bundle, checks version/native pins and licenses, then replaces only its chosen stopped App/App-* output. It refuses to overwrite a running editor. ZIP names derive from Cargo's application version. The current local Releases pair is replaced/pruned only after embedded version, layout and checksum checks pass; unrelated files remain untouched. Published release assets are never replaced.
 
-## Icon and dependencies
+`build.ps1` is the single build entry point. `verify-rust-package.ps1` defaults to the current ZIP in `Releases` and tests the extracted executable from a relocated Unicode/space path, including absence of .NET, exact native pins, persistence/export/playback and optional desktop tests.
 
-The approved icon source is `Development/src/SimpleVideoEditor/Assets/app-icon.png`. It was generated with imagegen for this project. Run `./Development/scripts/make-icon.ps1` after changing it, then rebuild.
+After verifying a complete bundle, run `clean.ps1 -BuildTools` (or pass `-OutputName App-Updated` for that output) to remove reproducible compiler/vendor files, Rust targets and C# build leftovers. It preserves app bundles, releases, projects and verification reports. Superseded local candidates and relocated test bundles were removed after the rewrite; the current executable is in `App`. Compact reports, final desktop screenshots, projects, the original C# release ZIP and the optional frozen source oracle remain available. The oracle restores its source from Git when needed; it is not part of the application.
 
-Dependency versions, origins, and checksums live in `Development/scripts/dependencies.json`. Update them together and verify fresh setup, build, core tests, and local UI/GPU checks when changing the pinned bundle. Preserve the [third-party notices](../THIRD-PARTY-NOTICES.md) and packaged licenses.
+The approved icon source is `Development/assets/app-icon.png`. Run `Development/scripts/make-icon.ps1` after editing it. Source assets and license notices are tracked; binaries, toolchains, caches, media, projects and verification results are ignored.
+
+## Acceptance and repository policy
+
+Physical HDR luminance/color accuracy, monitor movement/HDR toggles, 100–200% DPI, screen-reader navigation and concurrent game/Shadowplay capture require the corresponding hardware/session. Automated metadata and framebuffer checks do not prove these gates. Record unavailable combinations honestly in the [rewrite ledger](rust-rewrite-status.md).
+
+Use feature branches and open PRs. Enable the tracked guard with `git config --local core.hooksPath .githooks`; never push directly to main. Keep PRs open until the user finishes testing and approves merge. Tags come from merged main, after checks, and workflows prepare draft releases only. See [release instructions](releasing.md).
+
+The [2026-10-28 editor audit](editor-audit.md) records preview audio, action-label alignment, color-history refresh and focused cleanup findings.
+
+## Release hardware checks
+
+`test-rust-desktop.ps1 -AppPath 'App/Simple Video Editor.exe' -Fixtures audio.mkv -AudioRecovery` temporarily selects an unavailable endpoint in each isolated test player, then checks that production recovery reopens the default output while preserving the video clock. It never changes Windows audio settings. Ordinary desktop runs also check that New project releases the player, library previews and filmstrip worker/cache. An accessibility-tree unit test checks the preview-position slider, associated In/Out labels, exact values and named transport control.
+
+`test-rust-displays.ps1 -AppPath 'App/Simple Video Editor.exe'` requires two connected monitors. It moves only its own native/software HDR-preview helpers out and back, checks fresh display state, the expected PQ/SDR transfer and actual child-window bounds, and closes those helpers. It preserves Windows settings and original recordings. With the current two 96-DPI monitors it establishes physical monitor movement, not a mixed-DPI transition. `--track-display` writes diagnostics only inside explicit held desktop verification.
+
+Use the [release checklist](release-readiness.md) for the current gates and physical acceptance scope.
+
+Action buttons center the tight painted glyph bounds, then snap the label origin to the physical pixel grid. Font advance/line boxes include bearings and unused ascent/descent, so centering those boxes can visibly misalign text. `theme::ActionButton` retains egui's stock allocation, borders, pointer/keyboard input, focus and disabled handling, and supplies the label to accessibility. File/More triggers share the glyph placement and retain stock menu handling. The regression checks 2,400 combinations of installed/fallback fonts, 100–200% scale, horizontal/vertical layouts, natural/wide sizes, labels and rest/hover/press/focus/disabled states. It asserts actual state, glyph containment, accessible names and at most half a physical pixel of centering error per axis.
+
+Adjacent text actions use `row_button` to share a typographic baseline; otherwise descenders in Split make it sit higher than Undo. `action_row` reserves the padded row height before labels and spinners are allocated. Timeline, inspector quick trims and export status use this path. A separate paint test checks installed/fallback fonts, enabled/disabled states and 100–200% scale, including Cancel beside the status label and spinner. Standalone framed buttons keep optical glyph centering.
+
+Clip hover and drag start share the same bounded trim-edge hit test. The linked video/audio rectangle uses horizontal resize at either edge and grab in its body; the captured drag mode owns the cursor while trimming/moving, including outside the original edge or over another section. Desktop verification injects pointer hover on both lanes/edges and the body, then checks the actual output cursor during a trim after the pointer has left the hit band. Disabled controls do not set clip cursors.
+
+Library drags paint a non-interactive linked clip ghost in the timeline using the existing filmstrip/thumbnail cache. Preview placement calls the same core `available_position` routine, source frame rate and snap tolerance as Insert, without applying an edit. The floating card remains outside the timeline or when the proposed clip is not visible. The ghost is clipped to the canvas and disappears after release or leaving the target. A placement parity test covers empty/gapped/occupied timelines, source rates and zoom-dependent snapping; desktop input checks moving the ghost without changing the saved project, committing at the shown position and undoing exactly.
+
+## Independent audio items
+
+Linked sections remain in the core video timeline. Separating audio commits its exact source range and placement to a second core timeline stored in project metadata, and disables embedded audio for that video identity. Each audio item owns its gain/stream/mute/fades. Project history captures both timelines atomically; source removal removes both kinds of placements. Core collision rules keep independent audio non-overlapping. Video edits never ripple this lane.
+
+Schema 3 is used only when independent items or separated-video flags are present, so earlier Rust builds reject these projects instead of silently dropping audio edits. Schema 1/2 import remains supported. Audio trims, source bounds, stream references and settings use the same validation as video sections.
+
+An audio-only libmpv actor uses the Windows output without creating a video renderer. It follows the authoritative preview clock, pauses during scrubbing, and sleeps while idle. Export renders the independent lane in bounded jobs, preserving silence/offsets and per-item gain/fades, then combines it with the linked-section audio without automatic volume normalization. Audio extending beyond video produces a black video tail. Generated-media tests measure silence, a 12 dB gain difference, fades, duration, source hashes and schema-3 round trips. Desktop input covers separation, per-item volume, move/undo, split/delete and actual Windows audio negotiation in native/software video modes.
+
+## CPU fallback HDR exposure calibration
+
+The CPU fallback HDR-to-SDR conversion normalizes linear light at 203 cd/m², the HDR reference white in [ITU-R BT.2408](https://www.itu.int/dms_pub/itu-r/opb/rep/R-REP-BT.2408-8-2024-PDF-E.pdf), matching mpv/libplacebo's reference level. The earlier 100 cd/m² normalization raised midtones and flattened contrast relative to native playback. Tone-map ceilings use the same units: PQ's 10,000 cd/m² signal ceiling and HLG's 1,000 cd/m² reference display. Explicit ceilings avoid mixing FFmpeg's 100 cd/m² peak-metadata units with the calibrated linear signal. HDR-preserving conversion retains its existing normalization. The original exposure correction used cache generation v3; the current generation is recorded in the status ledger.
+
+The absolute-luminance regression encodes an independent ST 2084 ramp from 0 to 10,000 cd/m² in full/limited-range AV1. It checks midtones, 100/203 cd/m² patches, neutral blacks and distinct highlights through thumbnails, software/native preview and SDR exports. HDR exports are decoded back to linear light to verify that 18, 203 and 1,000 cd/m² retain their absolute luminance. The existing AV1 color chart now uses HDR reference white rather than SDR-level light in a PQ container. Generated fixtures and private recording comparisons stay ignored.
+
+Audio-item primary clicks use the pointer offset within the item and current timeline zoom, matching video-item seeking. Source In stays separate from the timeline offset; the target is clamped to the item range. Actual desktop input checks quarter/three-quarter clicks on an offset, trimmed audio item and asserts the saved project is unchanged. Keyboard activation retains its start-position fallback.

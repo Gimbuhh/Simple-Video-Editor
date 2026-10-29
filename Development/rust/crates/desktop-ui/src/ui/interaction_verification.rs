@@ -1,0 +1,1864 @@
+use super::*;
+impl EditorApp {
+    pub(super) fn verify(&mut self, ctx: &egui::Context) {
+        let Some(mut test) = self.verification.take() else {
+            return;
+        };
+        let result = (|| -> media_engine::Result<()> {
+            if test.recorded_phase != Some(test.phase) {
+                std::fs::write(test.directory.join("phase.txt"), test.phase.to_string())?;
+                test.recorded_phase = Some(test.phase);
+            }
+            if test.launch_files {
+                if test.started.elapsed() > Duration::from_secs(30) {
+                    return Err(format!("Filename startup timed out: {}", self.message).into());
+                }
+                if self.tools.is_none()
+                    || self.busy
+                    || !self.startup_paths.is_empty()
+                    || test.phase == 7
+                {
+                    return Ok(());
+                }
+                if crate::startup::is_project(&test.source) {
+                    let expected = self
+                        .tools
+                        .as_ref()
+                        .unwrap()
+                        .load_project(&test.source, &uncancelled())?;
+                    if SavedProject::capture(&self.editor) != expected {
+                        return Err("Filename startup changed the project, trims or gaps".into());
+                    }
+                    test.checks.push("Normal project filename startup preserves recordings, trims, gaps and settings".into());
+                } else {
+                    let paths = crate::startup::paths(std::env::args_os().skip(1));
+                    if paths.len() != self.editor.metadata().sources.len()
+                        || paths.iter().zip(&self.editor.metadata().sources).any(
+                            |(path, source)| {
+                                !platform_windows::same_file(
+                                    path,
+                                    std::path::Path::new(&source.path),
+                                )
+                                .unwrap_or(false)
+                            },
+                        )
+                    {
+                        return Err(format!(
+                            "Normal media filename startup failed: {}",
+                            self.message
+                        )
+                        .into());
+                    }
+                    test.checks.push(
+                        "Normal media filename startup imports every recording in order".into(),
+                    );
+                }
+                test.report();
+                test.phase = 7;
+                self.close_approved = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                return Ok(());
+            }
+            if test.graphics_only {
+                if test.started.elapsed() > Duration::from_millis(500) && test.phase != 7 {
+                    test.checks
+                        .push("Desktop graphics startup and rendered frames".into());
+                    test.report();
+                    self.close_approved = true;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    test.phase = 7;
+                }
+                return Ok(());
+            }
+            if test.started.elapsed()
+                > Duration::from_secs(if test.capture_hold {
+                    300
+                } else if test.scale_layouts {
+                    240
+                } else {
+                    90
+                })
+            {
+                return Err(format!(
+                    "Desktop verification timed out at phase {}: {}",
+                    test.phase, self.message
+                )
+                .into());
+            }
+            if let Some(error) = self.playback.as_ref().and_then(|p| p.status().error) {
+                return Err(error.into());
+            }
+            if self.verify_audio_items(&mut test, ctx)? {
+                return Ok(());
+            }
+            if test.capture_hold && test.phase == 80 {
+                if test.track_display
+                    && test.inspector_ready_at.elapsed() >= Duration::from_millis(250)
+                {
+                    let status = self
+                        .playback
+                        .as_ref()
+                        .ok_or("Missing held preview")?
+                        .status();
+                    let rect = self.controls["preview"];
+                    let ppp = ctx.pixels_per_point();
+                    let display = status.display.as_ref();
+                    std::fs::write(
+                        test.directory.join("display-state.json"),
+                        serde_json::to_vec_pretty(&serde_json::json!({
+                            "ready": status.ready && status.generation == self.generation,
+                            "display": display.map(|d| &d.name),
+                            "hdrActive": display.is_some_and(|d| d.hdr_active),
+                            "stateKnown": display.is_some_and(|d| d.state_known),
+                            "gamma": status.gamma,
+                            "software": status.software,
+                            "pixelsPerPoint": ppp,
+                            "bounds": self.video.bounds()?,
+                            "expectedBounds": [(rect.left()*ppp).round() as i32, (rect.top()*ppp).round() as i32,
+                                (rect.width()*ppp).round() as i32, (rect.height()*ppp).round() as i32],
+                        }))?,
+                    )?;
+                    test.inspector_ready_at = Instant::now();
+                }
+                if test.directory.join("capture-stop").exists() {
+                    test.checks
+                        .push("Preview held until capture stop request".into());
+                    test.report();
+                    self.close_approved = true;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    test.phase = 7;
+                }
+                return Ok(());
+            }
+            if test.preview_benchmark {
+                return self.verify_preview_benchmark(&mut test, ctx);
+            }
+            if test.vfr && !test.capture_hold && test.phase != 6 && test.phase != 7 {
+                self.verify_vfr(&mut test, ctx)?;
+            } else {
+                match test.phase {
+                    0 if self.tools.is_some() => {
+                        if [
+                            "recording-search",
+                            "add-selected",
+                            "software-preview",
+                            "clear-cache",
+                            "scrubber",
+                            "frame-forward",
+                        ]
+                        .iter()
+                        .any(|key| self.controls.contains_key(key))
+                        {
+                            return Err(
+                                "Empty workspace exposes controls before there is media".into()
+                            );
+                        }
+                        ctx.send_viewport_cmd(
+                            egui::ViewportCommand::Screenshot(Default::default()),
+                        );
+                        test.phase = 200;
+                    }
+                    200 => {
+                        for event in ctx.input(|i| i.events.clone()) {
+                            if let egui::Event::Screenshot { image, .. } = event {
+                                test.screenshot(&image)?;
+                                std::fs::copy(
+                                    test.directory.join("desktop.bmp"),
+                                    test.directory.join("empty-workspace.bmp"),
+                                )?;
+                                test.pointer(self.controls["file-menu"].center(), Some(true));
+                                test.phase = 201;
+                            }
+                        }
+                    }
+                    201 => {
+                        test.pointer(self.controls["file-menu"].center(), Some(false));
+                        test.phase = 202;
+                    }
+                    202 => {
+                        if ["file-new", "file-open", "file-save-as"]
+                            .iter()
+                            .any(|key| !self.controls.contains_key(key))
+                        {
+                            return Err("File menu lost its project actions".into());
+                        }
+                        test.key(egui::Key::Escape, false);
+                        test.checks.push("Empty workspace reveals only relevant controls; File menu preserves project actions".into());
+                        test.phase = 203;
+                    }
+                    203 => {
+                        let mut paths = vec![test.source.clone()];
+                        paths.extend(test.secondary.clone());
+                        self.import(paths);
+                        test.phase = 1;
+                    }
+                    1 if !self.busy => {
+                        if test.capture_hold && test.capture_hdr {
+                            let output = &mut self.editor.metadata_mut().output;
+                            output.profile = ColorProfile::Hdr10;
+                            output.codec = Codec::Hevc;
+                        }
+                        let id = self
+                            .editor
+                            .metadata()
+                            .sources
+                            .first()
+                            .ok_or("Fixture failed to import")?
+                            .id;
+                        self.add(vec![id]);
+                        self.selected = self.editor.timeline().clips().first().map(|c| c.id);
+                        self.seek(0.5);
+                        test.checks
+                            .push("Recording import and linked append".into());
+                        test.phase = 2;
+                    }
+                    2 if self.playback.as_ref().is_some_and(|p| {
+                        let status = p.status();
+                        status.ready
+                            && status.generation == self.generation
+                            && (!status.software || status.frame.is_some())
+                    }) =>
+                    {
+                        let status = self.playback.as_ref().unwrap().status();
+                        if test.fail_native {
+                            if !status.software {
+                                return Err(
+                                    "Injected native failure did not fall back to software".into(),
+                                );
+                            }
+                            test.checks.push("Dequeued preview request survives native failure and reaches software fallback".into());
+                        }
+                        if test.capture_hold && test.capture_hdr && !status.software {
+                            let Some(display) = &status.display else {
+                                return Ok(());
+                            };
+                            if !display.hdr_active {
+                                return Err(
+                                    "Capture test requires active HDR on the preview display"
+                                        .into(),
+                                );
+                            }
+                            if status.gamma.as_deref() != Some("pq") {
+                                return Ok(());
+                            }
+                        }
+                        test.checks
+                            .push("Source load and shared preview filter".into());
+                        if test.capture_hold {
+                            std::fs::write(
+                                test.directory.join("capture-ready.json"),
+                                serde_json::to_vec_pretty(&serde_json::json!({
+                                    "software": status.software,
+                                    "hdrOutputRequested": test.capture_hdr,
+                                    "generation": status.generation,
+                                    "position": status.position,
+                                    "outputGamma": status.gamma,
+                                    "displayHdrActive": status.display.as_ref().map(|d| d.hdr_active),
+                                    "displayStateKnown": status.display.as_ref().map(|d| d.state_known),
+                                }))?,
+                            )?;
+                            test.phase = 80;
+                            return Ok(());
+                        }
+                        test.key(egui::Key::S, false);
+                        test.phase = 3;
+                    }
+                    3 => {
+                        if self.editor.timeline().clips().len() != 2 {
+                            return Err(
+                                "Split keyboard input did not create two linked sections".into()
+                            );
+                        }
+                        test.checks
+                            .push("Split through actual egui keyboard input".into());
+                        test.key(egui::Key::Z, true);
+                        test.phase = 4;
+                    }
+                    4 => {
+                        if self.editor.timeline().clips().len() != 1 {
+                            return Err("Undo keyboard input failed".into());
+                        }
+                        test.key(egui::Key::Y, true);
+                        test.phase = 5;
+                    }
+                    5 => {
+                        if self.editor.timeline().clips().len() != 2 {
+                            return Err("Redo keyboard input failed".into());
+                        }
+                        test.checks
+                            .push("Undo and redo through actual keyboard input".into());
+                        if test.startup_only {
+                            test.report();
+                            self.close_approved = true;
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            test.phase = 7;
+                            return Ok(());
+                        }
+                        let document = SavedProject::capture(&self.editor);
+                        let path = test.directory.join("roundtrip.sveproject");
+                        save_document(&path, &document)?;
+                        let loaded = self
+                            .tools
+                            .as_ref()
+                            .unwrap()
+                            .load_project(&path, &uncancelled())?;
+                        if document != loaded {
+                            return Err("Saved project changed on reload".into());
+                        }
+                        test.checks
+                            .push("Atomic save, media re-probe and exact project roundtrip".into());
+                        self.settings = true;
+                        test.phase = 8;
+                    }
+                    8..=12 => {
+                        let target = [0.2, 1.7, 0.8, 2.1, 1.25][(test.phase - 8) as usize];
+                        self.seek(target);
+                        test.phase += 1;
+                    }
+                    13 if self.playback.as_ref().is_some_and(|p| {
+                        let status = p.status();
+                        status.ready
+                            && status.generation == self.generation
+                            && (status.position - 1.25).abs() < 0.06
+                            && (!status.software || status.frame.is_some())
+                    }) =>
+                    {
+                        let status = self.playback.as_ref().unwrap().status();
+                        if status.software {
+                            let frame = status.frame.unwrap();
+                            if !frame.pixels.iter().any(|b| *b > 32) {
+                                return Err("Software preview produced no visible frame".into());
+                            }
+                            if test.source.file_name().is_some_and(|s| s == "multiple.mkv") {
+                                let center = frame.height / 2 * frame.stride + frame.width / 2 * 4;
+                                if frame.pixels[center + 2] < 180 || frame.pixels[center] > 80 {
+                                    return Err("Preview selected a different video stream than probing and export".into());
+                                }
+                                test.checks.push("Preview selects the probed video stream even when another video is the default".into());
+                            }
+                            if matches!(status.gamma.as_deref(), Some("pq" | "hlg")) {
+                                return Err(
+                                    "Software fallback retained an HDR transfer function".into()
+                                );
+                            }
+                            test.checks.push(
+                                "HDR-capable import rendered into a nonblack SDR software frame"
+                                    .into(),
+                            );
+                        }
+                        test.checks
+                            .push("Latest rapid seek wins and settles within one frame".into());
+                        test.key(egui::Key::Space, false);
+                        test.phase = 14;
+                    }
+                    14 if self.playhead > 1.4 => {
+                        let source = &self.editor.metadata().sources[0];
+                        if let Some(audio) = source.audio.first() {
+                            let status = self.playback.as_ref().unwrap().status();
+                            if test.audio_recovery {
+                                if status.audio_recovery_attempts == 0
+                                    || status.audio_output.is_none()
+                                {
+                                    return Ok(());
+                                }
+                                test.checks.push("An unavailable player audio endpoint recovers automatically without editing the project or resetting the video clock".into());
+                            }
+                            if status.audio_output.as_deref().is_none_or(|ao| ao == "null")
+                                || status.audio_stream != Some(audio.index)
+                            {
+                                return Err(format!("Preview audio did not reach the system output on the probed track: output={:?}, stream={:?}, expected={}", status.audio_output, status.audio_stream, audio.index).into());
+                            }
+                            test.checks.push("Playing preview opens a real system audio output on the probed track, rather than silently disabling sound".into());
+                        }
+                        test.key(egui::Key::Space, false);
+                        test.phase = 15;
+                    }
+                    15 if !self.playing => {
+                        test.checks.push(
+                            "Playback uses the media clock and pauses through keyboard input"
+                                .into(),
+                        );
+                        test.expected = Some(self.editor.timeline().clips().to_vec());
+                        let anchor = self
+                            .controls
+                            .get("first-clip")
+                            .ok_or("Missing timeline interaction rectangle")?
+                            .center();
+                        test.anchor = Some(anchor);
+                        test.pointer(anchor, Some(true));
+                        test.phase = 16;
+                    }
+                    16 => {
+                        test.pointer(test.anchor.unwrap() + Vec2::new(300.0, 0.0), None);
+                        test.phase = 17;
+                    }
+                    17 => {
+                        test.pointer(test.anchor.unwrap() + Vec2::new(300.0, 0.0), Some(false));
+                        test.phase = 18;
+                    }
+                    18 => {
+                        let clip = self
+                            .editor
+                            .timeline()
+                            .clips()
+                            .iter()
+                            .find(|c| c.id == ClipId(1))
+                            .unwrap();
+                        if clip.timeline_start < 3.0 {
+                            return Err(
+                                "Pointer drag did not move the linked section into free space"
+                                    .into(),
+                            );
+                        }
+                        if (self.playhead - clip.timeline_start).abs() > 0.000001 {
+                            return Err("Dragging a newly selected section did not preview its first retained frame".into());
+                        }
+                        test.key(egui::Key::Z, true);
+                        test.phase = 19;
+                    }
+                    19 => {
+                        if self.editor.timeline().clips() != test.expected.as_ref().unwrap() {
+                            return Err("Pointer move did not undo in one step".into());
+                        }
+                        test.checks
+                            .push("Linked pointer drag commits one undoable move".into());
+                        test.pointer(test.anchor.unwrap(), Some(true));
+                        test.phase = 20;
+                    }
+                    20 => {
+                        test.pointer(test.anchor.unwrap() + Vec2::new(300.0, 0.0), None);
+                        test.phase = 21;
+                    }
+                    21 => {
+                        test.key(egui::Key::Escape, false);
+                        test.phase = 22;
+                    }
+                    22 => {
+                        test.pointer(test.anchor.unwrap() + Vec2::new(300.0, 0.0), Some(false));
+                        test.phase = 23;
+                    }
+                    23 => {
+                        if self.editor.timeline().clips() != test.expected.as_ref().unwrap()
+                            || self.preview_timeline.is_some()
+                        {
+                            return Err("Escape failed to cancel the pointer gesture".into());
+                        }
+                        test.checks
+                            .push("Escape restores the complete pre-drag timeline".into());
+                        if self.editor.metadata().sources.len() > 1 {
+                            self.add(vec![self.editor.metadata().sources[1].id]);
+                            test.scrub_target = 3.6031;
+                        }
+                        self.seek(0.0);
+                        test.key(egui::Key::Space, false);
+                        test.phase = 24;
+                    }
+                    24 if self.playing
+                        && self.playback.as_ref().is_some_and(|p| {
+                            let status = p.status();
+                            status.ready && status.generation == self.generation && !status.paused
+                        }) =>
+                    {
+                        let ruler = *self
+                            .controls
+                            .get("ruler")
+                            .ok_or("Missing ruler input surface")?;
+                        test.anchor = Some(Pos2::new(ruler.left(), ruler.center().y));
+                        test.pointer(
+                            test.anchor.unwrap() + Vec2::new(self.zoom * 0.3031, 0.0),
+                            Some(true),
+                        );
+                        test.phase = 25;
+                    }
+                    25 => {
+                        test.pointer(
+                            test.anchor.unwrap()
+                                + Vec2::new(self.zoom * test.scrub_target as f32, 0.0),
+                            None,
+                        );
+                        test.phase = 26;
+                    }
+                    26..=28 => {
+                        if self.scrub.is_none()
+                            || self.playing
+                            || (self.playhead - test.scrub_target).abs() > 0.00001
+                        {
+                            return Err(format!(
+                                "Held ruler lost pointer ownership: {} versus {} (pointer {:?}, down {}, owner {:?}, ruler {:?}, zoom {})",
+                                self.playhead, test.scrub_target,
+                                ctx.input(|i| i.pointer.latest_pos()),
+                                ctx.input(|i| i.pointer.primary_down()),
+                                self.scrub.as_ref().map(|s| s.owner),
+                                self.controls.get("ruler"), self.zoom
+                            )
+                            .into());
+                        }
+                        let status = self.playback.as_ref().unwrap().status();
+                        if status.ready && status.generation == self.generation && status.paused {
+                            test.phase += 1;
+                        }
+                    }
+                    29 => {
+                        test.checks.push(
+                            "Held ruler remains continuous across recording loads and native ticks"
+                                .into(),
+                        );
+                        test.pointer(
+                            test.anchor.unwrap()
+                                + Vec2::new(self.zoom * test.scrub_target as f32, 0.0),
+                            Some(false),
+                        );
+                        test.phase = 30;
+                    }
+                    30 if self.settling.is_none()
+                        && self.playing
+                        && self.playback.as_ref().is_some_and(|p| !p.status().paused) =>
+                    {
+                        test.checks.push(
+                            "Final seek settles before restoring the prior playing state".into(),
+                        );
+                        test.key(egui::Key::Space, false);
+                        test.phase = 31;
+                    }
+                    31 if !self.playing => {
+                        test.pointer(
+                            test.anchor.unwrap()
+                                + Vec2::new(
+                                    (self.preview_duration() as f32 + 1.0) * self.zoom,
+                                    0.0,
+                                ),
+                            Some(true),
+                        );
+                        test.phase = 32;
+                    }
+                    32 => {
+                        if (self.playhead - self.preview_duration()).abs() > 1e-6 {
+                            return Err(
+                                "Held outside ruler did not clamp to the sequence end".into()
+                            );
+                        }
+                        test.pointer(
+                            test.anchor.unwrap()
+                                + Vec2::new(
+                                    (self.preview_duration() as f32 + 1.0) * self.zoom,
+                                    0.0,
+                                ),
+                            Some(false),
+                        );
+                        test.phase = 33;
+                    }
+                    33 if self.settling.is_none()
+                        && self.playback.as_ref().is_some_and(|p| {
+                            p.status().ready && p.status().generation == self.generation
+                        }) =>
+                    {
+                        let last = self.editor.timeline().clips().last().unwrap();
+                        let source = self
+                            .editor
+                            .metadata()
+                            .sources
+                            .iter()
+                            .find(|s| s.id == last.source)
+                            .unwrap();
+                        let expected = last.source_out - source.rate.frame_seconds();
+                        let position = self.playback.as_ref().unwrap().status().position;
+                        if (position - expected).abs() > source.rate.frame_seconds().max(0.05)
+                            || self.playing
+                        {
+                            return Err(
+                                "Endpoint scrub did not retain the final frame paused".into()
+                            );
+                        }
+                        test.checks.push(
+                            "Endpoint scrub displays the last retained frame and stays paused"
+                                .into(),
+                        );
+                        let rect = self.controls["preview"];
+                        let viewport = self.controls["preview-viewport"];
+                        let output = self.preview_output();
+                        if (rect.aspect_ratio() - output.width as f32 / output.height as f32).abs()
+                            > 0.001
+                            || !viewport.expand(0.1).contains_rect(rect)
+                        {
+                            return Err("Preview aspect or viewport containment failed".into());
+                        }
+                        test.checks
+                            .push("Preview remains fitted with its output aspect ratio".into());
+                        self.seek(0.25);
+                        test.expected = Some(self.editor.timeline().clips().to_vec());
+                        test.focus_steps = 0;
+                        test.phase = 220;
+                    }
+                    220 => {
+                        let rect = self.controls["first-clip"];
+                        let position = match test.focus_steps {
+                            0 => Pos2::new(rect.left() + 2.0, rect.top() + 24.0),
+                            1 => Pos2::new(rect.right() - 2.0, rect.top() + 24.0),
+                            2 => Pos2::new(rect.left() + 2.0, rect.bottom() - 18.0),
+                            3 => Pos2::new(rect.right() - 2.0, rect.bottom() - 18.0),
+                            _ => Pos2::new(rect.center().x, rect.top() + 24.0),
+                        };
+                        test.pointer(position, None);
+                        test.phase = 221;
+                    }
+                    221 => {
+                        let expected = if test.focus_steps < 4 {
+                            egui::CursorIcon::ResizeHorizontal
+                        } else {
+                            egui::CursorIcon::Grab
+                        };
+                        if ctx.output(|o| o.cursor_icon) != expected {
+                            return Err(format!(
+                                "Wrong clip hover cursor at target {}: {:?}, expected {:?}",
+                                test.focus_steps,
+                                ctx.output(|o| o.cursor_icon),
+                                expected
+                            )
+                            .into());
+                        }
+                        test.focus_steps += 1;
+                        if test.focus_steps < 5 {
+                            test.phase = 220;
+                        } else {
+                            test.checks.push("Video/audio trim edges use horizontal resize and clip bodies use grab cursors".into());
+                            test.phase = 34;
+                        }
+                    }
+                    34 => {
+                        let rect = self.controls["first-clip"];
+                        test.anchor = Some(Pos2::new(rect.left() + 2.0, rect.center().y));
+                        test.pointer(test.anchor.unwrap(), Some(true));
+                        test.phase = 35;
+                    }
+                    35 => {
+                        test.pointer(test.anchor.unwrap() + Vec2::new(self.zoom * 0.1, 0.0), None);
+                        test.phase = 36;
+                    }
+                    36 => {
+                        if ctx.output(|o| o.cursor_icon) != egui::CursorIcon::ResizeHorizontal {
+                            return Err(
+                                "Trim cursor did not stay horizontal after leaving the edge".into(),
+                            );
+                        }
+                        let clips = self.timeline().clips();
+                        let original = test.expected.as_ref().unwrap();
+                        if self.drag.as_ref().is_none_or(|d| d.mode != 1)
+                            || clips[0].timeline_start <= original[0].timeline_start
+                            || (clips[0].timeline_end() - original[0].timeline_end()).abs() > 1e-6
+                            || clips[1].timeline_start != original[1].timeline_start
+                            || (self.playhead - 0.25).abs() > 1e-6
+                        {
+                            return Err("Left trim preview did not anchor the right edge, followers and retained frame".into());
+                        }
+                        test.pointer(
+                            test.anchor.unwrap() + Vec2::new(self.zoom * 0.1, 0.0),
+                            Some(false),
+                        );
+                        test.phase = 37;
+                    }
+                    37 => {
+                        let clips = self.editor.timeline().clips();
+                        let original = test.expected.as_ref().unwrap();
+                        let delta = clips[0].source_in - original[0].source_in;
+                        if self.preview_timeline.is_some()
+                            || clips[0].timeline_start != original[0].timeline_start
+                            || (clips[1].timeline_start - original[1].timeline_start + delta).abs()
+                                > 1e-6
+                            || (self.playhead - 0.25 + delta).abs() > 1e-6
+                        {
+                            return Err(
+                            "Trim commit did not ripple once and retain the preview source frame"
+                                .into(),
+                        );
+                        }
+                        test.checks.push("Trim pointer preview anchors the right edge and commit ripples with the retained frame".into());
+                        test.key(egui::Key::Z, true);
+                        test.phase = 38;
+                    }
+                    38 => {
+                        if self.editor.timeline().clips() != test.expected.as_ref().unwrap() {
+                            return Err("Trim was not one undoable edit".into());
+                        }
+                        self.seek(0.25);
+                        test.pointer(test.anchor.unwrap(), Some(true));
+                        test.phase = 39;
+                    }
+                    39 => {
+                        test.pointer(test.anchor.unwrap() + Vec2::new(self.zoom * 0.3, 0.0), None);
+                        test.phase = 40;
+                    }
+                    40 => {
+                        if self.playhead < 0.3 {
+                            return Err("Trimming past the preview frame failed to clamp it".into());
+                        }
+                        test.key(egui::Key::Escape, false);
+                        test.phase = 41;
+                    }
+                    41 => {
+                        test.pointer(
+                            test.anchor.unwrap() + Vec2::new(self.zoom * 0.3, 0.0),
+                            Some(false),
+                        );
+                        test.phase = 42;
+                    }
+                    42 => {
+                        if self.editor.timeline().clips() != test.expected.as_ref().unwrap()
+                            || self.preview_timeline.is_some()
+                            || (self.playhead - 0.25).abs() > 1e-6
+                        {
+                            return Err(
+                                "Escape failed to restore trim bounds and original preview frame"
+                                    .into(),
+                            );
+                        }
+                        test.checks.push(
+                            "Trim is one undo step; Escape restores both bounds and preview frame"
+                                .into(),
+                        );
+                        self.editor.metadata_mut().output.rate =
+                            editor_core::FrameRate::new(120, 1)?;
+                        self.seek(0.2);
+                        test.phase = 43;
+                    }
+                    43 if self.playback.as_ref().is_some_and(|p| {
+                        p.status().ready && p.status().generation == self.generation
+                    }) =>
+                    {
+                        test.key(egui::Key::ArrowRight, false);
+                        test.phase = 44;
+                    }
+                    44 if self.stepping.is_none() => {
+                        let frame = self.editor.metadata().sources[0].rate.frame_seconds();
+                        if (self.playhead - 0.2 - frame).abs() > 0.002 || self.playing {
+                            return Err(format!("Forward frame key used the output rate instead of source timestamps: {}",self.playhead).into());
+                        }
+                        test.key(egui::Key::ArrowLeft, false);
+                        test.phase = 45;
+                    }
+                    45 if self.stepping.is_none() => {
+                        if (self.playhead - 0.2).abs() > 0.002 || self.playing {
+                            return Err("Backward frame key did not return to the previous decoded frame paused".into());
+                        }
+                        test.checks.push("Frame keys use decoded source timestamps independently of the export frame rate".into());
+                        test.expected = Some(self.editor.timeline().clips().to_vec());
+                        test.pointer(self.controls["recording-search"].center(), Some(true));
+                        test.phase = 46;
+                    }
+                    46 => {
+                        test.pointer(self.controls["recording-search"].center(), Some(false));
+                        test.phase = 47;
+                    }
+                    47 => {
+                        test.input
+                            .push(egui::Event::Text("qw no matching recordings".into()));
+                        test.key(egui::Key::Q, false);
+                        test.key(egui::Key::W, false);
+                        test.phase = 48;
+                    }
+                    48 => {
+                        if self.search != "qw no matching recordings"
+                            || self.editor.timeline().clips() != test.expected.as_ref().unwrap()
+                        {
+                            return Err("Search text input triggered timeline shortcuts".into());
+                        }
+                        test.pointer(self.controls["add-selected"].center(), Some(true));
+                        test.phase = 49;
+                    }
+                    49 => {
+                        test.pointer(self.controls["add-selected"].center(), Some(false));
+                        test.phase = 50;
+                    }
+                    50 => {
+                        if self.editor.timeline().clips() != test.expected.as_ref().unwrap() {
+                            return Err("Search-hidden selection was added to the timeline".into());
+                        }
+                        test.pointer(self.controls["add-all"].center(), Some(true));
+                        test.phase = 51;
+                    }
+                    51 => {
+                        test.pointer(self.controls["add-all"].center(), Some(false));
+                        test.phase = 52;
+                    }
+                    52 => {
+                        let original = test.expected.as_ref().unwrap();
+                        let added = &self.editor.timeline().clips()[original.len()..];
+                        let expected: Vec<_> = self
+                            .editor
+                            .metadata()
+                            .sources
+                            .iter()
+                            .map(|s| s.id)
+                            .collect();
+                        if added.iter().map(|c| c.source).collect::<Vec<_>>() != expected {
+                            return Err(
+                                "Add all omitted or reordered search-hidden recordings".into()
+                            );
+                        }
+                        test.key(egui::Key::Z, true);
+                        test.phase = 53;
+                    }
+                    53 => {
+                        if self.editor.timeline().clips() != test.expected.as_ref().unwrap() {
+                            return Err("Filtered Add all was not one undo step".into());
+                        }
+                        test.pointer(self.controls["recording-search"].center(), Some(true));
+                        test.phase = 54;
+                    }
+                    54 => {
+                        test.pointer(self.controls["recording-search"].center(), Some(false));
+                        test.phase = 55;
+                    }
+                    55 => {
+                        test.key(egui::Key::Escape, false);
+                        test.phase = 56;
+                    }
+                    56 => {
+                        if !self.search.is_empty()
+                            || self.editor.timeline().clips() != test.expected.as_ref().unwrap()
+                        {
+                            return Err(
+                                "Escape did not clear search without editing the timeline".into()
+                            );
+                        }
+                        test.checks.push("Search owns text shortcuts; hidden selections stay disabled; Add all includes the full library as one undo step".into());
+                        self.seek(0.2);
+                        test.key(egui::Key::W, false);
+                        test.phase = 57;
+                    }
+                    57 if self.stepping.is_none() => {
+                        let frame = self.editor.metadata().sources[0].rate.frame_seconds();
+                        let clip = &self.editor.timeline().clips()[0];
+                        if (clip.source_out - 0.2 - frame).abs() > 0.002
+                            || (self.playhead - 0.2).abs() > 0.002
+                        {
+                            return Err(format!("Trim after a pending seek used out={} preview={} instead of out={} preview=0.2",clip.source_out,self.playhead,0.2+frame).into());
+                        }
+                        test.key(egui::Key::Z, true);
+                        test.phase = 58;
+                    }
+                    58 => {
+                        if self.editor.timeline().clips() != test.expected.as_ref().unwrap() {
+                            return Err("Quick trim was not one undoable edit".into());
+                        }
+                        self.seek(0.2);
+                        test.key(egui::Key::B, true);
+                        test.phase = 59;
+                    }
+                    59 => {
+                        if self.editor.timeline().clips().len()
+                            != test.expected.as_ref().unwrap().len() + 1
+                        {
+                            return Err("Legacy Ctrl+B split shortcut failed".into());
+                        }
+                        test.key(egui::Key::Z, true);
+                        test.phase = 64;
+                    }
+                    64 => {
+                        if self.editor.timeline().clips() != test.expected.as_ref().unwrap() {
+                            return Err("Ctrl+B split was not one undo step".into());
+                        }
+                        test.key(egui::Key::F, true);
+                        test.phase = 65;
+                    }
+                    65 => {
+                        test.input.push(egui::Event::Text("focused".into()));
+                        test.phase = 66;
+                    }
+                    66 => {
+                        if self.search != "focused" {
+                            return Err("Ctrl+F did not focus recording search".into());
+                        }
+                        test.key(egui::Key::Escape, false);
+                        test.phase = 67;
+                    }
+                    67 => {
+                        if !self.search.is_empty() {
+                            return Err("Escape failed after Ctrl+F".into());
+                        }
+                        test.checks.push("Legacy Ctrl+B/Ctrl+F shortcuts and frame-inclusive quick trim remain undoable".into());
+                        test.was_software = self.software_preview;
+                        test.pointer(self.controls["more-options"].center(), Some(true));
+                        test.phase = 210;
+                    }
+                    210 => {
+                        test.pointer(self.controls["more-options"].center(), Some(false));
+                        test.inspector_ready_at = Instant::now();
+                        test.phase = 211;
+                    }
+                    211 if test.inspector_ready_at.elapsed() >= Duration::from_millis(250) => {
+                        if ["export-settings", "software-preview", "clear-cache"]
+                            .iter()
+                            .any(|key| !self.controls.contains_key(key))
+                        {
+                            return Err("More options lost export or maintenance controls".into());
+                        }
+                        ctx.send_viewport_cmd(
+                            egui::ViewportCommand::Screenshot(Default::default()),
+                        );
+                        test.phase = 212;
+                    }
+                    212 => {
+                        for event in ctx.input(|i| i.events.clone()) {
+                            if let egui::Event::Screenshot { image, .. } = event {
+                                test.screenshot(&image)?;
+                                std::fs::copy(
+                                    test.directory.join("desktop.bmp"),
+                                    test.directory.join("more-options.bmp"),
+                                )?;
+                                test.pointer(
+                                    self.controls["software-preview"].center(),
+                                    Some(true),
+                                );
+                                test.checks.push("More options reveals export settings and maintenance without cluttering the workspace".into());
+                                test.phase = 80;
+                            }
+                        }
+                    }
+                    80 => {
+                        test.pointer(self.controls["software-preview"].center(), Some(false));
+                        test.phase = 81;
+                    }
+                    81 if self.playback.as_ref().is_some_and(|p| {
+                        p.status().ready && p.status().generation == self.generation
+                    }) =>
+                    {
+                        if self.software_preview == test.was_software
+                            || self.software_preview
+                                && !self.playback.as_ref().unwrap().status().software
+                            || self.editor.timeline().clips() != test.expected.as_ref().unwrap()
+                        {
+                            return Err(
+                                "Preview mode change lost its setting or edited the timeline"
+                                    .into(),
+                            );
+                        }
+                        if self.controls.contains_key("software-preview")
+                            || self.controls.contains_key("clear-cache")
+                        {
+                            return Err(
+                                "Maintenance options remain visible after closing More options"
+                                    .into(),
+                            );
+                        }
+                        test.pointer(self.controls["more-options"].center(), Some(true));
+                        test.phase = 213;
+                    }
+                    213 => {
+                        test.pointer(self.controls["more-options"].center(), Some(false));
+                        test.phase = 214;
+                    }
+                    214 => {
+                        test.pointer(self.controls["software-preview"].center(), Some(true));
+                        test.phase = 82;
+                    }
+                    82 => {
+                        test.pointer(self.controls["software-preview"].center(), Some(false));
+                        test.phase = 83;
+                    }
+                    83 if self.playback.as_ref().is_some_and(|p| {
+                        p.status().ready && p.status().generation == self.generation
+                    }) =>
+                    {
+                        if self.software_preview != test.was_software
+                            || self.software_preview
+                                && !self.playback.as_ref().unwrap().status().software
+                            || self.editor.timeline().clips() != test.expected.as_ref().unwrap()
+                        {
+                            return Err(
+                                "Preview mode restoration changed the project or failed to reload"
+                                    .into(),
+                            );
+                        }
+                        test.checks.push("Preview modes switch and restore through real input without changing the project".into());
+                        test.phase = 84;
+                    }
+                    84 => {
+                        if self.timeline_focus.is_some() {
+                            test.key(egui::Key::Enter, false);
+                            test.phase = 85;
+                        } else {
+                            test.focus_steps += 1;
+                            if test.focus_steps > 80 {
+                                return Err(format!(
+                                    "Tab navigation could not reach a timeline section (window focused: {}, widget: {:?}, busy: {})",
+                                    ctx.input(|i| i.focused), ctx.memory(|m| m.focused()), self.busy
+                                ).into());
+                            }
+                            test.key(egui::Key::Tab, false);
+                        }
+                    }
+                    85 => {
+                        let (_, focused) = self
+                            .timeline_focus
+                            .ok_or("Timeline focus was lost on Enter")?;
+                        if self.library_preview || self.selected != Some(focused) {
+                            return Err(
+                                "Enter did not select the keyboard-focused timeline section".into(),
+                            );
+                        }
+                        let clip = self
+                            .selected_clip()
+                            .ok_or("Keyboard selection has no section")?;
+                        self.seek(clip.timeline_start + clip.duration() * 0.5);
+                        test.key(egui::Key::F10, false);
+                        for event in &mut test.input {
+                            if let egui::Event::Key { modifiers, .. } = event {
+                                modifiers.shift = true;
+                            }
+                        }
+                        test.phase = 99;
+                    }
+                    99 => {
+                        if !egui::Popup::is_any_open(ctx) {
+                            return Err("Shift+F10 did not open the focused section menu".into());
+                        }
+                        test.key(egui::Key::S, false);
+                        test.phase = 101;
+                    }
+                    101 => {
+                        if !egui::Popup::is_any_open(ctx)
+                            || self.editor.timeline().clips() != test.expected.as_ref().unwrap()
+                        {
+                            return Err(
+                                "Section menu lost its anchor or leaked a timeline shortcut".into(),
+                            );
+                        }
+                        test.key(egui::Key::Escape, false);
+                        test.phase = 100;
+                    }
+                    100 => {
+                        if egui::Popup::is_any_open(ctx) {
+                            return Err("Escape did not close the section menu".into());
+                        }
+                        test.phase = 86;
+                    }
+                    86 if self.playback.as_ref().is_some_and(|p| {
+                        let status = p.status();
+                        status.ready && status.generation == self.generation
+                    }) =>
+                    {
+                        test.keyboard_position = self.playhead;
+                        test.key(egui::Key::ArrowRight, false);
+                        test.phase = 97;
+                    }
+                    97 if self.stepping.is_none()
+                        && self.playback.as_ref().is_some_and(|p| {
+                            let status = p.status();
+                            status.ready && status.generation == self.generation
+                        }) =>
+                    {
+                        if self.timeline_focus.is_none() || self.playhead <= test.keyboard_position
+                        {
+                            return Err(
+                                "Right frame key lost timeline focus or failed to advance".into()
+                            );
+                        }
+                        test.key(egui::Key::ArrowLeft, false);
+                        test.phase = 98;
+                    }
+                    98 if self.stepping.is_none()
+                        && self.playback.as_ref().is_some_and(|p| {
+                            let status = p.status();
+                            status.ready && status.generation == self.generation
+                        }) =>
+                    {
+                        let clip = self
+                            .selected_clip()
+                            .ok_or("Frame step lost its selected section")?;
+                        let frame = self
+                            .editor
+                            .metadata()
+                            .sources
+                            .iter()
+                            .find(|s| s.id == clip.source)
+                            .ok_or("Frame step lost its recording")?
+                            .rate
+                            .frame_seconds();
+                        if self.timeline_focus.is_none()
+                            || (self.playhead - test.keyboard_position).abs() > frame + 0.000001
+                        {
+                            return Err(
+                                "Left frame key lost timeline focus or failed to return".into()
+                            );
+                        }
+                        test.key(egui::Key::S, false);
+                        test.phase = 87;
+                    }
+                    87 => {
+                        if self.editor.timeline().clips().len()
+                            != test.expected.as_ref().unwrap().len() + 1
+                        {
+                            return Err(
+                                "Split shortcut was blocked by timeline keyboard focus".into()
+                            );
+                        }
+                        test.key(egui::Key::Z, true);
+                        test.phase = 88;
+                    }
+                    88 => {
+                        if self.editor.timeline().clips() != test.expected.as_ref().unwrap() {
+                            return Err("Undo shortcut failed with timeline keyboard focus".into());
+                        }
+                        test.key(egui::Key::Space, false);
+                        test.phase = 89;
+                    }
+                    89 => {
+                        if !self.playing {
+                            return Err("Space did not play the keyboard-focused timeline".into());
+                        }
+                        test.key(egui::Key::Space, false);
+                        test.phase = 90;
+                    }
+                    90 => {
+                        if self.playing {
+                            return Err("Space did not pause the keyboard-focused timeline".into());
+                        }
+                        test.key(egui::Key::Delete, false);
+                        test.phase = 91;
+                    }
+                    91 => {
+                        if self.editor.timeline().clips().len() + 1
+                            != test.expected.as_ref().unwrap().len()
+                        {
+                            return Err(
+                                "Delete shortcut failed with timeline keyboard focus".into()
+                            );
+                        }
+                        test.key(egui::Key::Z, true);
+                        test.phase = 92;
+                    }
+                    92 => {
+                        if self.editor.timeline().clips() != test.expected.as_ref().unwrap() {
+                            return Err("Keyboard deletion was not restored by one undo".into());
+                        }
+                        test.key(egui::Key::F, true);
+                        test.phase = 93;
+                    }
+                    93 => {
+                        test.key(egui::Key::S, false);
+                        test.input.push(egui::Event::Text("s".into()));
+                        test.phase = 94;
+                    }
+                    94 => {
+                        if self.search != "s"
+                            || self.editor.timeline().clips() != test.expected.as_ref().unwrap()
+                        {
+                            return Err("Search typing triggered a timeline edit".into());
+                        }
+                        test.key(egui::Key::Escape, false);
+                        test.phase = 95;
+                    }
+                    95 => {
+                        if !self.search.is_empty() {
+                            return Err(
+                                "Escape did not release search after keyboard editing".into()
+                            );
+                        }
+                        test.checks.push("Tab/Enter timeline selection, Shift+F10 menu, frame keys, split/undo/delete and Space transport preserve text-entry focus".into());
+                        test.phase = 110;
+                    }
+                    110 => {
+                        self.apply(Command::Replace { clips: Vec::new() });
+                        let source_rate = self.editor.metadata().sources[0].rate;
+                        test.keyboard_position =
+                            (5.0195 * source_rate.fps()).round_ties_even() / source_rate.fps();
+                        let mut metadata = self.editor.metadata().clone();
+                        metadata.output.rate = editor_core::FrameRate::new(
+                            if source_rate.fps() == 30.0 { 24 } else { 30 },
+                            1,
+                        )
+                        .unwrap();
+                        self.metadata(metadata);
+                        let (rect, origin, zoom) =
+                            self.timeline_drop.ok_or("Timeline drop area is missing")?;
+                        let point = Pos2::new(origin + 5.0195 * zoom, rect.center().y);
+                        if !rect.contains(point) {
+                            return Err("Drop fixture escaped the visible timeline".into());
+                        }
+                        test.pointer(point, Some(true));
+                        test.phase = 111;
+                    }
+                    111 => {
+                        egui::DragAndDrop::set_payload(ctx, self.editor.metadata().sources[0].id);
+                        let (rect, origin, zoom) = self.timeline_drop.unwrap();
+                        test.pointer(
+                            Pos2::new(origin + 5.0195 * zoom, rect.center().y),
+                            Some(false),
+                        );
+                        test.phase = 112;
+                    }
+                    112 => {
+                        let clips = self.editor.timeline().clips();
+                        if clips.len() != 1
+                            || (clips[0].timeline_start - test.keyboard_position).abs() > 0.001
+                        {
+                            return Err(
+                                "Library drop did not use the source frame rate at the pointer"
+                                    .into(),
+                            );
+                        }
+                        test.key(egui::Key::Z, true);
+                        test.phase = 113;
+                    }
+                    113 => {
+                        if !self.editor.timeline().clips().is_empty() {
+                            return Err("Library drop was not one undoable edit".into());
+                        }
+                        let (rect, origin, zoom) = self.timeline_drop.unwrap();
+                        test.pointer(Pos2::new(origin + 5.0195 * zoom, rect.center().y), None);
+                        test.dropped_files.push(egui::DroppedFile {
+                            path: Some(test.source.clone()),
+                            ..Default::default()
+                        });
+                        test.phase = 114;
+                    }
+                    114 if !self.busy => {
+                        // External drops are dispatched after verification in update.
+                        test.phase = 115;
+                    }
+                    115 if !self.busy => {
+                        let clips = self.editor.timeline().clips();
+                        if clips.len() != 1
+                            || (clips[0].timeline_start - test.keyboard_position).abs() > 0.001
+                        {
+                            return Err(
+                                "External recording drop did not use the source frame rate at the pointer"
+                                    .into(),
+                            );
+                        }
+                        test.checks.push("Library and external recording drops preserve source-frame placement despite a different output rate, and undo".into());
+                        test.phase = 116;
+                    }
+                    116 => {
+                        self.settings = false;
+                        test.precision = Some(SavedProject::capture(&self.editor));
+                        test.phase = 117;
+                    }
+                    117 => {
+                        if ["audio-mute", "framing-mode", "recording-interpretation"]
+                            .iter()
+                            .any(|key| self.controls.contains_key(key))
+                        {
+                            return Err(
+                                "Advanced inspector controls are not collapsed by default".into()
+                            );
+                        }
+                        ctx.send_viewport_cmd(
+                            egui::ViewportCommand::Screenshot(Default::default()),
+                        );
+                        test.phase = 118;
+                    }
+                    118 => {
+                        for event in ctx.input(|i| i.events.clone()) {
+                            if let egui::Event::Screenshot { image, .. } = event {
+                                test.screenshot(&image)?;
+                                std::fs::copy(
+                                    test.directory.join("desktop.bmp"),
+                                    test.directory.join("inspector-collapsed.bmp"),
+                                )?;
+                                test.focus_steps = 0;
+                                test.phase = 119;
+                            }
+                        }
+                    }
+                    119 | 127 => {
+                        let key = ["inspector-audio", "inspector-framing", "inspector-color"]
+                            [test.focus_steps];
+                        test.pointer(self.controls[key].center(), Some(true));
+                        test.phase += 1;
+                    }
+                    120 | 128 => {
+                        let key = ["inspector-audio", "inspector-framing", "inspector-color"]
+                            [test.focus_steps];
+                        test.pointer(self.controls[key].center(), Some(false));
+                        // Let the disclosure animation settle before targeting the next moving header.
+                        test.inspector_ready_at = Instant::now() + Duration::from_millis(300);
+                        test.phase += 1;
+                    }
+                    121 | 129 if Instant::now() >= test.inspector_ready_at => {
+                        let key = ["audio-mute", "framing-mode", "recording-interpretation"]
+                            [test.focus_steps];
+                        if self.controls.contains_key(key) == (test.phase == 121) {
+                            if SavedProject::capture(&self.editor)
+                                != *test.precision.as_ref().unwrap()
+                            {
+                                return Err(
+                                    "Expanding or collapsing inspector groups changed the project"
+                                        .into(),
+                                );
+                            }
+                            test.focus_steps += 1;
+                            test.phase = if test.focus_steps < 3 {
+                                test.phase - 2
+                            } else {
+                                test.phase + 1
+                            };
+                        }
+                    }
+                    122 => {
+                        if ["audio-volume", "trim-reset"]
+                            .iter()
+                            .any(|key| self.controls[key].right() > ctx.screen_rect().right())
+                        {
+                            return Err("Expanded inspector controls overflow the window".into());
+                        }
+                        ctx.send_viewport_cmd(
+                            egui::ViewportCommand::Screenshot(Default::default()),
+                        );
+                        test.phase = 123;
+                    }
+                    123 => {
+                        for event in ctx.input(|i| i.events.clone()) {
+                            if let egui::Event::Screenshot { image, .. } = event {
+                                test.screenshot(&image)?;
+                                std::fs::copy(
+                                    test.directory.join("desktop.bmp"),
+                                    test.directory.join("inspector-expanded.bmp"),
+                                )?;
+                                test.pointer(self.controls["audio-mute"].center(), Some(true));
+                                test.phase = 124;
+                            }
+                        }
+                    }
+                    124 => {
+                        test.pointer(self.controls["audio-mute"].center(), Some(false));
+                        test.phase = 125;
+                    }
+                    125 => {
+                        let clip = self
+                            .selected_clip()
+                            .ok_or("Inspector lost its selected section")?;
+                        let mut expected = test.precision.as_ref().unwrap().clone();
+                        let adjustment = expected.metadata.adjustments.entry(clip.id).or_default();
+                        adjustment.muted = !adjustment.muted;
+                        if SavedProject::capture(&self.editor) != expected {
+                            return Err("Expanded audio controls did not apply only the requested mute edit".into());
+                        }
+                        // Undo through the real toolbar, without changing text/focus shortcut ownership.
+                        test.pointer(self.controls["undo"].center(), Some(true));
+                        test.phase = 126;
+                    }
+                    126 => {
+                        test.pointer(self.controls["undo"].center(), Some(false));
+                        test.focus_steps = 0;
+                        test.phase = 127;
+                    }
+                    130 => {
+                        test.checks.push("Inspector starts with trim only; all advanced groups expand/collapse without editing, and audio mute undoes exactly".into());
+                        let mut metadata = self.editor.metadata().clone();
+                        metadata
+                            .interpretations
+                            .insert(metadata.sources[0].id, SourceInterpretation::Srgb);
+                        self.metadata(metadata);
+                        test.phase = 216;
+                    }
+                    216..=218
+                        if self
+                            .thumbnails
+                            .contains_key(&self.editor.metadata().sources[0].id) =>
+                    {
+                        self.history(test.phase == 217);
+                        if self
+                            .thumbnails
+                            .contains_key(&self.editor.metadata().sources[0].id)
+                        {
+                            return Err(
+                                "Recording-color undo/redo retained a stale library thumbnail"
+                                    .into(),
+                            );
+                        }
+                        test.phase += 1;
+                    }
+                    219 if self
+                        .thumbnails
+                        .contains_key(&self.editor.metadata().sources[0].id) =>
+                    {
+                        if SavedProject::capture(&self.editor) != *test.precision.as_ref().unwrap()
+                        {
+                            return Err(
+                                "Recording-color undo/redo changed the saved editing state".into(),
+                            );
+                        }
+                        test.checks.push("Recording-color undo and redo regenerate library previews and restore the exact project".into());
+                        test.phase = 131;
+                    }
+                    131 if self
+                        .thumbnails
+                        .contains_key(&self.editor.metadata().sources[0].id)
+                        && self.timeline_thumbnails.as_ref().is_some_and(|cache| {
+                            cache.sample_count(self.editor.metadata().sources[0].id) >= 2
+                        }) =>
+                    {
+                        test.checks.push("Visible timeline filmstrip contains multiple decoded source-time samples".into());
+                        test.precision = Some(SavedProject::capture(&self.editor));
+                        test.expected = Some(self.editor.timeline().clips().to_vec());
+                        test.pointer(self.controls["first-recording"].center(), Some(true));
+                        test.phase = 132;
+                    }
+                    132 => {
+                        test.pointer(
+                            self.controls["first-recording"].center() + Vec2::new(20.0, 20.0),
+                            None,
+                        );
+                        test.phase = 133;
+                    }
+                    133 => {
+                        if !self.controls.contains_key("drag-thumbnail")
+                            || self.controls.contains_key("drop-preview")
+                        {
+                            return Err(
+                                "Library drag lost its floating thumbnail outside the timeline"
+                                    .into(),
+                            );
+                        }
+                        let (rect, origin, zoom) =
+                            self.timeline_drop.ok_or("Missing timeline drop area")?;
+                        let point = Pos2::new(origin + 0.3 * zoom, rect.center().y);
+                        test.anchor = Some(point);
+                        test.pointer(point, None);
+                        test.phase = 134;
+                    }
+                    134 => {
+                        if !self.controls.contains_key("drop-preview")
+                            || self.controls.contains_key("drag-thumbnail")
+                            || egui::DragAndDrop::payload::<SourceId>(ctx).is_none()
+                        {
+                            return Err(
+                                "Library drag did not switch to an in-timeline thumbnail preview"
+                                    .into(),
+                            );
+                        }
+                        if SavedProject::capture(&self.editor) != *test.precision.as_ref().unwrap()
+                        {
+                            return Err(
+                                "Hovering a drop preview changed the project before release".into(),
+                            );
+                        }
+                        let (_, origin, zoom) = self.timeline_drop.unwrap();
+                        let preview = self.controls["drop-preview"];
+                        test.keyboard_position = f64::from((preview.left() - origin) / zoom);
+                        let target = test.anchor.unwrap() + Vec2::new(0.4 * zoom, 0.0);
+                        test.anchor = Some(target);
+                        test.pointer(target, None);
+                        test.phase = 222;
+                    }
+                    222 => {
+                        let (_, origin, zoom) = self.timeline_drop.unwrap();
+                        let preview = self
+                            .controls
+                            .get("drop-preview")
+                            .ok_or("Drop ghost disappeared while moving")?;
+                        let position = f64::from((preview.left() - origin) / zoom);
+                        if (position - test.keyboard_position).abs() < 0.05
+                            || SavedProject::capture(&self.editor)
+                                != *test.precision.as_ref().unwrap()
+                        {
+                            return Err("Drop preview did not follow the pointer without editing the project".into());
+                        }
+                        test.keyboard_position = position;
+                        ctx.send_viewport_cmd(
+                            egui::ViewportCommand::Screenshot(Default::default()),
+                        );
+                        test.phase = 135;
+                    }
+                    135 => {
+                        for event in ctx.input(|i| i.events.clone()) {
+                            if let egui::Event::Screenshot { image, .. } = event {
+                                test.screenshot(&image)?;
+                                std::fs::copy(
+                                    test.directory.join("desktop.bmp"),
+                                    test.directory.join("drag-thumbnail.bmp"),
+                                )?;
+                                test.pointer(test.anchor.unwrap(), Some(false));
+                                test.phase = 136;
+                            }
+                        }
+                    }
+                    136 => {
+                        let previous = test.expected.as_ref().unwrap();
+                        let clips = self.editor.timeline().clips();
+                        if clips.len() != previous.len() + 1
+                            || previous.iter().any(|clip| !clips.contains(clip))
+                        {
+                            return Err(
+                                "Thumbnail drag changed existing sections or failed to insert"
+                                    .into(),
+                            );
+                        }
+                        let added = clips
+                            .iter()
+                            .find(|c| !previous.iter().any(|old| old.id == c.id))
+                            .unwrap();
+                        if (added.timeline_start - test.keyboard_position).abs() > 0.001
+                            || self.controls.contains_key("drop-preview")
+                        {
+                            return Err("The released clip did not match its preview position or left a stale ghost".into());
+                        }
+                        test.pointer(self.controls["undo"].center(), Some(true));
+                        test.phase = 137;
+                    }
+                    137 => {
+                        test.pointer(self.controls["undo"].center(), Some(false));
+                        test.phase = 138;
+                    }
+                    138 => {
+                        if self.editor.timeline().clips() != test.expected.as_ref().unwrap()
+                            || self.controls.contains_key("drag-thumbnail")
+                            || self.controls.contains_key("drop-preview")
+                        {
+                            return Err(
+                                "Thumbnail drag did not undo cleanly or left a floating preview"
+                                    .into(),
+                            );
+                        }
+                        test.checks.push("Library drag previews the linked clip in the timeline without editing; drop matches the ghost and undoes without moving existing sections".into());
+                        let clip = self.editor.timeline().clips().first().cloned().unwrap();
+                        if self
+                            .editor
+                            .metadata()
+                            .sources
+                            .iter()
+                            .find(|s| s.id == clip.source)
+                            .is_some_and(|s| !s.audio.is_empty())
+                        {
+                            test.audio_original = Some(SavedProject::capture(&self.editor));
+                            self.selected_audio = None;
+                            self.selected = Some(clip.id);
+                            self.library_preview = false;
+                            self.seek(clip.timeline_start + 0.2);
+                            test.phase = 223;
+                        } else {
+                            test.phase = 60;
+                        }
+                    }
+                    60 => {
+                        ctx.set_zoom_factor(test.layout_scale());
+                        // Zoom applies on the next pass. Resize only after its
+                        // new point-to-pixel conversion is active.
+                        test.phase = 96;
+                    }
+                    96 => {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(test.layout_size()));
+                        test.phase = 61;
+                    }
+                    61 => {
+                        if (ctx.screen_rect().size() - test.layout_size()).length() < 3.0 {
+                            test.phase = 62;
+                        }
+                    }
+                    62 if self.playback.as_ref().is_some_and(|player| {
+                        let status = player.status();
+                        status.ready && status.generation == self.generation
+                    }) =>
+                    {
+                        // Let a completed frame reach the UI before capturing
+                        // the new layout, rather than recording its loading state.
+                        test.inspector_ready_at = Instant::now();
+                        test.phase = 215;
+                    }
+                    215 if test.inspector_ready_at.elapsed() >= Duration::from_millis(50)
+                        && self.playback.as_ref().is_some_and(|player| {
+                            let status = player.status();
+                            status.ready && status.generation == self.generation
+                        }) =>
+                    {
+                        let rect = self.controls["preview"];
+                        let viewport = self.controls["preview-viewport"];
+                        let screen = ctx.screen_rect();
+                        let output = self.preview_output();
+                        let ppp = ctx.pixels_per_point();
+                        let export = self.controls["export"];
+                        if export.right() > screen.right()
+                            || screen.right() - export.right() > 24.0
+                            || export.top() > 24.0
+                            || export.width() < 99.0
+                            || export.height() < 33.0
+                        {
+                            return Err(format!(
+                                "Export is not readable at the top right: {export:?} in {screen:?}"
+                            )
+                            .into());
+                        }
+                        if test.layout == 0 && test.scale == 0 {
+                            test.checks.push("Graphite header keeps the readable Export action at the top right across layouts".into());
+                        }
+                        let expected_bounds = (
+                            (rect.left() * ppp).round() as i32,
+                            (rect.top() * ppp).round() as i32,
+                            (rect.width() * ppp).round() as i32,
+                            (rect.height() * ppp).round() as i32,
+                        );
+                        if self.video.bounds()? != expected_bounds {
+                            return Err(
+                                "Native child bounds did not match the scaled preview".into()
+                            );
+                        }
+                        if rect.width() < 1.0
+                            || rect.height() < 1.0
+                            || !viewport.expand(0.1).contains_rect(rect)
+                            || !screen.expand(1.0).contains_rect(viewport)
+                            || (rect.aspect_ratio() - output.width as f32 / output.height as f32)
+                                .abs()
+                                > 0.001
+                            || self.controls["scrubber"].bottom() > self.controls["ruler"].top()
+                            || self.controls["position-label"]
+                                .intersects(self.controls["frame-forward"])
+                            || self.controls["frame-forward"].right() > viewport.right() + 0.1
+                            || self.controls["trim-reset"].right() > screen.right()
+                        {
+                            return Err(format!(
+                                "Preview or transport escaped its layout at resize {}, scale {} (screen {:?}, viewport {:?}, preview {:?}, ruler {:?}, scrubber {:?}, label {:?}, next {:?})",
+                                test.layout, test.layout_scale(), screen, viewport, rect,
+                                self.controls["ruler"], self.controls["scrubber"],
+                                self.controls["position-label"], self.controls["frame-forward"]
+                            )
+                            .into());
+                        }
+                        ctx.send_viewport_cmd(
+                            egui::ViewportCommand::Screenshot(Default::default()),
+                        );
+                        test.phase = 63;
+                    }
+                    63 => {
+                        for event in ctx.input(|i| i.events.clone()) {
+                            if let egui::Event::Screenshot { image, .. } = event {
+                                test.screenshot(&image)?;
+                                std::fs::copy(
+                                    test.directory.join("desktop.bmp"),
+                                    test.directory.join(if test.scale_layouts {
+                                        format!("scale-{}-layout-{}.bmp", test.scale, test.layout)
+                                    } else {
+                                        format!("layout-{}.bmp", test.layout)
+                                    }),
+                                )?;
+                                test.layout += 1;
+                                if test.layout == 4 && test.scale_layouts && test.scale < 4 {
+                                    test.scale += 1;
+                                    test.layout = 0;
+                                }
+                                if test.layout < 4 {
+                                    test.phase = 60;
+                                } else {
+                                    test.checks.push(if test.scale_layouts {
+                                        "Preview, actual native bounds and transport fit four sizes at 100/125/150/175/200% UI scale".into()
+                                    } else {
+                                        "Preview, actual native bounds and transport fit four window sizes with the correct aspect".into()
+                                    });
+                                    ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(
+                                        Default::default(),
+                                    ));
+                                    test.phase = 6;
+                                }
+                            }
+                        }
+                    }
+                    6 => {
+                        for event in ctx.input(|i| i.events.clone()) {
+                            if let egui::Event::Screenshot { image, .. } = event {
+                                test.screenshot(&image)?;
+                                test.checks.push("Actual desktop layout captured".into());
+                                // This isolated project is disposable; avoid a discard prompt.
+                                self.saved = SavedProject::capture(&self.editor);
+                                self.update_dirty();
+                                self.new_project();
+                                if self.playback.is_some()
+                                    || self.timeline_thumbnails.is_some()
+                                    || self.preview_texture.is_some()
+                                    || !self.thumbnails.is_empty()
+                                    || !self.waveforms.is_empty()
+                                {
+                                    return Err("New project retained preview resources from the previous project".into());
+                                }
+                                test.checks.push("New project releases playback, filmstrip textures and library preview caches".into());
+                                test.report();
+                                self.close_approved = true;
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                                test.phase = 7;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Ok(())
+        })();
+        if let Err(e) = result {
+            test.failure = Some(e.to_string());
+            test.report();
+            self.close_approved = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        self.verification = Some(test);
+    }
+    fn verify_vfr(
+        &mut self,
+        test: &mut crate::verification::Verification,
+        ctx: &egui::Context,
+    ) -> media_engine::Result<()> {
+        let ready = self
+            .playback
+            .as_ref()
+            .is_some_and(|p| p.status().ready && p.status().generation == self.generation);
+        match test.phase {
+            0 if self.tools.is_some() => {
+                self.import(vec![test.source.clone()]);
+                test.phase = 1;
+            }
+            1 if !self.busy => {
+                self.add(vec![self.editor.metadata().sources[0].id]);
+                self.seek(0.14);
+                test.phase = 2;
+            }
+            2 if ready => {
+                test.key(egui::Key::ArrowRight, false);
+                test.phase = 3;
+            }
+            3 if ready && self.stepping.is_none() => {
+                if (self.playhead - 0.18).abs() > 0.002 {
+                    return Err("VFR frame key did not reach the next PTS".into());
+                }
+                test.checks
+                    .push("VFR frame key follows decoded timestamps".into());
+                self.seek(0.2);
+                test.phase = 4;
+            }
+            4 if ready => {
+                if (self.playback.as_ref().unwrap().status().position - 0.38).abs() > 0.002 {
+                    return Err(
+                        "Between-frame seek was acknowledged before the actual frame presentation"
+                            .into(),
+                    );
+                }
+                test.key(egui::Key::W, false);
+                test.phase = 5;
+            }
+            5 if ready && self.stepping.is_none() => {
+                if (self.editor.timeline().clips()[0].source_out - 0.42).abs() > 0.002
+                    || (self.playhead - 0.38).abs() > 0.002
+                {
+                    return Err(
+                        "VFR trim after did not retain the complete current frame interval".into(),
+                    );
+                }
+                test.checks.push(
+                    "VFR trim after excludes the actual next PTS and restores the retained frame"
+                        .into(),
+                );
+                test.key(egui::Key::Z, true);
+                test.phase = 8;
+            }
+            8 => {
+                if self.editor.timeline().clips()[0].source_out < 0.8 {
+                    return Err("VFR quick trim undo failed".into());
+                }
+                self.seek(0.2);
+                test.phase = 9;
+            }
+            9 => {
+                test.key(egui::Key::Q, false);
+                test.phase = 10;
+            }
+            // The actor can publish ready between playback() and this check;
+            // the UI must consume that result and commit the trim first.
+            10 if ready && self.stepping.is_none() => {
+                if (self.editor.timeline().clips()[0].source_in - 0.38).abs() > 0.002 {
+                    return Err(format!("VFR trim before ignored the actual preview timestamp: in={}, playhead={}, pending_step={:?}, generation={}, ready_generation={}", self.editor.timeline().clips()[0].source_in,self.playhead,self.stepping.as_ref().map(|s|s.generation),self.generation,self.playback.as_ref().unwrap().status().generation).into());
+                }
+                test.checks
+                    .push("VFR trim before and undo preserve decoded frame boundaries".into());
+                self.recovery.save(&SavedProject::capture(&self.editor))?;
+                use std::os::windows::fs::OpenOptionsExt;
+                test.recovery_lock = Some(
+                    std::fs::OpenOptions::new()
+                        .read(true)
+                        .share_mode(0)
+                        .open(&self.recovery.path)?,
+                );
+                let clip = self.editor.timeline().clips()[0].id;
+                let rate = self.editor.metadata().sources[0].rate;
+                self.apply(Command::Duplicate { clip, rate });
+                self.recovery_saved = None;
+                self.busy = true;
+                self.exporting = true;
+                self.recovery_tick = Instant::now() - Duration::from_secs(3);
+                test.phase = 11;
+            }
+            11 if self.recovery_saved.is_none()
+                && self.message.starts_with("Recovery save failed") =>
+            {
+                drop(test.recovery_lock.take());
+                self.recovery_tick = Instant::now() - Duration::from_secs(3);
+                test.phase = 12;
+            }
+            12 => {
+                let written = read_document(&self.recovery.path)
+                    .ok()
+                    .and_then(|v| serde_json::from_value::<SavedProject>(v).ok());
+                if written.as_ref() == Some(&SavedProject::capture(&self.editor)) {
+                    test.checks.push("Recovery retries a locked-file failure while export is busy and preserves the latest edit".into());
+                    self.busy = false;
+                    self.exporting = false;
+                    self.path = Some(test.directory.join("verified-save.sveproject"));
+                    self.save(false);
+                    test.phase = 13;
+                }
+            }
+            13 if !self.busy => {
+                if self.dirty() || self.recovery.path.exists() || self.recovery_saved.is_some() {
+                    return Err("Successful project save left a stale recovery session".into());
+                }
+                let document: SavedProject =
+                    serde_json::from_value(read_document(self.path.as_ref().unwrap())?)?;
+                if document != SavedProject::capture(&self.editor) {
+                    return Err("Asynchronous save changed the current project".into());
+                }
+                test.checks.push("Successful asynchronous save clears only its own obsolete recovery and marks the exact snapshot saved".into());
+                self.selected = self.editor.timeline().clips().first().map(|c| c.id);
+                self.trim(Some(0.38123456789), Some(0.82987654321));
+                test.precision = Some(SavedProject::capture(&self.editor));
+                test.phase = 14;
+            }
+            14 => {
+                test.pointer(self.controls["trim-in"].center(), Some(true));
+                test.phase = 15;
+            }
+            15 => {
+                test.pointer(self.controls["trim-in"].center(), Some(false));
+                test.phase = 16;
+            }
+            16 => {
+                test.key(egui::Key::Enter, false);
+                test.phase = 17;
+            }
+            17 => {
+                if SavedProject::capture(&self.editor) != *test.precision.as_ref().unwrap() {
+                    return Err(
+                        "Unchanged in-point field rounded the original trim timestamp".into(),
+                    );
+                }
+                test.pointer(self.controls["trim-out"].center(), Some(true));
+                test.phase = 18;
+            }
+            18 => {
+                test.pointer(self.controls["trim-out"].center(), Some(false));
+                test.phase = 19;
+            }
+            19 => {
+                test.key(egui::Key::Enter, false);
+                test.phase = 20;
+            }
+            20 => {
+                if SavedProject::capture(&self.editor) != *test.precision.as_ref().unwrap() {
+                    return Err(
+                        "Unchanged out-point field rounded the original trim timestamp".into(),
+                    );
+                }
+                test.checks.push("Focusing and accepting unchanged in/out fields preserves full timestamp precision".into());
+                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
+                test.phase = 6;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+}

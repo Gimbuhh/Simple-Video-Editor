@@ -1,0 +1,15 @@
+[package]
+name = "sve-playback-lab"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+native-mpv.workspace = true
+media-path.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

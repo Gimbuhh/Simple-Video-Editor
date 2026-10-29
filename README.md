@@ -1,45 +1,45 @@
 # Simple Video Editor
 
-A portable Windows editor for trimming and combining gameplay recordings. Recordings stay on your PC, and edits leave the original files untouched.
+A portable Windows editor for trimming and combining local recordings. Edits leave the original files untouched.
 
-![Simple Video Editor with linked video and audio tracks](docs/images/editor.png)
+![Rust editor with linked video and audio lanes](docs/images/editor.png)
 
-*Arc Raiders gameplay with multiple cuts and linked audio waveforms.*
+Version 1.1.0 is the Rust release candidate on this branch. The latest published 1.0.x release remains available for rollback. Current-display HDR preview is user-confirmed and local game/Shadowplay controls pass. The user confirmed the separate Windows/NVIDIA game-switch capture corruption is external to this project. The PR stays open for remaining testing and approval.
+
+Current startup checks pass. The current candidate includes automatic audio-output recovery, accessible playback/trim labels and preview-cache cleanup when changing projects. Connected HDR/SDR monitor round trips pass. The [release checklist](docs/release-readiness.md) separates automated checks from the remaining physical DPI/HDR-toggle and screen-reader acceptance.
+
+The Rust candidate opens project/media filenames and places library/File Explorer drops at the timeline pointer. Idle previews sleep between updates and use display-sized processing while exports retain their chosen resolution. The [C#/Rust comparison](docs/rust-csharp-comparison.md) records the verified benefits, resource measurements and remaining tradeoffs. Keep the C# release and original projects for rollback while testing continues.
 
 ## Run
 
-[Download the Windows ZIP from the latest release](https://github.com/Gimbuhh/simple-video-editor/releases/latest), extract it, and double-click **Simple Video Editor.exe** at the top of the folder. Keep **bin** beside it; that folder holds the video tools and libraries. Guides and license notices are in **docs**. The desktop runtime is included in the executable. No installer, app account, or separate media-tool setup is required. Downloads require access to this private GitHub repository.
+Extract the complete portable ZIP and open **Simple Video Editor.exe**. Keep **bin** and **docs** beside it. The Rust app needs no installer, account, .NET runtime, or separately installed FFmpeg.
 
-In this local project folder, use the **Simple Video Editor** shortcut or `App/Simple Video Editor.exe`. A fresh source checkout needs the build commands below first.
+[Published Windows releases](https://github.com/Gimbuhh/simple-video-editor/releases) require access to this private repository. Build the candidate from this branch using the commands below.
 
 ## Editing
 
-1. Import recordings, then drag them onto the timeline. Use **Add to timeline** for the selected recording or **Add all to timeline** when the library contains multiple recordings.
-2. Drag clip edges to trim. Move clips freely; nearby edges snap together automatically.
-3. Use **Split** to keep multiple moments from one recording. **Trim before** and **Trim after** remove either side of the playhead in one step.
-4. Export the combined timeline as an AV1 or H.264 MP4.
+1. Import recordings, select one for preview, and use **Add to timeline**, **Add all**, or drag a recording onto the timeline.
+2. Drag linked sections to move them. Drag edges to trim, split at the playhead, or remove sections. Right-click a section and choose **Separate audio** to edit its audio independently. Gaps and repeated sections are preserved.
+3. Choose output size, rational frame rate, SDR/HDR10 profile and codec. Per-section audio stream, gain, mute, fades, fit/fill/crop and rotation are saved with the project.
+4. Export an MP4 using NVIDIA encoding when supported, with CPU fallback.
 
-Video and audio stay linked. The audio track shows real waveforms, and playback follows cuts and gaps. Projects save the recording library and edits; recovery, missing-file relinking, undo/redo, library search, and cache cleanup are included.
+PQ and HLG inputs are supported. HDR-to-SDR conversion uses scene-aware tone and color mapping on compatible Vulkan graphics, with standard CPU conversion otherwise. Preview, thumbnails and exports share that choice. Native HDR presentation is requested only when Windows reports active HDR on the preview display; software preview uses SDR. Physical HDR presentation is not certified by metadata or screenshots.
 
 | Shortcut | Action |
 | --- | --- |
-| Space | Play / pause |
-| Ctrl+B | Split at the playhead |
-| Q / W | Trim before / after the current frame |
-| I / O | Set the selected clip's in / out point |
-| Delete | Remove the selected timeline clip |
+| Space / Left / Right | Play or pause / previous or next decoded frame |
+| Ctrl+B or S | Split at the playhead |
+| Q / W | Trim before / after, retaining the current frame |
+| I / O | Set selected section in / out |
+| Delete | Delete the selected video/audio item |
 | Ctrl+Z / Ctrl+Y | Undo / redo |
+| Alt+Left / Alt+Right | Swap neighboring sections |
 | Ctrl+I / Ctrl+F | Import / search recordings |
-| Ctrl+S | Save project |
+| Ctrl+N / Ctrl+O | New / open project |
+| Ctrl+S / Ctrl+Shift+S | Save / save as |
+| Shift+F10 | Selected section context menu |
 
-See the [user guide](docs/user-guide.md) for all shortcuts, editing behavior, export settings, and recovery details.
-
-## Requirements and scope
-
-- Windows x64. Version 1.0.4.
-- SDR video; verified with 1440p/60 fps AV1 Shadowplay recordings. HDR is currently unsupported.
-- One video track with linked audio, straight cuts, and the first audio stream. Separate audio editing, effects, titles, and transitions are outside the current scope.
-- NVIDIA export is optional; CPU encoding is available. Preview uses software rendering.
+See the [user guide](docs/user-guide.md) for persistence, recovery, source interpretation and export details. Transitions are follow-up work after the rewrite; hard cuts remain the default.
 
 ## Development
 
@@ -48,25 +48,22 @@ Run from the repository root in PowerShell:
 ```powershell
 ./Development/scripts/setup.ps1
 ./Development/scripts/check-repository.ps1
-./Development/scripts/test.ps1
-./Development/scripts/build.ps1 -Zip
+./Development/scripts/test.ps1 -Ui -Gpu -Extended
+./Development/scripts/build.ps1 -Zip -OutputName App-Updated
+./Development/scripts/verify-package.ps1 -OutputName App-Updated -Desktop -Extended
+./Development/scripts/test-packaging.ps1
 ```
 
-Setup downloads the pinned, checksum-verified SDK and media dependencies. The default tests use generated recordings and CPU encoding, without NVIDIA hardware. [Development documentation](docs/development.md) covers desktop UI checks and optional NVIDIA/real-recording tests.
+Omit `-Gpu` without compatible NVIDIA hardware. Setup restores checksum-pinned workspace-local Rust/LLVM and native media tools. Generated media tests need no private recordings. [Development details](docs/development.md) cover the isolated 1.0.4 oracle and verification limits.
 
 | Folder | Purpose |
 | --- | --- |
-| `Development/src/` | Application source and icon assets |
-| `Development/tests/` | Core/media and WPF UI verification |
-| `Development/scripts/` | Setup, checks, build, test, and cleanup |
-| `docs/` | User, development, and release guides |
-| `App/`, `Releases/` | Generated local app and portable ZIP; ignored by Git |
+| `Development/rust/crates/` | Rust application, editor core, media, persistence and Windows boundaries |
+| `Development/assets/` | Authored icon and Windows manifest |
+| `Development/tests/RustParityOracle/` | Test-only reader of the exact old implementation restored from Git |
+| `Development/scripts/` | Setup, checks, build, test and cleanup |
+| `App*/`, `Releases/`, `Development/artifacts/` | Ignored generated bundles, packages and verification evidence |
 
-## Releases and project policies
+The application version in `Development/rust/crates/desktop-ui/Cargo.toml` owns executable metadata and package names. [Release policy](docs/releasing.md) requires user testing, passing checks, and approval before merge, tagging or publication.
 
-Portable ZIPs belong in GitHub Releases, rather than source history. The [release guide](docs/releasing.md) describes versioning, validation, and the workflow that prepares a draft release.
-
-- [Changelog](CHANGELOG.md)
-- [Contributing](CONTRIBUTING.md)
-- [Security policy](SECURITY.md)
-- [MIT license](LICENSE) and [third-party notices](THIRD-PARTY-NOTICES.md)
+[Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [License](LICENSE) · [Dependency notices](THIRD-PARTY-NOTICES.md) · [Rewrite evidence](docs/rust-rewrite-status.md)
