@@ -11,7 +11,7 @@ Unreleased Rust candidate.
 ### Added
 
 - Timeline filmstrips show sampled video frames, and dragged recordings preview their placement before dropping.
-- HDR recordings support native HDR preview, HDR10 export and conversion to SDR.
+- HDR recordings support native HDR preview, HDR10 export and conversion to SDR with balanced brightness and preserved highlight detail.
 - Audio can be separated from video and edited independently, with volume, mute, fades and track selection for each item.
 - Individual sections support fit, fill, crop and rotation without changing the original recordings.
 - HEVC output joins H.264 and AV1.

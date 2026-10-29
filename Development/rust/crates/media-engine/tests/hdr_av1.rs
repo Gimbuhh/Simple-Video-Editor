@@ -88,7 +88,9 @@ fn full_and_limited_range_av1_pq_keep_colors_in_preview_thumbnail_and_export() {
         .map(str::to_owned)
         .to_vec();
         arguments.push(chart_path.to_string_lossy().into_owned());
-        arguments.extend(["-t".into(),"3".into(),"-vf".into(),format!("format=gbrpf32le,zscale=pin=bt709:tin=iec61966-2-1:min=gbr:rin=full:p=bt2020:t=smpte2084:m=bt2020nc:r={range}:npl=100,format=yuv420p10le")]);
+        // A real HDR reference chart uses 203 cd/m² white, rather than an SDR
+        // chart encoded into a PQ container with only 100 cd/m² headroom.
+        arguments.extend(["-t".into(),"3".into(),"-vf".into(),format!("format=gbrpf32le,zscale=pin=bt709:tin=iec61966-2-1:min=gbr:rin=full:p=bt2020:t=smpte2084:m=bt2020nc:r={range}:npl=203,format=yuv420p10le")]);
         arguments.extend(["-c:v", if gpu { "av1_nvenc" } else { "libaom-av1" }].map(str::to_owned));
         arguments.extend(
             if gpu {

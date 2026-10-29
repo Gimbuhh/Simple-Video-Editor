@@ -605,9 +605,20 @@ pub fn color_transform(source: &MediaSource, profile: ColorProfile) -> String {
         "zscale=pin={prim}:tin={trc}:min={matrix}:rin={range}:p={prim}:t=linear:m=gbr:r=full:npl=100,format=gbrpf32le"
     );
     match profile {
-        ColorProfile::Sdr if source.hdr() => format!(
-            "{linear},tonemap=tonemap=mobius:desat=0,zscale=pin={prim}:tin=linear:min=gbr:rin=full:p=bt709:t=bt709:m=bt709:r=limited,format=yuv420p"
-        ),
+        ColorProfile::Sdr if source.hdr() => {
+            // HDR reference white is 203 cd/m² (ITU-R BT.2408), also used by
+            // mpv/libplacebo. Normalizing it to 100 raised the midtones before
+            // SDR presentation. Express the signal ceiling in the same units;
+            // tonemap's automatic peak otherwise still assumes 100 cd/m².
+            let peak = if source.transfer == "smpte2084" {
+                10000.0 / 203.0
+            } else {
+                1000.0 / 203.0
+            };
+            format!(
+                "zscale=pin={prim}:tin={trc}:min={matrix}:rin={range}:p={prim}:t=linear:m=gbr:r=full:npl=203,format=gbrpf32le,tonemap=tonemap=mobius:desat=0:peak={peak},zscale=pin={prim}:tin=linear:min=gbr:rin=full:p=bt709:t=bt709:m=bt709:r=limited,format=yuv420p"
+            )
+        }
         ColorProfile::Sdr => format!(
             "zscale=pin={prim}:tin={trc}:min={matrix}:rin={range}:p=bt709:t=bt709:m=bt709:r=limited,format=yuv420p"
         ),

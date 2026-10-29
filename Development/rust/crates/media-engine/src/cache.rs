@@ -25,7 +25,7 @@ impl Tools {
             "{:x}",
             Sha256::digest(
                 format!(
-                    "v2|{}|{}|{:?}|{}|{}|{}|{}|{}|{}",
+                    "v3|{}|{}|{:?}|{}|{}|{}|{}|{}|{}",
                     source.path,
                     metadata.len(),
                     metadata.modified()?,

@@ -2,7 +2,15 @@
 
 The Rust production cutover, graphite interface and identified software fixes are implemented on PR #8. Version 1.1.0 remains an unreleased candidate prepared for final user acceptance. No merge, release tag or publication is authorized by this preparation.
 
-## Independent audio items
+## HDR-to-SDR exposure correction
+
+Executable SHA-256: `0a0469fd03ca09d3ad6f3f7fb66e6986b3761d65532b31ab630b9e7b63cdc89d`. The shared SDR conversion uses 203 cd/m² HDR reference white and signal ceilings expressed in those same units. This corrects raised midtones and highlight clipping in HDR preview, thumbnails and SDR exports. HDR-to-HDR exposure and user project/output settings remain unchanged. Cache generation v3 regenerates images from the earlier conversion.
+
+An independent 0–10,000 cd/m² PQ ramp demonstrates the regression: the old conversion rendered the 18 cd/m² patch at code 124 and flattened the 1,000/2,000/4,000 cd/m² patches to code 255. The corrected conversion renders that midtone at 93 and those highlights at 245/250/253. Full/limited-range AV1 fixtures pass on CPU and NVIDIA, with neutral blacks, reference-white checks and absolute luminance preserved in HDR exports. Comparisons on the user's ARC recording reproduce the previous brightness difference against native playback; private frames and paths remain in ignored artifacts.
+
+46 core tests, strict formatting/Clippy, nine GPU media integration tests, the two CPU HDR regressions, 266 desktop checks across eight native/software SDR/PQ/HLG/audio runs, ordinary filename startup and relocated portable verification pass. Evidence: preview-exposure/verification.json, rust-desktop/6dd9732ca74d42d3a347271089ca9549 and rust-package-verification/a4d1ba8cad00453f9da459baee3f31cf. Earlier layout/device/resource measurements below retain their hashes and scope.
+
+## Earlier independent-audio verification
 
 Executable SHA-256: `c67bc1565d83bdc8d6ad446d967ebb9ab1ffa4257c4b82c417bed43598d09b4c`. Separate audio preserves exact source trims and placement, disables embedded sound for that video section and creates an independently editable audio item. Per-item volume, track, mute and fades follow audio edits, playback, save/reopen and export. Video and audio edits share atomic undo/redo. The single independent lane preserves gaps and rejects overlapping audio items; it can play alongside sections that still have linked audio. Audio-only tails export with black video. Schema 3 protects these edits from being silently discarded by older Rust candidates; schema 1/2 import remains supported.
 
