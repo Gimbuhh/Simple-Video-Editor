@@ -2,7 +2,13 @@
 
 The Rust production cutover, graphite interface and identified software fixes are implemented on PR #8. Version 1.1.0 remains an unreleased candidate prepared for final user acceptance. No merge, release tag or publication is authorized by this preparation.
 
-## HDR-to-SDR exposure correction
+## Audio-item click seeking
+
+Executable SHA-256: `a3993cb54f88c16f3b48e72038437db15fbb1583ce0cdcbbe8bc250bae10994b`. Clicking an independent audio item seeks to the pressed point rather than its start. Mapping accounts for timeline placement and zoom without adding the source trim offset. Item bounds, keyboard fallback, drag behavior and project contents are preserved.
+
+46 core tests, strict formatting/Clippy and 73 desktop checks across native/software audio runs pass. Injected quarter/three-quarter clicks on a trimmed, offset item reach their expected playhead positions without changing the saved project. The bundle also contains the verified HDR exposure correction below; its media processing is unchanged by this click fix. Evidence: audio-click/verification.json and rust-desktop/010ae8ca3e1e4d739cb23176a630b3ac.
+
+## Earlier HDR-to-SDR exposure verification
 
 Executable SHA-256: `0a0469fd03ca09d3ad6f3f7fb66e6986b3761d65532b31ab630b9e7b63cdc89d`. The shared SDR conversion uses 203 cd/m² HDR reference white and signal ceilings expressed in those same units. This corrects raised midtones and highlight clipping in HDR preview, thumbnails and SDR exports. HDR-to-HDR exposure and user project/output settings remain unchanged. Cache generation v3 regenerates images from the earlier conversion.
 

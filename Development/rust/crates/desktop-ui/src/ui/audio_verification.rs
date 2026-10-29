@@ -230,7 +230,77 @@ impl EditorApp {
                 if item.clip.source_out.to_bits() != original.clips[0].source_out.to_bits() {
                     return Err("Audio trim undo lost the exact boundary".into());
                 }
-                self.seek(item.clip.timeline_start + 0.6);
+                let clip = item.clip.clone();
+                let source = self
+                    .editor
+                    .metadata()
+                    .sources
+                    .iter()
+                    .find(|s| s.id == clip.source)
+                    .unwrap()
+                    .clone();
+                // Test a trimmed item away from zero: source offsets must not
+                // be confused with the horizontal timeline position.
+                self.apply_audio(Command::Trim {
+                    clip: clip.id,
+                    start: clip.source_in + 0.2,
+                    end: clip.source_out - 0.2,
+                    source_duration: source.duration,
+                    rate: source.rate,
+                });
+                test.audio_click_project = Some(SavedProject::capture(&self.editor));
+                test.phase = 247;
+            }
+            247 => {
+                let rect = self.controls["first-audio-item"];
+                let clip = &self.editor.metadata().audio_items[0].clip;
+                test.keyboard_position = clip.timeline_start + clip.duration() * 0.25;
+                let point = Pos2::new(rect.left() + rect.width() * 0.25, rect.center().y);
+                test.anchor = Some(point);
+                test.pointer(point, Some(true));
+                test.phase = 248;
+            }
+            248 => {
+                test.pointer(test.anchor.unwrap(), Some(false));
+                test.phase = 249;
+            }
+            249 => {
+                if (self.playhead - test.keyboard_position).abs() > 0.001
+                    || self.playing
+                    || SavedProject::capture(&self.editor)
+                        != *test.audio_click_project.as_ref().unwrap()
+                {
+                    return Err(
+                        "First audio click did not seek to the pointer without editing".into(),
+                    );
+                }
+                let rect = self.controls["first-audio-item"];
+                let clip = &self.editor.metadata().audio_items[0].clip;
+                test.keyboard_position = clip.timeline_start + clip.duration() * 0.75;
+                let point = Pos2::new(rect.left() + rect.width() * 0.75, rect.center().y);
+                test.anchor = Some(point);
+                test.pointer(point, Some(true));
+                test.phase = 250;
+            }
+            250 => {
+                test.pointer(test.anchor.unwrap(), Some(false));
+                test.phase = 251;
+            }
+            251 => {
+                if (self.playhead - test.keyboard_position).abs() > 0.001
+                    || self.playing
+                    || SavedProject::capture(&self.editor)
+                        != *test.audio_click_project.as_ref().unwrap()
+                {
+                    return Err(
+                        "Second audio click did not seek to the pointer without editing".into(),
+                    );
+                }
+                test.checks.push("Audio item clicks seek to both pressed positions on a trimmed, offset item without editing the project".into());
+                test.audio_click_project = None;
+                self.history(false);
+                let start = self.editor.metadata().audio_items[0].clip.timeline_start;
+                self.seek(start + 0.6);
                 test.key(egui::Key::B, true);
                 test.phase = 236;
             }

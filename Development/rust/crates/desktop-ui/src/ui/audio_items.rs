@@ -262,7 +262,12 @@ impl EditorApp {
                 self.library_preview = false;
                 if response.clicked() {
                     self.playing = false;
-                    self.seek(clip.timeline_start);
+                    let position = response
+                        .interact_pointer_pos()
+                        .map_or(clip.timeline_start, |p| {
+                            clip.timeline_start + f64::from((p.x - rect.left()) / zoom)
+                        });
+                    self.seek(position.clamp(clip.timeline_start, clip.timeline_end()));
                 }
             }
             let source = self
