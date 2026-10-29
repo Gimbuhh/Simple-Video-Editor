@@ -389,6 +389,7 @@ mod tests {
             matrix: "bt709".into(),
             range: "tv".into(),
             pixel_format: "yuv420p".into(),
+            chroma_location: String::new(),
         }
     }
     #[test]

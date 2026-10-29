@@ -259,6 +259,7 @@ impl Tools {
                         matrix: "bt709".into(),
                         range: "tv".into(),
                         pixel_format: "yuv420p".into(),
+                        chroma_location: String::new(),
                     },
                     ClipSettings::default(),
                     None,
@@ -302,7 +303,7 @@ impl Tools {
                 "-frames:v".into(),
                 segment.frames.to_string(),
                 "-vf".into(),
-                video_filters(&source, &adjustment, output, true),
+                self.video_filters(&source, &adjustment, output, true),
                 "-af".into(),
                 af,
             ]);

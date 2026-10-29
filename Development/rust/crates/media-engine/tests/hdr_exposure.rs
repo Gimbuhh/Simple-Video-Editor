@@ -77,7 +77,8 @@ fn hdr_reference_white_midtones_and_highlights_survive_sdr_conversion() {
     let root = PathBuf::from(std::env::var_os("SVE_MEDIA_FIXTURES").expect("fixtures"))
         .join("hdr-exposure");
     std::fs::create_dir_all(&root).unwrap();
-    let tools = Tools::discover(root.join("cache")).unwrap();
+    let mut tools = Tools::discover(root.join("cache")).unwrap();
+    tools.tone_mapping = SdrToneMapping::Cpu;
     let cancel = uncancelled();
     let gpu = std::env::var_os("SVE_MEDIA_GPU").is_some();
     for (range, label) in [("full", "pc"), ("limited", "tv")] {
@@ -180,7 +181,7 @@ fn hdr_reference_white_midtones_and_highlights_survive_sdr_conversion() {
                 "-i".into(),
                 source.path.clone(),
                 "-vf".into(),
-                video_filters(&source, &Default::default(), &output, false),
+                tools.video_filters(&source, &Default::default(), &output, false),
                 "-frames:v".into(),
                 "1".into(),
                 reference.to_string_lossy().into_owned(),
@@ -200,7 +201,7 @@ fn hdr_reference_white_midtones_and_highlights_survive_sdr_conversion() {
         player
             .set(
                 "vf",
-                &preview_mpv_filter(&source, &Default::default(), &output),
+                &tools.preview_mpv_filter(&source, &Default::default(), &output),
             )
             .unwrap();
         player
@@ -234,7 +235,7 @@ fn hdr_reference_white_midtones_and_highlights_survive_sdr_conversion() {
             player
                 .set(
                     "vf",
-                    &preview_mpv_filter(&source, &Default::default(), &output),
+                    &tools.preview_mpv_filter(&source, &Default::default(), &output),
                 )
                 .unwrap();
             player

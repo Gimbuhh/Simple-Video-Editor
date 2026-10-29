@@ -166,7 +166,7 @@ fn rotation_anamorphic_rgb_and_preview_export_agree() {
         a.push(path.to_string_lossy().into_owned());
         a.extend(["-map".into(), format!("0:{}", source.video_stream)]);
         let filter = if path == &rgb_input {
-            video_filters(&source, &ClipSettings::default(), &output, false)
+            tools.video_filters(&source, &ClipSettings::default(), &output, false)
         } else {
             "scale=320:180:force_original_aspect_ratio=decrease:force_divisible_by=2:reset_sar=1,pad=320:180:(ow-iw)/2:(oh-ih)/2".into()
         };
@@ -184,7 +184,7 @@ fn rotation_anamorphic_rgb_and_preview_export_agree() {
         player
             .set(
                 "vf",
-                &preview_mpv_filter(&source, &ClipSettings::default(), &output),
+                &tools.preview_mpv_filter(&source, &ClipSettings::default(), &output),
             )
             .unwrap();
         player

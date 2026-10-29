@@ -33,6 +33,8 @@ pub struct MediaSource {
     pub matrix: String,
     pub range: String,
     pub pixel_format: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub chroma_location: String,
 }
 fn square_pixels() -> f64 {
     1.0

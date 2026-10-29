@@ -26,8 +26,55 @@ fn source() -> MediaSource {
         matrix: "bt709".into(),
         range: "tv".into(),
         pixel_format: "yuv420p".into(),
+        chroma_location: String::new(),
     }
 }
+#[test]
+fn hdr_conversion_preserves_known_chroma_and_normalizes_missing_metadata() {
+    let mut source = source();
+    source.transfer = "smpte2084".into();
+    source.primaries = "bt2020".into();
+    source.matrix = "bt2020nc".into();
+    let settings = ClipSettings::default();
+    let output = OutputSettings::default();
+    for (metadata, expected) in [
+        ("", "left"),
+        ("unknown", "left"),
+        ("left", "left"),
+        ("center", "center"),
+        ("topleft", "topleft"),
+    ] {
+        source.chroma_location = metadata.into();
+        let prefix = format!("setparams=chroma_location={expected},");
+        assert!(
+            preview_filters(&source, &settings, &output, SdrToneMapping::Adaptive)
+                .starts_with(&prefix)
+        );
+        assert!(
+            video_filters(&source, &settings, &output, false, SdrToneMapping::Adaptive)
+                .starts_with(&prefix)
+        );
+        let converted = color_transform(&source, ColorProfile::Sdr, SdrToneMapping::Adaptive);
+        assert!(converted.contains(&format!("chroma_location={expected}")));
+        assert!(converted.contains("libplacebo="));
+        assert!(
+            !color_transform(&source, ColorProfile::Sdr, SdrToneMapping::Cpu)
+                .contains("libplacebo=")
+        );
+        assert!(
+            !color_transform(&source, ColorProfile::Hdr10, SdrToneMapping::Adaptive)
+                .contains("libplacebo=")
+        );
+    }
+    let mut document = serde_json::to_value(&source).unwrap();
+    document.as_object_mut().unwrap().remove("chroma_location");
+    let restored: MediaSource = serde_json::from_value(document).unwrap();
+    assert!(
+        restored.chroma_location.is_empty(),
+        "Older project metadata must remain readable"
+    );
+}
+
 #[test]
 fn complex_presentations_keep_the_shared_transform() {
     let source = source();
@@ -53,7 +100,10 @@ fn complex_presentations_keep_the_shared_transform() {
             _ => unreachable!(),
         }
         assert!(!direct_preview(&changed, &settings, &output), "{field}");
-        assert!(preview_mpv_filter(&changed, &settings, &output).starts_with("lavfi=["));
+        assert!(
+            preview_mpv_filter(&changed, &settings, &output, SdrToneMapping::Cpu)
+                .starts_with("lavfi=[")
+        );
     }
     for framing in [Framing::Fill, Framing::Crop] {
         assert!(!direct_preview(
@@ -220,10 +270,10 @@ fn direct_sdr_preview_preserves_colors_levels_and_exact_seeks() {
                 &if variant == "shared" {
                     format!(
                         "lavfi=[{}]",
-                        preview_filters(&source, &ClipSettings::default(), &output)
+                        tools.preview_filters(&source, &ClipSettings::default(), &output)
                     )
                 } else {
-                    preview_mpv_filter(&source, &ClipSettings::default(), &output)
+                    tools.preview_mpv_filter(&source, &ClipSettings::default(), &output)
                 },
             )
             .unwrap();
@@ -245,7 +295,7 @@ fn direct_sdr_preview_preserves_colors_levels_and_exact_seeks() {
             p.set("hwdec", "auto").unwrap();
             p.set(
                 "vf",
-                &preview_mpv_filter(&source, &ClipSettings::default(), &output),
+                &tools.preview_mpv_filter(&source, &ClipSettings::default(), &output),
             )
             .unwrap();
             p.load(&media_path::RecordingPath::authorize(Path::new(&source.path)).unwrap())

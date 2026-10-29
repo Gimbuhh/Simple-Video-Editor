@@ -23,7 +23,7 @@ Extract the complete portable ZIP and open **Simple Video Editor.exe**. Keep **b
 3. Choose output size, rational frame rate, SDR/HDR10 profile and codec. Per-section audio stream, gain, mute, fades, fit/fill/crop and rotation are saved with the project.
 4. Export an MP4 using NVIDIA encoding when supported, with CPU fallback.
 
-PQ and HLG inputs are supported. SDR preview deliberately tone-maps HDR. Native HDR presentation is requested only when Windows reports active HDR on the preview display; software preview uses SDR. Physical HDR presentation is not certified by metadata or screenshots.
+PQ and HLG inputs are supported. HDR-to-SDR conversion uses scene-aware tone and color mapping on compatible Vulkan graphics, with standard CPU conversion otherwise. Preview, thumbnails and exports share that choice. Native HDR presentation is requested only when Windows reports active HDR on the preview display; software preview uses SDR. Physical HDR presentation is not certified by metadata or screenshots.
 
 | Shortcut | Action |
 | --- | --- |

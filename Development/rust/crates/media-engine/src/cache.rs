@@ -25,13 +25,19 @@ impl Tools {
             "{:x}",
             Sha256::digest(
                 format!(
-                    "v3|{}|{}|{:?}|{}|{}|{}|{}|{}|{}",
+                    "v4-adaptive-sdr|{:?}|{}|{}|{:?}|{}|{}|{}|{}|{}|{}|{}",
+                    if source.hdr() {
+                        self.hdr_sdr_tone_mapping()
+                    } else {
+                        SdrToneMapping::Cpu
+                    },
                     source.path,
                     metadata.len(),
                     metadata.modified()?,
                     source.transfer,
                     source.primaries,
                     source.matrix,
+                    source.chroma_location,
                     source.range,
                     source.rotation,
                     source.sample_aspect_ratio

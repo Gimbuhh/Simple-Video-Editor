@@ -133,6 +133,7 @@ fn clip_settings_follow_split_and_undo_without_leaking_into_new_recordings() {
         matrix: "bt709".into(),
         range: "tv".into(),
         pixel_format: "yuv420p".into(),
+        chroma_location: String::new(),
     };
     let clip = Clip {
         id: ClipId(1),

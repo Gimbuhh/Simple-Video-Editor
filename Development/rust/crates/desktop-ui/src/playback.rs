@@ -1,4 +1,4 @@
-use media_engine::{Tools, direct_preview, preview_mpv_filter};
+use media_engine::{Tools, direct_preview};
 use native_mpv::{Mode, Player};
 use project_store::{ClipSettings, MediaSource, OutputSettings};
 use std::{
@@ -247,7 +247,11 @@ impl Playback {
                                         }
                                         player.set(
                                             "vf",
-                                            &preview_mpv_filter(source, &next.adjustment, &output),
+                                            &tools.preview_mpv_filter(
+                                                source,
+                                                &next.adjustment,
+                                                &output,
+                                            ),
                                         )?;
                                         player.set("start", &next.position.to_string())?;
                                         player.set("end", &next.end.to_string())?;

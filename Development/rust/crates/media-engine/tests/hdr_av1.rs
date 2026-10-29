@@ -13,7 +13,13 @@ fn check_colors(image: &image::RgbImage) {
         assert!(pixel[channel] > 150, "Primary lost: {pixel:?}");
         for other in 0..3 {
             if other != channel {
-                assert!(pixel[other] < 100, "Primary corrupted: {pixel:?}");
+                // Perceptual gamut mapping can mix secondary channels to
+                // retain brightness. Require clear primary dominance rather
+                // than treating that intentional compression as corruption.
+                assert!(
+                    pixel[channel] > pixel[other].saturating_add(100),
+                    "Primary lost its hue: {pixel:?}"
+                );
             }
         }
     }
@@ -131,7 +137,7 @@ fn full_and_limited_range_av1_pq_keep_colors_in_preview_thumbnail_and_export() {
             "-i".into(),
             source.path.clone(),
             "-vf".into(),
-            video_filters(&source, &ClipSettings::default(), &output, false),
+            tools.video_filters(&source, &ClipSettings::default(), &output, false),
             "-frames:v".into(),
             "1".into(),
             reference_path.to_string_lossy().into_owned(),
@@ -150,7 +156,7 @@ fn full_and_limited_range_av1_pq_keep_colors_in_preview_thumbnail_and_export() {
                 "vf",
                 &format!(
                     "lavfi=[{}]",
-                    preview_filters(&source, &ClipSettings::default(), &output)
+                    tools.preview_filters(&source, &ClipSettings::default(), &output)
                 ),
             )
             .unwrap();
@@ -191,7 +197,7 @@ fn full_and_limited_range_av1_pq_keep_colors_in_preview_thumbnail_and_export() {
                     "vf",
                     &format!(
                         "lavfi=[{}]",
-                        preview_filters(&source, &ClipSettings::default(), &output)
+                        tools.preview_filters(&source, &ClipSettings::default(), &output)
                     ),
                 )
                 .unwrap();
@@ -257,7 +263,7 @@ fn full_and_limited_range_av1_pq_keep_colors_in_preview_thumbnail_and_export() {
                 "-i".into(),
                 exported.to_string_lossy().into_owned(),
                 "-vf".into(),
-                video_filters(&exported_source, &ClipSettings::default(), &output, false),
+                tools.video_filters(&exported_source, &ClipSettings::default(), &output, false),
                 "-frames:v".into(),
                 "1".into(),
                 decoded.to_string_lossy().into_owned(),

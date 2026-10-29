@@ -1,6 +1,7 @@
 //! Native tools, color transforms and export jobs. No UI or C# dependency.
 mod cache;
 mod export;
+mod tone_mapping;
 use editor_core::{FrameRate, SourceId};
 pub use export::*;
 use project_store::{
@@ -19,6 +20,7 @@ use std::{
     },
     time::Duration,
 };
+pub use tone_mapping::SdrToneMapping;
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 pub type Cancel = Arc<AtomicBool>;
 pub fn uncancelled() -> Cancel {
@@ -38,8 +40,57 @@ pub struct Tools {
     pub ffprobe: PathBuf,
     pub mpv: PathBuf,
     pub cache: PathBuf,
+    pub tone_mapping: SdrToneMapping,
 }
 impl Tools {
+    pub fn hdr_sdr_tone_mapping(&self) -> SdrToneMapping {
+        match self.tone_mapping {
+            SdrToneMapping::Auto if tone_mapping::available(&self.ffmpeg) => {
+                SdrToneMapping::Adaptive
+            }
+            SdrToneMapping::Auto => SdrToneMapping::Cpu,
+            selected => selected,
+        }
+    }
+    fn mapping_for(&self, source: &MediaSource, output: &OutputSettings) -> SdrToneMapping {
+        if source.hdr() && output.profile == ColorProfile::Sdr {
+            self.hdr_sdr_tone_mapping()
+        } else {
+            SdrToneMapping::Cpu
+        }
+    }
+    pub fn video_filters(
+        &self,
+        source: &MediaSource,
+        adjustment: &ClipSettings,
+        output: &OutputSettings,
+        frame_rate: bool,
+    ) -> String {
+        video_filters(
+            source,
+            adjustment,
+            output,
+            frame_rate,
+            self.mapping_for(source, output),
+        )
+    }
+    pub fn preview_filters(
+        &self,
+        source: &MediaSource,
+        adjustment: &ClipSettings,
+        output: &OutputSettings,
+    ) -> String {
+        preview_filters(source, adjustment, output, self.mapping_for(source, output))
+    }
+    pub fn preview_mpv_filter(
+        &self,
+        source: &MediaSource,
+        adjustment: &ClipSettings,
+        output: &OutputSettings,
+    ) -> String {
+        preview_mpv_filter(source, adjustment, output, self.mapping_for(source, output))
+    }
+
     pub fn discover(cache: PathBuf) -> Result<Self> {
         let executable = std::env::current_exe()?;
         let mut roots = vec![executable.parent().unwrap().to_path_buf()];
@@ -71,6 +122,7 @@ impl Tools {
                         ffprobe: ff.join("ffprobe.exe"),
                         mpv,
                         cache: cache.clone(),
+                        tone_mapping: SdrToneMapping::Auto,
                     };
                     let pins: serde_json::Value = serde_json::from_str(include_str!(
                         "../../../../scripts/dependencies.json"
@@ -215,7 +267,7 @@ impl Tools {
             return Ok(output);
         }
         let temp = root.join(format!("{key}-{}.bmp", project_store::unique_id()));
-        let filters = video_filters(
+        let mut filters = self.video_filters(
             source,
             &ClipSettings::default(),
             &OutputSettings {
@@ -226,6 +278,10 @@ impl Tools {
             },
             false,
         );
+        // Keep resizing in YUV, then convert known Rec.709/limited SDR to
+        // full-range bitmap pixels explicitly. Encoder format negotiation at
+        // thumbnail sizes must not select a different RGB conversion matrix.
+        filters.push_str(",format=yuv420p,scale=in_color_matrix=bt709:in_range=limited:out_range=full,format=bgr24");
         let result = run(
             &self.ffmpeg,
             &[
@@ -547,10 +603,22 @@ pub fn parse_probe(bytes: &[u8], path: String, id: SourceId) -> Result<MediaSour
         matrix: field("color_space"),
         range: field("color_range"),
         pixel_format: field("pix_fmt"),
+        chroma_location: field("chroma_location"),
     })
 }
 
-pub fn color_transform(source: &MediaSource, profile: ColorProfile) -> String {
+fn hdr_chroma(source: &MediaSource) -> &str {
+    match source.chroma_location.as_str() {
+        "left" | "center" | "topleft" | "top" | "bottomleft" | "bottom" => &source.chroma_location,
+        _ => "left",
+    }
+}
+
+pub fn color_transform(
+    source: &MediaSource,
+    profile: ColorProfile,
+    mapping: SdrToneMapping,
+) -> String {
     let rgb = source.pixel_format.starts_with("gbr")
         || source.pixel_format.starts_with("rgb")
         || source.pixel_format.starts_with("bgr");
@@ -605,6 +673,11 @@ pub fn color_transform(source: &MediaSource, profile: ColorProfile) -> String {
         "zscale=pin={prim}:tin={trc}:min={matrix}:rin={range}:p={prim}:t=linear:m=gbr:r=full:npl=100,format=gbrpf32le"
     );
     match profile {
+        ColorProfile::Sdr if source.hdr() && mapping == SdrToneMapping::Adaptive => format!(
+            "setparams=range={range}:color_primaries={prim}:color_trc={trc}:colorspace={matrix}:chroma_location={},{},sidedata=mode=delete:type=MASTERING_DISPLAY_METADATA,sidedata=mode=delete:type=CONTENT_LIGHT_LEVEL",
+            hdr_chroma(source),
+            tone_mapping::ADAPTIVE_SDR
+        ),
         ColorProfile::Sdr if source.hdr() => {
             // HDR reference white is 203 cd/m² (ITU-R BT.2408), also used by
             // mpv/libplacebo. Normalizing it to 100 raised the midtones before
@@ -659,6 +732,7 @@ pub fn preview_mpv_filter(
     source: &MediaSource,
     adjustment: &ClipSettings,
     output: &OutputSettings,
+    mapping: SdrToneMapping,
 ) -> String {
     if direct_preview(source, adjustment, output) {
         format!(
@@ -670,7 +744,10 @@ pub fn preview_mpv_filter(
             }
         )
     } else {
-        format!("lavfi=[{}]", preview_filters(source, adjustment, output))
+        format!(
+            "lavfi=[{}]",
+            preview_filters(source, adjustment, output, mapping)
+        )
     }
 }
 
@@ -680,6 +757,7 @@ pub fn preview_filters(
     source: &MediaSource,
     adjustment: &ClipSettings,
     output: &OutputSettings,
+    mapping: SdrToneMapping,
 ) -> String {
     let crop = if adjustment.framing == Framing::Crop {
         adjustment.crop[2].min(adjustment.crop[3]).max(0.001)
@@ -689,9 +767,14 @@ pub fn preview_filters(
     let edge = (f64::from(output.width.max(output.height)) / crop)
         .ceil()
         .clamp(2.0, 32768.0) as u32;
+    let chroma = if source.hdr() && output.profile == ColorProfile::Sdr {
+        format!("setparams=chroma_location={},", hdr_chroma(source))
+    } else {
+        String::new()
+    };
     format!(
-        "scale=w='min(iw,{edge})':h='min(ih,{edge})':force_original_aspect_ratio=decrease:force_divisible_by=2,{}",
-        video_filters(source, adjustment, output, false)
+        "{chroma}scale=w='min(iw,{edge})':h='min(ih,{edge})':force_original_aspect_ratio=decrease:force_divisible_by=2,{}",
+        video_filters(source, adjustment, output, false, mapping)
     )
 }
 
@@ -700,8 +783,13 @@ pub fn video_filters(
     adjustment: &ClipSettings,
     output: &OutputSettings,
     frame_rate: bool,
+    mapping: SdrToneMapping,
 ) -> String {
-    let mut filters = vec!["scale=-2:ceil(ih/2)*2:reset_sar=1".into()];
+    let mut filters = Vec::new();
+    if source.hdr() && output.profile == ColorProfile::Sdr {
+        filters.push(format!("setparams=chroma_location={}", hdr_chroma(source)));
+    }
+    filters.push("scale=-2:ceil(ih/2)*2:reset_sar=1".into());
     let rotation = if (source.rotation - source.rotation.round()).abs() < 0.00001 {
         source.rotation.round() as i32
     } else {
@@ -720,7 +808,20 @@ pub fn video_filters(
         }
     }
     filters.push("sidedata=mode=delete:type=DISPLAYMATRIX".into());
-    filters.push(color_transform(source, output.profile));
+    if source.hdr() && output.profile == ColorProfile::Sdr && mapping == SdrToneMapping::Adaptive {
+        // libplacebo outputs 8-bit SDR, but HDR must stay at its original
+        // precision through the preceding CPU scalers and into the mapper.
+        // Otherwise format negotiation can quantize PQ before tone mapping.
+        let pixels = &source.pixel_format;
+        if !pixels.is_empty()
+            && pixels
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        {
+            filters.push(format!("format={pixels}"));
+        }
+    }
+    filters.push(color_transform(source, output.profile, mapping));
     match adjustment.rotation {
         90 => filters.push("transpose=clock".into()),
         180 => filters.extend(["hflip".into(), "vflip".into()]),
