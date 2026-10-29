@@ -1,6 +1,6 @@
 # 1.1.0 release checklist — 2026-10-29
 
-The Rust rewrite and graphite interface are implemented. Version 1.1.0 remains unreleased. The HDR-to-SDR candidate uses the user's approved SDR reference as its rendering target, with pixel comparisons across preview, thumbnails and exports. The standard CPU fallback remains separately verified. PR #8 stays open until the user finishes testing the installed candidate and explicitly approves merging.
+The Rust rewrite and graphite interface are implemented. Version 1.1.0 remains unreleased. The user confirms that the installed HDR-to-SDR correction looks much better. Pixel comparisons and the tiny-highlight regression cover preview, thumbnails and exports. Windows CI passes on the HDR correction commit `a71af30`; later changes require their own checks. The standard CPU fallback remains separately verified. PR #8 stays open until the user finishes testing the installed candidate and explicitly approves merging.
 
 ## Software acceptance
 

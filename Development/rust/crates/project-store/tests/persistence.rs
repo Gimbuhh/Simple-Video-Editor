@@ -37,6 +37,34 @@ fn cleanup(path: std::path::PathBuf) {
         }
     }
 }
+
+#[test]
+fn temporary_ids_are_unique_across_workers() {
+    let barrier = std::sync::Barrier::new(32);
+    let ids = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..32)
+            .map(|_| {
+                let barrier = &barrier;
+                scope.spawn(move || {
+                    barrier.wait();
+                    (0..4096).map(|_| unique_id()).collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|worker| worker.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+    let count = ids.len();
+    let unique: std::collections::HashSet<_> = ids.into_iter().collect();
+    assert_eq!(
+        unique.len(),
+        count,
+        "Concurrent workers reuse temporary file names"
+    );
+}
+
 #[test]
 fn atomic_save_roundtrip_and_encoding_compatibility() {
     let root = root();

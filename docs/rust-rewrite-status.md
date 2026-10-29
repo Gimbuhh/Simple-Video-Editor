@@ -1,8 +1,16 @@
 # Rust 1.1.0 status — 2026-10-29
 
-The Rust production cutover and graphite interface are implemented on PR #8. Version 1.1.0 remains unreleased. The HDR-to-SDR correction is checked against the user's approved SDR reference; final installed-build acceptance remains with the user. No merge, release tag or publication is authorized.
+The Rust production cutover and graphite interface are implemented on PR #8. Version 1.1.0 remains unreleased. The user confirms that the installed HDR-to-SDR correction looks much better. Final release acceptance remains with the user. No merge, release tag or publication is authorized.
 
-## Tiny HDR highlight correction
+## Temporary-file reliability and cleanup
+
+Executable SHA-256: `b979e3d5ed3b9ae1b36b81382b8251f64533487f0d6abfae6d501748f7675cf8`. Temporary identifiers used by project saves, recovery, thumbnail/waveform workers and exports now include a process-local atomic sequence. Clock readings can repeat across workers; the sequence makes names distinct within a process even if the clock stops or moves backwards. Exclusive project-file creation also completes before cleanup assumes ownership of that temporary file. Project schemas and media/color processing are unchanged.
+
+The concurrent regression generates 131,072 names across 32 workers: the previous implementation returns only 29,435 distinct names on this host; the corrected implementation returns all 131,072. Project round trips, recovery isolation, undo/settings contracts, formatting, strict Clippy, the workspace suite and release inspector pass. Focused native-media checks cover waveform/thumbnail cache ownership, safe cleanup, mixed SDR/PQ/HLG exports, cancellation and source protection. Evidence: cleanup-audit/ids-before.log, ids-after.log, workspace.log and media.log.
+
+The audit retains the C# parity oracle, project compatibility, source validation, CPU fallback and asynchronous generation checks because their supported consumers remain active. Root launcher instructions point to the actual executable. The preceding HDR correction commit `a71af30` passes Windows CI and the user reports improved appearance; that does not authorize a merge or publication. See the release checklist for remaining physical acceptance.
+
+## Earlier tiny HDR highlight correction
 
 Executable SHA-256: `f4baa1b0ddd75e5b3ac005af865fe231c7829eb680392caa680ffd850eed1d93`. The reported inventory frame at 153.1 seconds exposes an additional scene-exposure problem: the original PQ recording contains a roughly 4,800-nit cursor beside 170-nit menu text. The prior preview closely matches an independent generic renderer (mean screenshot channel difference 1.31/255), but both compress normal white unnecessarily to preserve that tiny peak. Renderer agreement alone did not establish correct scene exposure.
 

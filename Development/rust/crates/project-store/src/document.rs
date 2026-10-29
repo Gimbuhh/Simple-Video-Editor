@@ -673,12 +673,14 @@ pub fn save_document(path: &Path, document: &SavedProject) -> Result<(), Project
         .ok_or_else(|| error("Choose an absolute project path"))?;
     std::fs::create_dir_all(parent).map_err(|e| error(e.to_string()))?;
     let temporary = path.with_extension(format!("{}.tmp", unique_id()));
+    use std::io::Write;
+    // Only clean up a temporary file after exclusive creation establishes ownership.
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)
+        .map_err(|e| error(e.to_string()))?;
     let result = (|| {
-        use std::io::Write;
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary)?;
         file.write_all(&data)?;
         file.sync_all()?;
         drop(file);
@@ -688,13 +690,18 @@ pub fn save_document(path: &Path, document: &SavedProject) -> Result<(), Project
     result.map_err(|e| error(e.to_string()))
 }
 pub fn unique_id() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    // Windows clock readings can repeat across threads. The sequence also
+    // preserves per-process uniqueness if the wall clock moves backwards.
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
     format!(
-        "{}-{}",
+        "{}-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
-            .as_nanos()
+            .as_nanos(),
+        SEQUENCE.fetch_add(1, Ordering::Relaxed)
     )
 }
 

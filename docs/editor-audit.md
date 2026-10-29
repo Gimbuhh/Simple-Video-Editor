@@ -29,3 +29,14 @@ The [release checklist](release-readiness.md) retains manual HDR-toggle, genuine
 ## Button glyph alignment follow-up
 
 The earlier alignment check centered a font layout box. Actual Import screenshots still put the visible text one pixel right and two pixels down at 100% scale. The shared action-button renderer now centers painted glyph bounds and snaps to physical pixels, while retaining stock button interaction and accessibility. Raster measurements of the corrected Import button show zero offset on both axes and equal margins. The installed-font/fallback-font regression covers 2,400 combinations; the full native/software desktop matrix, 40 scaled layouts and portable checks pass. This changes action and menu-trigger captions; menu entries retain their established alignment and editable fields retain their normal text layout.
+
+
+## Cleanup follow-up — 2026-10-29
+
+The post-HDR pass traces temporary-file ownership through project saves, recovery, thumbnail/waveform workers and export jobs. The clock-only identifier repeats under concurrent calls: 131,072 calls across 32 workers produced only 29,435 unique names on the test host. A process-local atomic sequence now prevents repeated clock readings from reusing names; process/time components remain for separate sessions. Project saves enter cleanup only after exclusive temporary-file creation succeeds. Recovery compatibility, atomic replacement and original-file protection remain intact.
+
+The root launcher instructions now point to the actual App executable and stop promising a missing shortcut or new source backups. The release checklist records the user's improved HDR result and the passing HDR-commit CI without treating that as merge/publication approval.
+
+Retained: the frozen C# parity oracle, schema-1/2 compatibility, CPU color fallback, source validation, asynchronous generations and isolated native verification tools. Their callers and supported contracts remain active. No dependency removal or large UI restructuring is justified by this pass. Genuine mixed-DPI transitions, manual HDR toggles and a full screen-reader workflow remain physical acceptance items; broader UI polish is a separate refinement task.
+
+Verification: the new concurrency regression fails before the fix and passes after it. The full workspace formatting/lint/contracts and release inspector pass, along with focused cache/export/cancellation/source-protection integrations. Media/color and UI behavior are unchanged; prior HDR and interface evidence retains its own executable hashes.
