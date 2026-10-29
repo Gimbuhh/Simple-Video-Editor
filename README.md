@@ -19,7 +19,7 @@ Extract the complete portable ZIP and open **Simple Video Editor.exe**. Keep **b
 ## Editing
 
 1. Import recordings, select one for preview, and use **Add to timeline**, **Add all**, or drag a recording onto the timeline.
-2. Drag linked sections to move them. Drag edges to trim, split at the playhead, or remove sections. Gaps and repeated sections are preserved.
+2. Drag linked sections to move them. Drag edges to trim, split at the playhead, or remove sections. Right-click a section and choose **Separate audio** to edit its audio independently. Gaps and repeated sections are preserved.
 3. Choose output size, rational frame rate, SDR/HDR10 profile and codec. Per-section audio stream, gain, mute, fades, fit/fill/crop and rotation are saved with the project.
 4. Export an MP4 using NVIDIA encoding when supported, with CPU fallback.
 
@@ -31,7 +31,7 @@ PQ and HLG inputs are supported. SDR preview deliberately tone-maps HDR. Native 
 | Ctrl+B or S | Split at the playhead |
 | Q / W | Trim before / after, retaining the current frame |
 | I / O | Set selected section in / out |
-| Delete | Delete the selected linked section |
+| Delete | Delete the selected video/audio item |
 | Ctrl+Z / Ctrl+Y | Undo / redo |
 | Alt+Left / Alt+Right | Swap neighboring sections |
 | Ctrl+I / Ctrl+F | Import / search recordings |

@@ -14,7 +14,7 @@ Dropping recordings from the library or File Explorer onto the timeline places l
 
 Recordings keep a floating thumbnail outside the timeline. Over the timeline, a linked clip preview shows thumbnails and the actual drop position before release, including snapping and avoiding overlap. Hovering does not edit the project. Timeline video sections show sampled source frames that follow their trim and zoom; images load in the background.
 
-The video and audio lanes are the same linked section. Moving, splitting, trimming or deleting a section moves both. Repeated sections of one recording have separate identities. Right-click a recording to remove it and all its sections from the project; the original file remains untouched and Undo restores the edit.
+Video and audio start linked. Moving, splitting, trimming or deleting a linked section moves both. Right-click a section and choose **Separate audio**, or use the same button in the inspector, to create an independent item in the audio lane (AUDIO 2 when other sections still have linked audio). Separation keeps its exact trim, timeline position and audio settings. The video then has no linked sound; moving or deleting either item leaves the other in place. Undo restores the link. Repeated sections of one recording have separate identities. Right-click a recording to remove it and all its sections from the project; the original file remains untouched and Undo restores the edit.
 
 Clip edges show a horizontal resize pointer for trimming; clip bodies show grab/grabbing pointers for moving. The trim pointer stays active throughout the drag, including over a neighboring section.
 
@@ -36,7 +36,7 @@ Drag the recording scrubber or timeline ruler to seek. The pointer owns the play
 | Space / Left / Right | Play or pause / previous or next frame |
 | Q / W | Trim before / after, retaining the current frame |
 | I / O | Set selected section in / out |
-| Delete | Delete selected linked section |
+| Delete | Delete selected video/audio item |
 | Alt+Left / Alt+Right | Swap with the previous / next section |
 | Shift+F10 | Selected section context menu |
 | Escape while dragging | Cancel the gesture |
@@ -50,7 +50,7 @@ The inspector keeps In/Out and quick trims visible. Expand Audio, Framing or Rec
 
 Preview uses the Windows default audio output. If the device becomes unavailable during playback, the status bar explains the problem and the editor retries; check the selected Windows output if sound does not return.
 
-Audio selects one source audio stream per section; the default uses the first stream. Gain, mute and fades are saved, undoable, previewed and exported. Output audio is stereo AAC at 48 kHz. Video-only sources receive silence. Separate music tracks and arbitrary mixing are later work.
+Audio selects one source audio stream per section; the default uses the first stream. Gain, mute and fades are saved, undoable, previewed and exported. Output audio is stereo AAC at 48 kHz. Video-only sources receive silence. Select an independent audio item to open its Audio controls, then use **Volume** to make just that item quieter or louder (0 dB keeps its original level). Its waveform reflects volume and mute. Drag its body to move it, drag either edge to trim, or use Split/Delete on the selected audio item. Independent items share one lane and cannot overlap one another; they can play alongside audio still linked to other video sections. Music-file import and additional mixing lanes remain later work.
 
 Fit adds letterboxing. Fill covers the output frame. Crop uses normalized source coordinates; rotation is non-destructive. Intrinsic display rotation and non-square pixels are normalized before user framing. Export always reads original recordings.
 
@@ -68,7 +68,7 @@ Existing output is replaced only after duration/color/full-decode verification. 
 
 ## Projects, recovery and cache
 
-Opening schema-1 projects preserves library order, repeated recordings, gaps and exact trims without rewriting the original. Save initially asks for a new schema-2 filename; 1.0.x cannot read the new format. Keep the original project for rollback. Locate each missing recording when prompted; loading commits only after all replacements cover the saved cuts. Cancel leaves the current project open.
+Opening schema-1 projects preserves library order, repeated recordings, gaps and exact trims without rewriting the original. Save initially asks for a new filename; 1.0.x cannot read the new format. Projects with separated audio use schema 3, which earlier Rust candidates cannot open. Projects without separated audio retain schema 2. Keep the original project for rollback. Locate each missing recording when prompted; loading commits only after all replacements cover the saved cuts. Cancel leaves the current project open.
 
 Projects save stable identities, audio/framing/color choices and output settings. Atomic replacement protects the previous saved file if writing fails. Unsaved recovery sessions live under %LOCALAPPDATA%/SimpleVideoEditor/recovery, each with an independent exclusive lease. Recovery skips live windows and other active prompts. Closing/discarding affects only the current session; the legacy recovery file is recognized.
 

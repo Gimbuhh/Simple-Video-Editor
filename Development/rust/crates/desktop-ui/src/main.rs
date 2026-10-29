@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod audio_playback;
 mod playback;
 mod startup;
 mod ui;

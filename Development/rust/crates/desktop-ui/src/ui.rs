@@ -1,3 +1,5 @@
+mod audio_items;
+mod audio_verification;
 mod interaction_verification;
 mod preview_benchmark;
 mod theme;
@@ -69,6 +71,10 @@ struct Stepping {
 pub struct EditorApp {
     // The actor must be destroyed before its native child window.
     playback: Option<Playback>,
+    audio_playback: Option<crate::audio_playback::AudioPlayback>,
+    selected_audio: Option<ClipId>,
+    audio_drag: Option<Drag>,
+    audio_preview: Option<Timeline>,
     video: platform_windows::VideoWindow,
     owner: isize,
     editor: ProjectEditor,
@@ -167,6 +173,10 @@ impl EditorApp {
         });
         Ok(Self {
             playback: None,
+            audio_playback: None,
+            selected_audio: None,
+            audio_drag: None,
+            audio_preview: None,
             video,
             owner,
             editor,
@@ -242,14 +252,22 @@ impl EditorApp {
             self.settling = None;
             self.stepping = None;
             self.drag = None;
+            self.audio_drag = None;
+            self.audio_preview = None;
             self.preview_timeline = None;
             self.ignore_scrub_until_release = true;
             match self.editor.metadata().view {
+                Some(ViewSelection::Audio(id)) => {
+                    self.selected_audio = Some(id);
+                    self.library_preview = false;
+                }
                 Some(ViewSelection::Clip(id)) => {
+                    self.selected_audio = None;
                     self.selected = Some(id);
                     self.library_preview = false;
                 }
                 Some(ViewSelection::Recording(id)) => {
+                    self.selected_audio = None;
                     self.library_selected = Some(id);
                     self.library_preview = true;
                 }
@@ -269,11 +287,23 @@ impl EditorApp {
     fn current_view(&self) -> Option<ViewSelection> {
         if self.library_preview {
             self.library_selected.map(ViewSelection::Recording)
+        } else if let Some(id) = self.selected_audio {
+            Some(ViewSelection::Audio(id))
         } else {
             self.selected.map(ViewSelection::Clip)
         }
     }
     fn sync_selection(&mut self) {
+        if self.selected_audio.is_some_and(|id| {
+            !self
+                .editor
+                .metadata()
+                .audio_items
+                .iter()
+                .any(|a| a.clip.id == id)
+        }) {
+            self.selected_audio = None;
+        }
         if self
             .selected
             .is_none_or(|id| !self.editor.timeline().clips().iter().any(|c| c.id == id))
@@ -292,7 +322,9 @@ impl EditorApp {
         {
             self.library_selected = self.editor.metadata().sources.first().map(|s| s.id);
         }
-        if self.editor.timeline().clips().is_empty() {
+        if self.editor.timeline().clips().is_empty()
+            && self.editor.metadata().audio_items.is_empty()
+        {
             self.library_preview = self.library_selected.is_some();
         }
         if self.library_preview && self.library_selected.is_none() {
@@ -315,6 +347,7 @@ impl EditorApp {
     }
     fn clear_preview(&mut self) {
         drop(self.playback.take());
+        drop(self.audio_playback.take());
         self.timeline_thumbnails = None;
         self.preview_frame = None;
         self.preview_texture = None;
@@ -333,6 +366,9 @@ impl EditorApp {
         self.path = None;
         self.playhead = 0.0;
         self.selected = None;
+        self.selected_audio = None;
+        self.audio_drag = None;
+        self.audio_preview = None;
         self.library_selected = None;
         self.library_preview = false;
         self.search.clear();
@@ -363,6 +399,13 @@ impl EditorApp {
         if self.busy && !self.exporting {
             return;
         }
+        if self.selected_audio.is_some()
+            && !matches!(&command, Command::Insert { .. } | Command::Append { .. })
+        {
+            self.apply_audio(command);
+            return;
+        }
+        self.selected_audio = None;
         self.editor.metadata_mut().view = self.current_view();
         let select_new = matches!(
             &command,
@@ -512,7 +555,9 @@ impl EditorApp {
             && let Some((id, source, _)) =
                 preview_at(self.timeline(), self.editor.metadata(), self.playhead)
         {
-            self.selected = Some(id);
+            if self.selected_audio.is_none() {
+                self.selected = Some(id);
+            }
             self.library_selected = Some(source);
         }
         self.request_key.clear();
@@ -629,7 +674,10 @@ impl EditorApp {
                 .and_then(|id| self.editor.metadata().sources.iter().find(|s| s.id == id))
                 .map_or(0.0, |s| s.duration)
         } else {
-            self.timeline().duration()
+            self.editor
+                .metadata()
+                .duration(self.timeline())
+                .max(self.audio_preview.as_ref().map_or(0.0, Timeline::duration))
         }
     }
     fn preview_output(&self) -> OutputSettings {
@@ -650,11 +698,37 @@ impl EditorApp {
         output
     }
     fn selected_clip(&self) -> Option<Clip> {
+        if let Some(id) = self.selected_audio {
+            return self
+                .editor
+                .metadata()
+                .audio_items
+                .iter()
+                .find(|a| a.clip.id == id)
+                .map(|a| a.clip.clone());
+        }
         self.selected
             .and_then(|id| self.editor.timeline().clips().iter().find(|c| c.id == id))
             .cloned()
     }
     fn split(&mut self) {
+        if let Some(id) = self.selected_audio {
+            if let Some(c) = self.selected_clip()
+                && let Some(source) = self
+                    .editor
+                    .metadata()
+                    .sources
+                    .iter()
+                    .find(|s| s.id == c.source)
+            {
+                self.apply_audio(Command::Split {
+                    clip: id,
+                    source_time: c.source_in + self.playhead - c.timeline_start,
+                    rate: source.rate,
+                });
+            }
+            return;
+        }
         if self.library_preview {
             return;
         }
@@ -696,13 +770,7 @@ impl EditorApp {
                 source_duration: source.duration,
                 rate: source.rate,
             });
-            if let Some(updated) = self
-                .editor
-                .timeline()
-                .clips()
-                .iter()
-                .find(|c| c.id == clip.id)
-            {
+            if let Some(updated) = self.selected_clip() {
                 let time = updated.timeline_start
                     + retained.clamp(
                         updated.source_in,
@@ -714,6 +782,20 @@ impl EditorApp {
         }
     }
     fn quick_trim(&mut self, before: bool) {
+        if self.selected_audio.is_some() {
+            if let Some(c) = self.selected_clip()
+                && self.playhead >= c.timeline_start
+                && self.playhead < c.timeline_end()
+            {
+                let t = c.source_in + self.playhead - c.timeline_start;
+                if before {
+                    self.trim(Some(t), None);
+                } else {
+                    self.trim(None, Some(t));
+                }
+            }
+            return;
+        }
         if self.library_preview {
             return;
         }
@@ -1105,6 +1187,9 @@ impl EditorApp {
                                     claim.discard();
                                 }
                                 self.selected = None;
+                                self.selected_audio = None;
+                                self.audio_drag = None;
+                                self.audio_preview = None;
                                 self.library_preview = false;
                                 self.playhead = 0.0;
                                 self.request_key.clear();
@@ -1250,7 +1335,9 @@ impl EditorApp {
                         }
                         ui.separator();
                         let save = ui.add_enabled(
-                            !self.busy && !self.editor.timeline().clips().is_empty(),
+                            !self.busy
+                                && (!self.editor.timeline().clips().is_empty()
+                                    || !self.editor.metadata().audio_items.is_empty()),
                             egui::Button::new("Save as…"),
                         );
                         self.controls.insert("file-save-as", save.rect);
@@ -1285,7 +1372,9 @@ impl EditorApp {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let export = ui
                             .add_enabled(
-                                !self.busy && !self.editor.timeline().clips().is_empty(),
+                                !self.busy
+                                    && (!self.editor.timeline().clips().is_empty()
+                                        || !self.editor.metadata().audio_items.is_empty()),
                                 theme::button(egui::RichText::new("Export").color(Color32::WHITE))
                                     .fill(theme::PRIMARY)
                                     .frame(true)
@@ -1299,7 +1388,9 @@ impl EditorApp {
                         self.more_options(ui, ctx);
                         if ui
                             .add_enabled(
-                                !self.busy && !self.editor.timeline().clips().is_empty(),
+                                !self.busy
+                                    && (!self.editor.timeline().clips().is_empty()
+                                        || !self.editor.metadata().audio_items.is_empty()),
                                 theme::button("Save"),
                             )
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -1429,7 +1520,7 @@ impl EditorApp {
                     painter.text(Pos2::new(text.left(),rect.bottom()-23.0),Align2::LEFT_TOP,summary,FontId::proportional(12.5),theme::SECONDARY);
                     let response=response.on_hover_text(format!("{}\n{details}",source.path));
                     response.dnd_set_drag_payload(source.id);
-                    if response.clicked() { self.library_selected=Some(source.id);self.library_preview=true;self.playing=false;self.seek(0.0); }
+                    if response.clicked() { self.library_selected=Some(source.id);self.library_preview=true;self.selected_audio=None;self.playing=false;self.seek(0.0); }
                     if response.double_clicked() { self.add(vec![source.id]); }
                     response.context_menu(|ui| {
                         if ui.button("Add to timeline").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() { self.add(vec![source.id]);ui.close(); }
@@ -1445,12 +1536,19 @@ impl EditorApp {
     }
     fn timeline_ui(&mut self, ctx: &egui::Context) {
         self.controls.remove("drop-preview");
+        self.controls.remove("separate-audio");
         self.timeline_focus = None;
         egui::TopBottomPanel::bottom("timeline")
             .frame(theme::panel(theme::PANEL))
             .resizable(true)
             .default_height(220.0)
-            .height_range(220.0..=450.0)
+            .height_range(
+                if !self.editor.metadata().audio_items.is_empty() && self.has_linked_audio_lane() {
+                    260.0
+                } else {
+                    220.0
+                }..=450.0,
+            )
             .show(ctx, |ui| {
                 if self.busy && !self.exporting {
                     ui.disable();
@@ -1483,7 +1581,13 @@ impl EditorApp {
                     if ui
                         .add_enabled(
                             !self.library_preview
-                                && self.timeline().source_at(self.playhead).is_some(),
+                                && (self.selected_audio.is_some_and(|_| {
+                                    self.selected_clip().is_some_and(|c| {
+                                        self.playhead > c.timeline_start
+                                            && self.playhead < c.timeline_end()
+                                    })
+                                }) || self.selected_audio.is_none()
+                                    && self.timeline().source_at(self.playhead).is_some()),
                             theme::button("Split"),
                         )
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -1494,12 +1598,13 @@ impl EditorApp {
                     }
                     if ui
                         .add_enabled(
-                            self.selected.is_some() && !self.library_preview,
+                            (self.selected_audio.is_some() || self.selected.is_some())
+                                && !self.library_preview,
                             theme::button("Delete"),
                         )
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
-                        && let Some(clip) = self.selected
+                        && let Some(clip) = self.selected_audio.or(self.selected)
                     {
                         self.apply(Command::Delete { clip });
                         self.selected = None;
@@ -1511,7 +1616,7 @@ impl EditorApp {
                             .clicked()
                         {
                             self.zoom = ((ui.available_width().max(400.0) - 80.0)
-                                / self.timeline().duration().max(5.0) as f32)
+                                / self.preview_duration().max(5.0) as f32)
                                 .clamp(0.05, 500.0);
                         }
                         ui.add(
@@ -1533,7 +1638,8 @@ impl EditorApp {
                             .map(|s| s.duration)
                     })
                     .unwrap_or(0.0);
-                let duration = (self.timeline().duration() + dragged_duration).max(10.0);
+                let duration =
+                    (self.editor.metadata().duration(self.timeline()) + dragged_duration).max(10.0);
                 let width = (duration as f32 * zoom + 100.0).max(ui.available_width());
                 let height = (ui.available_height() - 8.0).max(150.0);
                 egui::ScrollArea::horizontal()
@@ -1562,6 +1668,7 @@ impl EditorApp {
                         let last = ((visible.right() - origin).max(0.0) / zoom / second_step).ceil()
                             as u32;
                         let show_tracks = !self.timeline().clips().is_empty()
+                            || !self.editor.metadata().audio_items.is_empty()
                             || egui::DragAndDrop::payload::<SourceId>(ctx).is_some()
                             || ui.input(|i| !i.raw.hovered_files.is_empty());
                         if show_tracks {
@@ -1616,7 +1723,13 @@ impl EditorApp {
                                 Pos2::new(x, rect.top() + 82.0),
                                 Vec2::new(w, 38.0),
                             );
-                            let linked = video.union(audio);
+                            let separated = self
+                                .editor
+                                .metadata()
+                                .adjustments
+                                .get(&clip.id)
+                                .is_some_and(|a| a.audio_separated);
+                            let linked = if separated { video } else { video.union(audio) };
                             if !linked.intersects(visible)
                                 && self.drag.as_ref().is_none_or(|drag| drag.clip != clip.id)
                             {
@@ -1625,7 +1738,8 @@ impl EditorApp {
                             if clip.id == ClipId(1) {
                                 self.controls.insert("first-clip", linked);
                             }
-                            let selected = self.selected == Some(clip.id);
+                            let selected =
+                                self.selected_audio.is_none() && self.selected == Some(clip.id);
                             let source = self
                                 .editor
                                 .metadata()
@@ -1645,7 +1759,9 @@ impl EditorApp {
                             if let Some(source) = &source {
                                 self.paint_filmstrip(&painter, video, visible, &clip, source, zoom);
                             }
-                            painter.rect_filled(audio, 4.0, theme::AUDIO);
+                            if !separated {
+                                painter.rect_filled(audio, 4.0, theme::AUDIO);
+                            }
                             if selected {
                                 painter.rect_stroke(
                                     linked.expand(1.0),
@@ -1683,7 +1799,8 @@ impl EditorApp {
                                 FontId::proportional(12.0),
                                 Color32::WHITE,
                             );
-                            if let Some(peaks) = self.waveforms.get(&clip.source)
+                            if !separated
+                                && let Some(peaks) = self.waveforms.get(&clip.source)
                                 && !peaks.is_empty()
                             {
                                 let left = audio.left().max(visible.left());
@@ -1735,10 +1852,15 @@ impl EditorApp {
                                     ui.is_enabled(),
                                     self.selected == Some(clip.id),
                                     format!(
-                                        "{}, linked video and audio, {} on timeline, in {}, out {}",
+                                        "{}, {}, {} on timeline, in {}, out {}",
                                         source
                                             .as_ref()
                                             .map_or_else(|| "Recording".into(), |s| s.name()),
+                                        if separated {
+                                            "video"
+                                        } else {
+                                            "linked video and audio"
+                                        },
                                         time(clip.timeline_start),
                                         time(clip.source_in),
                                         time(clip.source_out)
@@ -1747,6 +1869,7 @@ impl EditorApp {
                             });
                             over_clip |= interaction.hovered();
                             if interaction.clicked() {
+                                self.selected_audio = None;
                                 self.selected = Some(clip.id);
                                 self.library_preview = false;
                                 self.playing = false;
@@ -1759,6 +1882,7 @@ impl EditorApp {
                                 self.seek(position.min(clip.timeline_end()));
                             }
                             if interaction.drag_started() {
+                                self.selected_audio = None;
                                 self.stepping = None;
                                 let new_selection =
                                     self.library_preview || self.selected != Some(clip.id);
@@ -1898,7 +2022,8 @@ impl EditorApp {
                             if interaction.secondary_clicked() {
                                 self.keyboard_menu = None;
                             }
-                            if self.selected == Some(clip.id)
+                            if self.selected_audio.is_none()
+                                && self.selected == Some(clip.id)
                                 && !self.library_preview
                                 && (interaction.has_focus() || !ctx.wants_keyboard_input())
                                 && ctx.input(|i| i.modifiers.shift && i.key_pressed(egui::Key::F10))
@@ -1914,7 +2039,20 @@ impl EditorApp {
                             let restore_menu_focus = egui::Popup::is_id_open(ctx, menu_id)
                                 && ctx.input(|i| i.key_pressed(egui::Key::Escape));
                             menu.show(|ui| {
+                                self.selected_audio = None;
                                 self.selected = Some(clip.id);
+                                let separate = ui
+                                    .add_enabled(
+                                        !separated
+                                            && source.as_ref().is_some_and(|s| !s.audio.is_empty()),
+                                        egui::Button::new("Separate audio"),
+                                    )
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                self.controls.insert("separate-audio", separate.rect);
+                                if separate.clicked() {
+                                    self.separate_selected_audio();
+                                    ui.close();
+                                }
                                 if ui
                                     .button("Duplicate")
                                     .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -1951,7 +2089,11 @@ impl EditorApp {
                                     ui.close();
                                 }
                                 if ui
-                                    .button("Delete linked section")
+                                    .button(if separated {
+                                        "Delete video"
+                                    } else {
+                                        "Delete linked section"
+                                    })
                                     .on_hover_cursor(egui::CursorIcon::PointingHand)
                                     .clicked()
                                 {
@@ -1971,6 +2113,8 @@ impl EditorApp {
                                 clip_hover_cursor(ui, &interaction);
                             }
                         }
+                        over_clip |=
+                            self.paint_audio_items(ui, &painter, rect, visible, origin, zoom);
                         self.paint_drop_preview(ui, &painter, rect, visible, origin, zoom);
                         // The captured gesture owns the cursor even outside its original
                         // edge or over a neighboring section.
@@ -1986,12 +2130,13 @@ impl EditorApp {
                                 || response.dragged()
                                 || response.is_pointer_button_down_on())
                             && self.drag.is_none()
+                            && self.audio_drag.is_none()
                             && let Some(p) = response.interact_pointer_pos()
                         {
                             self.library_preview = false;
                             self.begin_scrub(2);
                             let target = f64::from((p.x - origin) / zoom)
-                                .clamp(0.0, self.timeline().duration());
+                                .clamp(0.0, self.preview_duration());
                             if target != self.playhead {
                                 self.seek(target);
                             }
@@ -2024,6 +2169,7 @@ impl EditorApp {
             "audio-volume",
             "framing-mode",
             "recording-interpretation",
+            "inspector-separate-audio",
         ] {
             self.controls.remove(control);
         }
@@ -2159,12 +2305,14 @@ impl EditorApp {
                                 self.quick_trim(false);
                             }
                         });
-                        let mut adjustment = metadata.adjustments.get(&clip.id).cloned().unwrap_or_default();
+                        let mut adjustment = if let Some(id)=self.selected_audio {metadata.audio_items.iter().find(|a|a.clip.id==id).map(|a|a.settings.clone()).unwrap_or_default()} else {metadata.adjustments.get(&clip.id).cloned().unwrap_or_default()};
                         let previous_adjustment=adjustment.clone();
                         ui.separator();
+                        let independent_audio=self.selected_audio.is_some();
+                        if !adjustment.audio_separated {
                         let audio = egui::CollapsingHeader::new("Audio")
-                            .id_salt("section-audio")
-                            .default_open(false)
+                            .id_salt(("section-audio",independent_audio))
+                            .default_open(independent_audio)
                             .show_unindented(ui, |ui| {
                         if let Some(source) = metadata.sources.iter().find(|s| s.id == clip.source)
                         {
@@ -2214,6 +2362,13 @@ impl EditorApp {
                         });
                         self.controls.insert("inspector-audio", audio.header_response.rect);
                         audio.header_response.on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if !independent_audio {
+                            let separate=ui.add_enabled(metadata.sources.iter().find(|s|s.id==clip.source).is_some_and(|s|!s.audio.is_empty()),theme::button("Separate audio")).on_hover_cursor(egui::CursorIcon::PointingHand);
+                            self.controls.insert("inspector-separate-audio",separate.rect);
+                            if separate.clicked() {self.separate_selected_audio();return;}
+                        }
+                        }
+                        if !independent_audio {
                         let framing = egui::CollapsingHeader::new("Framing")
                             .id_salt("section-framing")
                             .default_open(false)
@@ -2250,9 +2405,10 @@ impl EditorApp {
                         });
                         self.controls.insert("inspector-framing", framing.header_response.rect);
                         framing.header_response.on_hover_cursor(egui::CursorIcon::PointingHand);
-                        if adjustment!=previous_adjustment{metadata.adjustments.insert(clip.id,adjustment);}
+                        }
+                        if adjustment!=previous_adjustment {if independent_audio {if let Some(item)=metadata.audio_items.iter_mut().find(|a|a.clip.id==clip.id){item.settings=adjustment;}} else {metadata.adjustments.insert(clip.id,adjustment);}}
                     }
-                    if let Some(source)=recording.and_then(|id|metadata.sources.iter().find(|s|s.id==id)){
+                    if self.selected_audio.is_none() && let Some(source)=recording.and_then(|id|metadata.sources.iter().find(|s|s.id==id)){
                         let color = egui::CollapsingHeader::new("Recording color")
                             .id_salt("recording-color")
                             .default_open(false)
@@ -2586,6 +2742,17 @@ impl EditorApp {
         ui.spacing_mut().slider_width = width;
     }
     fn playback(&mut self, ctx: &egui::Context) {
+        if let Some(warning) = self
+            .audio_playback
+            .as_ref()
+            .and_then(|p| p.status().warning)
+        {
+            self.message = warning;
+        }
+        if let Some(error) = self.audio_playback.as_ref().and_then(|p| p.status().error) {
+            self.playing = false;
+            self.message = error;
+        }
         let elapsed = self.last_tick.elapsed().as_secs_f64().min(0.25);
         self.last_tick = Instant::now();
         let status = self
@@ -2738,7 +2905,9 @@ impl EditorApp {
             && !self.library_preview
             && let Some((id, source, _)) = mapped
         {
-            self.selected = Some(id);
+            if self.selected_audio.is_none() {
+                self.selected = Some(id);
+            }
             self.library_selected = Some(source);
         }
         let adjustment = mapped
@@ -2784,6 +2953,7 @@ impl EditorApp {
             && let Some(tools) = self.tools.clone()
         {
             drop(self.playback.take());
+            drop(self.audio_playback.take());
             self.playback = Some(Playback::new(
                 tools,
                 self.video.handle(),
@@ -2826,6 +2996,7 @@ impl EditorApp {
                 steps: self.stepping.as_ref().map_or(0, |s| s.count),
             });
         }
+        self.update_audio_playback(ctx);
     }
     fn shortcuts(&mut self, ctx: &egui::Context) {
         if self.busy && !self.exporting {
@@ -2901,6 +3072,8 @@ impl EditorApp {
                     self.playhead = drag.playhead;
                 }
                 self.preview_timeline = None;
+                self.audio_drag = None;
+                self.audio_preview = None;
                 self.playing = false;
                 self.request_key.clear();
             }
@@ -2932,14 +3105,14 @@ impl EditorApp {
                 }
                 if input.key_pressed(egui::Key::Delete)
                     && !self.library_preview
-                    && let Some(clip) = self.selected
+                    && let Some(clip) = self.selected_audio.or(self.selected)
                 {
                     self.apply(Command::Delete { clip });
                     self.selected = None;
                 }
                 if input.modifiers.alt
                     && !self.library_preview
-                    && let Some(clip) = self.selected
+                    && let Some(clip) = self.selected_audio.or(self.selected)
                 {
                     if input.key_pressed(egui::Key::ArrowLeft) {
                         self.apply(Command::Swap {
@@ -3175,6 +3348,7 @@ impl Drop for EditorApp {
     fn drop(&mut self) {
         self.cancel.store(true, Ordering::Release);
         drop(self.playback.take());
+        drop(self.audio_playback.take());
         for job in self.jobs.drain(..) {
             let _ = job.join();
         }

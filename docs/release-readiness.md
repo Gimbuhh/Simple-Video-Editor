@@ -1,4 +1,4 @@
-# 1.1.0 release checklist — 2026-10-28
+# 1.1.0 release checklist — 2026-10-29
 
 The Rust rewrite and graphite interface are implemented. The portable 1.1.0 package is prepared for final user acceptance; it remains unreleased. PR #8 stays open until the user finishes testing and explicitly approves merging.
 
@@ -6,6 +6,7 @@ The Rust rewrite and graphite interface are implemented. The portable 1.1.0 pack
 
 - Core contracts, strict formatting/Clippy, legacy project compatibility and source protection.
 - Native/software preview, exact/VFR trims, timeline drops, undo/redo, thumbnails and keyboard focus.
+- Independent audio separation, per-item volume, trims/splits/moves, atomic undo/save/reopen and offset/mixed/tail exports.
 - Audible two-track playback, unavailable-endpoint recovery and native-to-software fallback.
 - Named playback controls and labelled trim fields in the accessibility tree.
 - Project reset releases old players and preview caches; startup stress closes isolated helpers normally.

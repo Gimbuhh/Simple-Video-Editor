@@ -129,6 +129,8 @@ impl Default for OutputSettings {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ClipSettings {
+    /// Audio lives in an independent timeline item after separation.
+    pub audio_separated: bool,
     pub stream: Option<u32>,
     pub gain_db: f64,
     pub muted: bool,
@@ -141,6 +143,7 @@ pub struct ClipSettings {
 impl Default for ClipSettings {
     fn default() -> Self {
         Self {
+            audio_separated: false,
             stream: None,
             gain_db: 0.0,
             muted: false,
@@ -155,6 +158,7 @@ impl Default for ClipSettings {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct ProjectMetadata {
+    pub audio_items: Vec<AudioItem>,
     pub sources: Vec<MediaSource>,
     pub output: OutputSettings,
     pub adjustments: BTreeMap<ClipId, ClipSettings>,
@@ -166,7 +170,140 @@ pub struct ProjectMetadata {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ViewSelection {
     Clip(ClipId),
+    Audio(ClipId),
     Recording(SourceId),
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AudioItem {
+    pub clip: Clip,
+    pub settings: ClipSettings,
+}
+impl ProjectMetadata {
+    pub fn audio_timeline(&self) -> Result<Timeline, editor_core::EditError> {
+        Timeline::new(self.audio_items.iter().map(|a| a.clip.clone()).collect())
+    }
+    pub fn duration(&self, timeline: &Timeline) -> f64 {
+        self.audio_items
+            .iter()
+            .map(|a| a.clip.timeline_end())
+            .fold(timeline.duration(), f64::max)
+    }
+    pub fn schema_version(&self) -> u32 {
+        if !self.audio_items.is_empty() || self.adjustments.values().any(|a| a.audio_separated) {
+            3
+        } else {
+            2
+        }
+    }
+}
+
+/// Detach without rounding original source timestamps or changing video placement.
+pub fn separate_audio(editor: &mut ProjectEditor, id: ClipId) -> Result<ClipId, ProjectError> {
+    let mut metadata = editor.metadata().clone();
+    let mut clip = editor
+        .timeline()
+        .clips()
+        .iter()
+        .find(|c| c.id == id)
+        .cloned()
+        .ok_or_else(|| error("Select a video section"))?;
+    let source = metadata
+        .sources
+        .iter()
+        .find(|s| s.id == clip.source)
+        .ok_or_else(|| error("Unknown recording"))?;
+    if source.audio.is_empty()
+        || metadata
+            .adjustments
+            .get(&id)
+            .is_some_and(|a| a.audio_separated)
+    {
+        return Err(error("This section has no linked audio"));
+    }
+    clip.id = ClipId(
+        metadata
+            .audio_items
+            .iter()
+            .map(|a| a.clip.id.0)
+            .max()
+            .unwrap_or(0)
+            .checked_add(1)
+            .filter(|id| *id < u64::MAX)
+            .ok_or_else(|| error("Audio identity exhausted"))?,
+    );
+    let settings = metadata.adjustments.entry(id).or_default();
+    metadata.audio_items.push(AudioItem {
+        clip: clip.clone(),
+        settings: settings.clone(),
+    });
+    settings.audio_separated = true;
+    metadata
+        .audio_items
+        .sort_by(|a, b| a.clip.timeline_start.total_cmp(&b.clip.timeline_start));
+    commit_audio_metadata(editor, metadata)?;
+    Ok(clip.id)
+}
+
+pub fn edit_audio(
+    editor: &mut ProjectEditor,
+    command: editor_core::Command,
+) -> Result<(), ProjectError> {
+    let mut metadata = editor.metadata().clone();
+    let inherited = match &command {
+        editor_core::Command::Split { clip, .. } | editor_core::Command::Duplicate { clip, .. } => {
+            metadata
+                .audio_items
+                .iter()
+                .find(|a| a.clip.id == *clip)
+                .map(|a| a.settings.clone())
+        }
+        _ => None,
+    };
+    let mut audio = Editor::new(
+        metadata
+            .audio_timeline()
+            .map_err(|e| error(e.to_string()))?,
+    )
+    .map_err(|e| error(e.to_string()))?;
+    audio.apply(command).map_err(|e| error(e.to_string()))?;
+    metadata.audio_items = audio
+        .timeline()
+        .clips()
+        .iter()
+        .map(|clip| {
+            let mut settings = metadata
+                .audio_items
+                .iter()
+                .find(|a| a.clip.id == clip.id)
+                .map(|a| a.settings.clone())
+                .or_else(|| inherited.clone())
+                .unwrap_or_default();
+            settings.fade_in = settings.fade_in.min(clip.duration());
+            settings.fade_out = settings.fade_out.min(clip.duration());
+            AudioItem {
+                clip: clip.clone(),
+                settings,
+            }
+        })
+        .collect();
+    commit_audio_metadata(editor, metadata)
+}
+fn commit_audio_metadata(
+    editor: &mut ProjectEditor,
+    metadata: ProjectMetadata,
+) -> Result<(), ProjectError> {
+    let mut document = SavedProject::capture(editor);
+    document.version = metadata.schema_version();
+    document.metadata = metadata;
+    document.validate()?;
+    editor
+        .apply_with_metadata(
+            editor_core::Command::Replace {
+                clips: document.clips,
+            },
+            document.metadata,
+        )
+        .map_err(|e| error(e.to_string()))
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SavedProject {
@@ -258,7 +395,7 @@ pub fn edit_project(
                 }
             }
             SavedProject {
-                version: 2,
+                version: metadata.schema_version(),
                 application_version: APPLICATION_VERSION.into(),
                 clips: timeline.clips().to_vec(),
                 metadata: metadata.clone(),
@@ -282,6 +419,10 @@ pub fn remove_source(editor: &mut ProjectEditor, id: SourceId) -> Result<(), Pro
     document.clips.retain(|c| c.source != id);
     document
         .metadata
+        .audio_items
+        .retain(|a| a.clip.source != id);
+    document
+        .metadata
         .adjustments
         .retain(|id, _| document.clips.iter().any(|c| c.id == *id));
     document.validate()?;
@@ -299,7 +440,7 @@ impl SavedProject {
         let mut metadata = editor.metadata().clone();
         metadata.view = None;
         Self {
-            version: 2,
+            version: metadata.schema_version(),
             application_version: APPLICATION_VERSION.into(),
             clips: editor.timeline().clips().to_vec(),
             metadata,
@@ -314,8 +455,44 @@ impl SavedProject {
         .map_err(|e| error(e.to_string()))
     }
     pub fn validate(&self) -> Result<(), ProjectError> {
-        if self.version != 2 || self.metadata.sources.len() > MAX_SOURCES {
+        if !matches!(self.version, 2 | 3)
+            || self.version < self.metadata.schema_version()
+            || self.metadata.sources.len() > MAX_SOURCES
+        {
             return Err(error("Unsupported or oversized project"));
+        }
+        if self.clips.len() + self.metadata.audio_items.len() > editor_core::MAX_CLIPS {
+            return Err(error("Too many timeline items"));
+        }
+        if !self.metadata.audio_items.is_empty() {
+            // Apply the same bounded source/trim/stream/gain validation to the audio lane.
+            let mut audio = self.clone();
+            audio.clips = self
+                .metadata
+                .audio_items
+                .iter()
+                .map(|a| a.clip.clone())
+                .collect();
+            audio.metadata.adjustments = self
+                .metadata
+                .audio_items
+                .iter()
+                .map(|a| (a.clip.id, a.settings.clone()))
+                .collect();
+            audio.metadata.audio_items.clear();
+            for item in &self.metadata.audio_items {
+                if item.settings.audio_separated
+                    || self
+                        .metadata
+                        .sources
+                        .iter()
+                        .find(|s| s.id == item.clip.source)
+                        .is_none_or(|s| s.audio.is_empty())
+                {
+                    return Err(error("Audio item needs a recording audio stream"));
+                }
+            }
+            audio.validate()?;
         }
         Timeline::new(self.clips.clone()).map_err(|e| error(e.to_string()))?;
         let output = &self.metadata.output;

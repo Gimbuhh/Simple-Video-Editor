@@ -13,7 +13,7 @@ pub struct Segment {
 }
 pub fn segments(document: &SavedProject) -> Result<Vec<Segment>> {
     document.validate()?;
-    if document.clips.is_empty() {
+    if document.clips.is_empty() && document.metadata.audio_items.is_empty() {
         return Err("Add clips before exporting".into());
     }
     let fps = document.metadata.output.rate.fps();
@@ -37,6 +37,18 @@ pub fn segments(document: &SavedProject) -> Result<Vec<Segment>> {
             duration: count as f64 / fps,
         });
         frames = frames.checked_add(count).ok_or("Export is too long")?;
+    }
+    let end = document
+        .metadata
+        .duration(&editor_core::Timeline::new(document.clips.clone())?);
+    let end_frames = (end * fps).round_ties_even() as u64;
+    if end_frames > frames {
+        let gap = end_frames - frames;
+        result.push(Segment {
+            clip: None,
+            frames: gap,
+            duration: gap as f64 / fps,
+        });
     }
     Ok(result)
 }
@@ -261,7 +273,7 @@ impl Tools {
             let mut af = format!(
                 "aresample=48000:async=1:first_pts=0,apad,atrim=duration={:.9},asetpts=PTS-STARTPTS,volume={}dB",
                 segment.duration,
-                if adjustment.muted {
+                if adjustment.muted || adjustment.audio_separated {
                     -120.0
                 } else {
                     adjustment.gain_db
@@ -377,20 +389,31 @@ impl Tools {
         .map(str::to_owned)
         .to_vec();
         args.push(list.to_string_lossy().into_owned());
+        if !document.metadata.audio_items.is_empty() {
+            let audio = self.detached_audio(document, &work, total, cancel)?;
+            args.extend([
+                "-f".into(),
+                "concat".into(),
+                "-safe".into(),
+                "1".into(),
+                "-i".into(),
+                audio.to_string_lossy().into_owned(),
+            ]);
+            args.extend(["-filter_complex".into(), "[0:a:0][1:a:0]amix=inputs=2:duration=first:normalize=0,aresample=48000:async=1:first_pts=0[a]".into()]);
+        }
+        let independent_audio = !document.metadata.audio_items.is_empty();
         args.extend(
             [
                 "-map",
                 "0:v:0",
                 "-map",
-                "0:a:0",
+                if independent_audio { "[a]" } else { "0:a:0" },
                 "-c:v",
                 "copy",
                 "-c:a",
                 "aac",
                 "-b:a",
                 "192k",
-                "-af",
-                "aresample=48000:async=1:first_pts=0",
                 "-movflags",
                 "+faststart",
                 "-progress",
@@ -399,6 +422,9 @@ impl Tools {
             ]
             .map(str::to_owned),
         );
+        if !independent_audio {
+            args.extend(["-af", "aresample=48000:async=1:first_pts=0"].map(str::to_owned));
+        }
         if output.codec == Codec::Hevc {
             args.extend(["-tag:v", "hvc1"].map(str::to_owned));
         }
@@ -459,5 +485,102 @@ impl Tools {
             message: "Export complete".into(),
         });
         Ok(())
+    }
+
+    // Render a single independent lane in bounded jobs, avoiding one enormous
+    // command line / decoder per audio item. Silence preserves original gaps.
+    fn detached_audio(
+        &self,
+        document: &SavedProject,
+        work: &Path,
+        total: f64,
+        cancel: &Cancel,
+    ) -> Result<PathBuf> {
+        let list = work.join("audio.ffconcat");
+        let mut file = std::fs::File::create(&list)?;
+        writeln!(file, "ffconcat version 1.0")?;
+        let mut cursor = 0.0;
+        let mut part = 0;
+        let mut render = |item: Option<&project_store::AudioItem>, duration: f64| -> Result<()> {
+            check_cancel(cancel)?;
+            if duration <= 0.000001 {
+                return Ok(());
+            }
+            let mut args = ["-hide_banner", "-loglevel", "error", "-nostdin", "-y"]
+                .map(str::to_owned)
+                .to_vec();
+            let mut af = format!(
+                "aresample=48000:async=1:first_pts=0,apad,atrim=duration={duration:.9},asetpts=PTS-STARTPTS"
+            );
+            if let Some(item) = item {
+                let source = document
+                    .metadata
+                    .sources
+                    .iter()
+                    .find(|s| s.id == item.clip.source)
+                    .ok_or("Unknown audio recording")?;
+                let path = media_path::RecordingPath::authorize(Path::new(&source.path))?;
+                let stream = item
+                    .settings
+                    .stream
+                    .or_else(|| source.audio.first().map(|a| a.index))
+                    .ok_or("Audio stream is missing")?;
+                args.extend([
+                    "-ss".into(),
+                    format!("{:.9}", item.clip.source_in),
+                    "-i".into(),
+                    path.as_path().to_string_lossy().into_owned(),
+                    "-map".into(),
+                    format!("0:{stream}"),
+                ]);
+                af.push_str(&format!(
+                    ",volume={}dB",
+                    if item.settings.muted {
+                        -120.0
+                    } else {
+                        item.settings.gain_db
+                    }
+                ));
+                if item.settings.fade_in > 0.0 {
+                    af.push_str(&format!(
+                        ",afade=t=in:st=0:d={}",
+                        item.settings.fade_in.min(duration)
+                    ));
+                }
+                if item.settings.fade_out > 0.0 {
+                    let fade = item.settings.fade_out.min(duration);
+                    af.push_str(&format!(",afade=t=out:st={}:d={fade}", duration - fade));
+                }
+            } else {
+                args.extend(["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"].map(str::to_owned));
+            }
+            let name = format!("audio-{part:05}.mka");
+            args.extend([
+                "-vn".into(),
+                "-t".into(),
+                format!("{duration:.9}"),
+                "-af".into(),
+                af,
+                "-c:a".into(),
+                "pcm_s16le".into(),
+                "-ar".into(),
+                "48000".into(),
+                "-ac".into(),
+                "2".into(),
+                work.join(&name).to_string_lossy().into_owned(),
+            ]);
+            run(&self.ffmpeg, &args, cancel, |_| {})?;
+            writeln!(file, "file '{name}'\nduration {duration:.9}")?;
+            part += 1;
+            Ok(())
+        };
+        for item in &document.metadata.audio_items {
+            render(None, (item.clip.timeline_start - cursor).max(0.0))?;
+            render(Some(item), item.clip.duration())?;
+            cursor = item.clip.timeline_end();
+        }
+        render(None, (total - cursor).max(0.0))?;
+        drop(file);
+        Ok(list)
     }
 }

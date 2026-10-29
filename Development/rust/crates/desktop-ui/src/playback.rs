@@ -62,13 +62,13 @@ pub struct Status {
     pub display: Option<platform_windows::DisplayColor>,
 }
 #[derive(Default)]
-struct AudioRecovery {
+pub(crate) struct AudioRecovery {
     missing_since: Option<Instant>,
     last_attempt: Option<Instant>,
     attempts: u64,
 }
 impl AudioRecovery {
-    fn update(&mut self, needed: bool, available: bool, now: Instant) -> bool {
+    pub(crate) fn update(&mut self, needed: bool, available: bool, now: Instant) -> bool {
         if !needed || available {
             self.missing_since = None;
             self.last_attempt = None;
@@ -86,7 +86,7 @@ impl AudioRecovery {
         self.attempts += 1;
         true
     }
-    fn warning(&self) -> Option<String> {
+    pub(crate) fn warning(&self) -> Option<String> {
         self.last_attempt.map(|_| {
             "Audio output unavailable. Check the Windows output device; preview will retry.".into()
         })
@@ -337,7 +337,9 @@ impl Playback {
                                         let duration = next.end - next.start;
                                         let mut audio = format!(
                                             "lavfi=[volume={}dB",
-                                            if next.adjustment.muted {
+                                            if next.adjustment.muted
+                                                || next.adjustment.audio_separated
+                                            {
                                                 -120.0
                                             } else {
                                                 next.adjustment.gain_db
@@ -455,6 +457,7 @@ impl Playback {
                         let needs_audio = current.as_ref().is_some_and(|r| {
                             r.playing
                                 && !r.adjustment.muted
+                                && !r.adjustment.audio_separated
                                 && r.volume > 0.0
                                 && r.source.as_ref().is_some_and(|s| !s.audio.is_empty())
                         });

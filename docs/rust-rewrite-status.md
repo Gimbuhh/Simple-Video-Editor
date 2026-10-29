@@ -1,18 +1,24 @@
-# Rust 1.1.0 status — 2026-10-28
+# Rust 1.1.0 status — 2026-10-29
 
 The Rust production cutover, graphite interface and identified software fixes are implemented on PR #8. Version 1.1.0 remains an unreleased candidate prepared for final user acceptance. No merge, release tag or publication is authorized by this preparation.
 
-## Current timeline drop-preview candidate
+## Independent audio items
+
+Executable SHA-256: `c67bc1565d83bdc8d6ad446d967ebb9ab1ffa4257c4b82c417bed43598d09b4c`. Separate audio preserves exact source trims and placement, disables embedded sound for that video section and creates an independently editable audio item. Per-item volume, track, mute and fades follow audio edits, playback, save/reopen and export. Video and audio edits share atomic undo/redo. The single independent lane preserves gaps and rejects overlapping audio items; it can play alongside sections that still have linked audio. Audio-only tails export with black video. Schema 3 protects these edits from being silently discarded by older Rust candidates; schema 1/2 import remains supported.
+
+46 core tests, strict formatting/Clippy, 549 desktop checks across 18 native/software runs, 71 checks across 40 scaled layouts, relocated portable verification and nine packaging safeguards pass. Generated-media tests verify actual silence, gain ratios, mixing without normalization, fades, duration, source hashes and project round trips alongside the existing NVIDIA/HDR export matrix. Actual desktop input checks separate-item selection, both volume directions, movement, trim-edge cursor/geometry, split/delete and undo, plus Windows audio output and video-clock alignment. Evidence: audio-items/verification.json, rust-desktop/08eab325121d44c5b219a3e2d1e559b9 and rust-desktop/ba0e21b1936f438498a9e2385cdc912a. Earlier device/resource measurements below retain their original artifact hashes and scope.
+
+## Earlier timeline drop-preview verification
 
 Executable SHA-256: `791314afa871a972d1fa10b722b93cc8dd07423efcfc6b0e14cba3d7d76875eb`. Library drags show a thumbnail/filmstrip ghost at the actual insertion position while over the timeline; the floating card remains outside it. Placement uses the same source frame rate, snapping and free-space calculation as the committed drop. No project edit occurs during hover. The ghost follows movement and disappears on release; the inserted linked section matches its shown position and remains one undoable edit.
 
 43 core tests, including 162 placement-parity cases, strict formatting/Clippy, 541 desktop checks across 18 native/software runs, 65 checks across 40 scaled layouts and relocated portable verification pass. Evidence: drop-preview/verification.json, rust-desktop/f356520be67342a2bdec684ceedfde8c and rust-desktop/8bea067243224c188caf2f7b91ffb992. Existing media/device/resource results below keep their original hashes and scope.
 
-## Current clip-cursor candidate
+## Earlier clip-cursor verification
 
 Executable SHA-256: `42c706562cc1df9450ead95f9bbfcbaf637368639bb43550acd244824b6ea81f`. Both ends of linked video/audio sections use the horizontal resize cursor. Hover and drag start share their existing bounded hit region; a captured trim retains the cursor beyond that edge. Clip bodies use grab/grabbing for moves. Core checks and actual native/software pointer verification pass; source timestamps, trim behavior and media processing are unchanged. Current evidence is recorded in ignored clip-cursor/verification.json. Earlier button/media/resource evidence below keeps its own artifact hashes.
 
-## Current button-alignment candidate
+## Earlier button-alignment verification
 
 Executable SHA-256: `de247583a86ad8d1c14f15da16e16f2df608361c1b051ef9526b2282c8900d97`. Action captions center their painted glyph bounds on the physical pixel grid. The regression covers 2,400 installed/fallback-font, scale, layout, size, label and interaction-state combinations. Actual raster measurements put Import at zero horizontal/vertical offset, correcting the prior one-pixel right/two-pixel down displacement.
 
@@ -39,7 +45,7 @@ The [editor audit](editor-audit.md) describes the fixes. The [C#/Rust comparison
 ## Contracts retained
 
 - `editor-core` owns linked sections, exact source timestamps, gaps, snapping, ripple rules and undo/redo.
-- `project-store` owns bounded legacy import, schema-2 persistence, project validation and recovery metadata. Schema-1 originals and the published C# app remain available for rollback.
+- `project-store` owns bounded legacy import, schema-2/3 persistence, project validation and recovery metadata. Schema-1 originals and the published C# app remain available for rollback.
 - `media-engine` owns the shared color/framing graph, probing, thumbnails/waveforms, verified atomic exports and cancellation. Export always reads original recordings.
 - `media-path` and `platform-windows` enforce local file/source identity boundaries and Windows display/window integration.
 - `native-mpv` owns the verified DLL, thread-confined control handle and renderer teardown. The desktop actor owns asynchronous generations, latest-request/frame delivery and audio-output recovery.

@@ -37,6 +37,7 @@ pub struct Player {
     api: Arc<ffi::Api>,
     renderer: Option<software::Renderer>,
     mode: Mode,
+    audio_only: bool,
     // Do not allow a handle to escape the thread that owns its control API.
     _thread_confined: PhantomData<Rc<()>>,
 }
@@ -44,6 +45,11 @@ pub struct Player {
 impl Player {
     pub fn open(library: &Path, mode: Mode) -> Result<Self> {
         Self::open_window(library, mode, None, false)
+    }
+
+    /// Independent timeline audio needs no video renderer or native window.
+    pub fn open_audio(library: &Path) -> Result<Self> {
+        Self::open_window(library, Mode::NativeAuto, None, true)
     }
 
     pub fn open_embedded(library: &Path, mode: Mode, window: isize) -> Result<Self> {
@@ -88,6 +94,7 @@ impl Player {
             api,
             renderer: None,
             mode,
+            audio_only: audio && window.is_none(),
             _thread_confined: PhantomData,
         };
         for (key, value) in [
@@ -118,27 +125,32 @@ impl Player {
             player.option("video-rotate", "no")?;
             player.option("wid", &window.to_string())?;
         }
-        match mode {
-            Mode::SoftwareSdr => {
-                player.option("vo", "libmpv")?;
-                player.option("profile", "sw-fast")?;
-            }
-            Mode::NativeSdr | Mode::NativeAuto => {
-                for (key, value) in [
-                    ("vo", "gpu-next"),
-                    ("gpu-api", "d3d11"),
-                    ("gpu-context", "d3d11"),
-                    ("force-window", if window.is_some() { "no" } else { "yes" }),
-                    ("geometry", "960x540"),
-                    ("title", mode.label()),
-                    ("target-colorspace-hint", "auto"),
-                ] {
-                    player.option(key, value)?;
+        if audio && window.is_none() {
+            player.option("vo", "null")?;
+            player.option("vid", "no")?;
+        } else {
+            match mode {
+                Mode::SoftwareSdr => {
+                    player.option("vo", "libmpv")?;
+                    player.option("profile", "sw-fast")?;
                 }
-                if mode == Mode::NativeSdr {
-                    player.option("target-trc", "srgb")?;
-                    player.option("target-prim", "bt.709")?;
-                    player.option("target-peak", "203")?;
+                Mode::NativeSdr | Mode::NativeAuto => {
+                    for (key, value) in [
+                        ("vo", "gpu-next"),
+                        ("gpu-api", "d3d11"),
+                        ("gpu-context", "d3d11"),
+                        ("force-window", if window.is_some() { "no" } else { "yes" }),
+                        ("geometry", "960x540"),
+                        ("title", mode.label()),
+                        ("target-colorspace-hint", "auto"),
+                    ] {
+                        player.option(key, value)?;
+                    }
+                    if mode == Mode::NativeSdr {
+                        player.option("target-trc", "srgb")?;
+                        player.option("target-prim", "bt.709")?;
+                        player.option("target-peak", "203")?;
+                    }
                 }
             }
         }
@@ -218,7 +230,9 @@ impl Player {
                 break;
             }
         }
-        self.wait_for(5.0, |p| p.property("video-params/w").is_some())?;
+        if !self.audio_only {
+            self.wait_for(5.0, |p| p.property("video-params/w").is_some())?;
+        }
         if self.mode == Mode::SoftwareSdr
             && matches!(
                 self.property("video-params/gamma").as_deref(),

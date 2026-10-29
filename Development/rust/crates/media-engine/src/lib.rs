@@ -177,13 +177,13 @@ impl Tools {
                 clips: legacy.timeline.clips().to_vec(),
                 metadata,
             }
-        } else if version == 2 {
+        } else if matches!(version, 2 | 3) {
             serde_json::from_value::<SavedProject>(value)?
         } else {
             return Err("This project uses a newer unsupported schema".into());
         };
         document.validate()?;
-        if version == 2 {
+        if matches!(version, 2 | 3) {
             for source in &mut document.metadata.sources {
                 check_cancel(cancel)?;
                 *source = self.probe(&resolve(&source.path), source.id, cancel)?;

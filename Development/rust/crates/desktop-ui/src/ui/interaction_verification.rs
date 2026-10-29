@@ -88,6 +88,9 @@ impl EditorApp {
             if let Some(error) = self.playback.as_ref().and_then(|p| p.status().error) {
                 return Err(error.into());
             }
+            if self.verify_audio_items(&mut test, ctx)? {
+                return Ok(());
+            }
             if test.capture_hold && test.phase == 80 {
                 if test.track_display
                     && test.inspector_ready_at.elapsed() >= Duration::from_millis(250)
@@ -1509,7 +1512,24 @@ impl EditorApp {
                             );
                         }
                         test.checks.push("Library drag previews the linked clip in the timeline without editing; drop matches the ghost and undoes without moving existing sections".into());
-                        test.phase = 60;
+                        let clip = self.editor.timeline().clips().first().cloned().unwrap();
+                        if self
+                            .editor
+                            .metadata()
+                            .sources
+                            .iter()
+                            .find(|s| s.id == clip.source)
+                            .is_some_and(|s| !s.audio.is_empty())
+                        {
+                            test.audio_original = Some(SavedProject::capture(&self.editor));
+                            self.selected_audio = None;
+                            self.selected = Some(clip.id);
+                            self.library_preview = false;
+                            self.seek(clip.timeline_start + 0.2);
+                            test.phase = 223;
+                        } else {
+                            test.phase = 60;
+                        }
                     }
                     60 => {
                         ctx.set_zoom_factor(test.layout_scale());
