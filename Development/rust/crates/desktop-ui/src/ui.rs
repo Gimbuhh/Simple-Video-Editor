@@ -1,5 +1,6 @@
 mod audio_items;
 mod audio_verification;
+mod clip_actions;
 mod interaction_verification;
 mod preview_benchmark;
 mod theme;
@@ -712,6 +713,9 @@ impl EditorApp {
             .cloned()
     }
     fn split(&mut self) {
+        if !self.can_split() {
+            return;
+        }
         if let Some(id) = self.selected_audio {
             if let Some(c) = self.selected_clip()
                 && let Some(source) = self
@@ -782,6 +786,9 @@ impl EditorApp {
         }
     }
     fn quick_trim(&mut self, before: bool) {
+        if !self.can_trim_selected(before) {
+            return;
+        }
         if self.selected_audio.is_some() {
             if let Some(c) = self.selected_clip()
                 && self.playhead >= c.timeline_start
@@ -1408,7 +1415,7 @@ impl EditorApp {
             .and_then(|p| p.status().audio_warning);
         if self.busy || self.exporting || !self.message.is_empty() || audio_warning.is_some() {
             egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
-                ui.horizontal(|ui| {
+                theme::action_row(ui, |ui| {
                     if self.busy {
                         ui.spinner();
                     }
@@ -1420,7 +1427,7 @@ impl EditorApp {
                     }
                     if self.busy
                         && ui
-                            .add(theme::button("Cancel"))
+                            .add(theme::row_button("Cancel"))
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .clicked()
                     {
@@ -1537,6 +1544,13 @@ impl EditorApp {
     fn timeline_ui(&mut self, ctx: &egui::Context) {
         self.controls.remove("drop-preview");
         self.controls.remove("separate-audio");
+        for key in [
+            "clip-menu-split",
+            "clip-menu-trim-before",
+            "clip-menu-trim-after",
+        ] {
+            self.controls.remove(key);
+        }
         self.timeline_focus = None;
         egui::TopBottomPanel::bottom("timeline")
             .frame(theme::panel(theme::PANEL))
@@ -1553,7 +1567,7 @@ impl EditorApp {
                 if self.busy && !self.exporting {
                     ui.disable();
                 }
-                ui.horizontal(|ui| {
+                theme::action_row(ui, |ui| {
                     ui.heading("Timeline");
                     if self.timeline().clips().is_empty()
                         && !self.editor.can_undo()
@@ -1563,7 +1577,7 @@ impl EditorApp {
                     }
                     ui.separator();
                     let undo = ui
-                        .add_enabled(self.editor.can_undo(), theme::button("Undo"))
+                        .add_enabled(self.editor.can_undo(), theme::row_button("Undo"))
                         .on_hover_cursor(egui::CursorIcon::PointingHand);
                     self.controls.insert("undo", undo.rect);
                     if undo.clicked() {
@@ -1571,7 +1585,7 @@ impl EditorApp {
                         self.request_key.clear();
                     }
                     if ui
-                        .add_enabled(self.editor.can_redo(), theme::button("Redo"))
+                        .add_enabled(self.editor.can_redo(), theme::row_button("Redo"))
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
                     {
@@ -1579,17 +1593,7 @@ impl EditorApp {
                         self.request_key.clear();
                     }
                     if ui
-                        .add_enabled(
-                            !self.library_preview
-                                && (self.selected_audio.is_some_and(|_| {
-                                    self.selected_clip().is_some_and(|c| {
-                                        self.playhead > c.timeline_start
-                                            && self.playhead < c.timeline_end()
-                                    })
-                                }) || self.selected_audio.is_none()
-                                    && self.timeline().source_at(self.playhead).is_some()),
-                            theme::button("Split"),
-                        )
+                        .add_enabled(self.can_split(), theme::row_button("Split"))
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .on_hover_text("Split at the playhead (S / Ctrl+B)")
                         .clicked()
@@ -1600,7 +1604,7 @@ impl EditorApp {
                         .add_enabled(
                             (self.selected_audio.is_some() || self.selected.is_some())
                                 && !self.library_preview,
-                            theme::button("Delete"),
+                            theme::row_button("Delete"),
                         )
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
@@ -1611,7 +1615,7 @@ impl EditorApp {
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
-                            .add(theme::button("Fit"))
+                            .add(theme::row_button("Fit"))
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .clicked()
                         {
@@ -2010,48 +2014,39 @@ impl EditorApp {
                                 }
                                 self.drag = None;
                             }
-                            if interaction.secondary_clicked()
-                                && (self.selected != Some(clip.id) || self.library_preview)
-                            {
-                                self.library_preview = false;
-                                self.playing = false;
-                                self.seek(clip.timeline_start);
-                            }
-                            let menu_id = egui::Popup::default_response_id(&interaction);
-                            let mut menu = egui::Popup::context_menu(&interaction);
-                            if interaction.secondary_clicked() {
-                                self.keyboard_menu = None;
-                            }
-                            if self.selected_audio.is_none()
+                            let keyboard = self.selected_audio.is_none()
                                 && self.selected == Some(clip.id)
                                 && !self.library_preview
                                 && (interaction.has_focus() || !ctx.wants_keyboard_input())
-                                && ctx.input(|i| i.modifiers.shift && i.key_pressed(egui::Key::F10))
-                            {
-                                self.keyboard_menu = Some((menu_id, interaction.rect.center()));
-                                menu = menu.open_memory(Some(egui::SetOpenCommand::Bool(true)));
+                                && ctx
+                                    .input(|i| i.modifiers.shift && i.key_pressed(egui::Key::F10));
+                            if interaction.secondary_clicked() || keyboard {
+                                self.prepare_clip_menu(&clip, false);
                             }
-                            if let Some((id, position)) = self.keyboard_menu
-                                && id == menu_id
-                            {
-                                menu = menu.at_position(position);
-                            }
+                            let menu_id = egui::Popup::default_response_id(&interaction);
+                            let menu = clip_actions::context_menu(
+                                &interaction,
+                                keyboard,
+                                &mut self.keyboard_menu,
+                            );
                             let restore_menu_focus = egui::Popup::is_id_open(ctx, menu_id)
                                 && ctx.input(|i| i.key_pressed(egui::Key::Escape));
                             menu.show(|ui| {
                                 self.selected_audio = None;
                                 self.selected = Some(clip.id);
-                                let separate = ui
-                                    .add_enabled(
-                                        !separated
-                                            && source.as_ref().is_some_and(|s| !s.audio.is_empty()),
-                                        egui::Button::new("Separate audio"),
-                                    )
-                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-                                self.controls.insert("separate-audio", separate.rect);
-                                if separate.clicked() {
-                                    self.separate_selected_audio();
-                                    ui.close();
+                                self.clip_edit_menu(ui);
+                                ui.separator();
+                                if !separated
+                                    && source.as_ref().is_some_and(|s| !s.audio.is_empty())
+                                {
+                                    let separate = ui
+                                        .button("Separate audio")
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                    self.controls.insert("separate-audio", separate.rect);
+                                    if separate.clicked() {
+                                        self.separate_selected_audio();
+                                        ui.close();
+                                    }
                                 }
                                 if ui
                                     .button("Duplicate")
@@ -2088,6 +2083,7 @@ impl EditorApp {
                                     });
                                     ui.close();
                                 }
+                                ui.separator();
                                 if ui
                                     .button(if separated {
                                         "Delete video"
@@ -2297,11 +2293,11 @@ impl EditorApp {
                             if response.changed() { self.trim(None, Some(end)); }
                             ui.end_row();
                         });
-                        ui.horizontal(|ui| {
-                            if ui.add(theme::button("Trim before")).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Trim before the playhead (Q)").clicked() {
+                        theme::action_row(ui, |ui| {
+                            if ui.add_enabled(self.can_trim_selected(true),theme::row_button("Trim before")).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Trim before the playhead (Q)").clicked() {
                                 self.quick_trim(true);
                             }
-                            if ui.add(theme::button("Trim after")).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Trim after the playhead (W)").clicked() {
+                            if ui.add_enabled(self.can_trim_selected(false),theme::row_button("Trim after")).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Trim after the playhead (W)").clicked() {
                                 self.quick_trim(false);
                             }
                         });
@@ -3315,11 +3311,7 @@ impl eframe::App for EditorApp {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             }
         }
-        let title = format!(
-            "{}Simple Video Editor {}",
-            if self.dirty() { "• " } else { "" },
-            env!("CARGO_PKG_VERSION")
-        );
+        let title = format!("Simple Video Editor {}", env!("CARGO_PKG_VERSION"));
         if title != self.window_title {
             self.window_title.clone_from(&title);
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));

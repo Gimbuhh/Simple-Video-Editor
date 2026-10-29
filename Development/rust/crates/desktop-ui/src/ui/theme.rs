@@ -117,6 +117,7 @@ pub(super) struct ActionButton {
     stroke: Option<Stroke>,
     frame: Option<bool>,
     min_size: Vec2,
+    row_baseline: bool,
 }
 pub(super) fn button(text: impl Into<egui::WidgetText>) -> ActionButton {
     ActionButton {
@@ -125,7 +126,37 @@ pub(super) fn button(text: impl Into<egui::WidgetText>) -> ActionButton {
         stroke: None,
         frame: None,
         min_size: Vec2::ZERO,
+        row_baseline: false,
     }
+}
+/// Inline text actions share the same line metrics as adjacent labels.
+pub(super) fn row_button(text: impl Into<egui::WidgetText>) -> ActionButton {
+    ActionButton {
+        row_baseline: true,
+        ..button(text)
+    }
+}
+pub(super) fn action_row<R>(
+    ui: &mut egui::Ui,
+    contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<R> {
+    ui.scope(|ui| {
+        // Reserve the final height before placing labels/spinners. Growing a
+        // horizontal row after its first label otherwise lowers later buttons.
+        // Use laid-out line height: font metrics alone omit galley rounding
+        // at fractional DPI and can leave the first label one pixel higher.
+        let line_height = egui::WidgetText::from("Mg")
+            .into_galley(ui, None, f32::INFINITY, egui::TextStyle::Button)
+            .size()
+            .y;
+        ui.spacing_mut().interact_size.y = ui
+            .spacing()
+            .interact_size
+            .y
+            .max(line_height + 2.0 * ui.spacing().button_padding.y);
+        ui.horizontal(contents)
+    })
+    .inner
 }
 impl ActionButton {
     pub(super) fn fill(mut self, fill: Color32) -> Self {
@@ -173,7 +204,7 @@ impl egui::Widget for ActionButton {
         }
         // Keep egui's input, focus, disabled rendering, frames and hit testing.
         let response = button.atom_ui(ui).response;
-        paint_button_label(ui, &response, galley);
+        paint_button_label(ui, &response, galley, self.row_baseline);
         response
     }
 }
@@ -191,11 +222,16 @@ pub(super) fn menu_button<R>(
     );
     let slot = ui.next_auto_id().with("menu-label");
     let menu = ui.menu_button(egui::Atom::custom(slot, galley.size()), contents);
-    paint_button_label(ui, &menu.response, galley);
+    paint_button_label(ui, &menu.response, galley, false);
     menu
 }
 
-fn paint_button_label(ui: &egui::Ui, response: &egui::Response, galley: Arc<egui::Galley>) {
+fn paint_button_label(
+    ui: &egui::Ui,
+    response: &egui::Response,
+    galley: Arc<egui::Galley>,
+    row_baseline: bool,
+) {
     response.widget_info(|| {
         egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), galley.text())
     });
@@ -205,7 +241,15 @@ fn paint_button_label(ui: &egui::Ui, response: &egui::Response, galley: Arc<egui
         } else {
             galley.rect
         };
-        let origin = response.rect.center() - ink.center().to_vec2();
+        let origin = Pos2::new(
+            response.rect.center().x - ink.center().x,
+            response.rect.center().y
+                - if row_baseline {
+                    galley.rect.center().y
+                } else {
+                    ink.center().y
+                },
+        );
         let ppp = ui.pixels_per_point();
         let origin = Pos2::new(
             (origin.x * ppp).round() / ppp,
@@ -287,6 +331,105 @@ pub(super) fn transport_button(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn action_rows_paint_labels_on_a_shared_baseline() {
+        for fallback in [false, true] {
+            let ctx = egui::Context::default();
+            configure(&ctx);
+            if fallback {
+                ctx.set_fonts(egui::FontDefinitions::default());
+                ctx.style_mut(|s| {
+                    s.text_styles
+                        .insert(egui::TextStyle::Heading, FontId::proportional(15.5));
+                });
+            }
+            for scale in [1.0, 1.25, 1.5, 1.75, 2.0] {
+                for timeline in [false, true] {
+                    for enabled in [false, true] {
+                        let mut input = egui::RawInput {
+                            screen_rect: Some(Rect::from_min_size(
+                                Pos2::ZERO,
+                                Vec2::new(900.0, 200.0),
+                            )),
+                            ..Default::default()
+                        };
+                        input
+                            .viewports
+                            .get_mut(&egui::ViewportId::ROOT)
+                            .unwrap()
+                            .native_pixels_per_point = Some(scale);
+                        let mut buttons = Vec::new();
+                        let mut spinner = Rect::NOTHING;
+                        let output = ctx.run(input, |ctx| {
+                            egui::CentralPanel::default().show(ctx, |ui| {
+                                action_row(ui, |ui| {
+                                    if timeline {
+                                        ui.heading("Timeline");
+                                        ui.separator();
+                                        for label in ["Undo", "Redo", "Split", "Delete"] {
+                                            buttons.push((
+                                                label,
+                                                ui.add_enabled(enabled, row_button(label)).rect,
+                                            ));
+                                        }
+                                    } else {
+                                        spinner = ui.spinner().rect;
+                                        ui.label("Exporting…");
+                                        buttons.push((
+                                            "Cancel",
+                                            ui.add_enabled(enabled, row_button("Cancel")).rect,
+                                        ));
+                                    }
+                                });
+                            });
+                        });
+                        let text = |label: &str| {
+                            output
+                                .shapes
+                                .iter()
+                                .find_map(|s| match &s.shape {
+                                    egui::Shape::Text(text) if text.galley.text() == label => {
+                                        Some(text)
+                                    }
+                                    _ => None,
+                                })
+                                .expect("Missing painted row label")
+                        };
+                        // Inspect the actual painted glyph baseline, including the
+                        // galley row offset, rather than comparing widget boxes.
+                        let baseline = |label: &str| {
+                            let text = text(label);
+                            let row = &text.galley.rows[0];
+                            // epaint snaps each TextShape origin during tessellation.
+                            (text.pos.y * scale).round() / scale + row.pos.y + row.glyphs[0].pos.y
+                        };
+                        let reference = baseline(if timeline { "Undo" } else { "Exporting…" });
+                        for (label, rect) in &buttons {
+                            let delta = (baseline(label) - reference) * scale;
+                            assert!(
+                                delta.abs() <= 0.51,
+                                "{label} baseline drifts {delta} pixels: scale={scale}, fallback={fallback}, enabled={enabled}"
+                            );
+                            let text = text(label);
+                            assert!(rect.contains_rect(
+                                text.galley.mesh_bounds.translate(text.pos.to_vec2())
+                            ));
+                            let center = text.pos.x + text.galley.mesh_bounds.center().x;
+                            assert!(((center - rect.center().x) * scale).abs() <= 0.51);
+                        }
+                        if !timeline {
+                            assert!(
+                                ((spinner.center().y - buttons[0].1.center().y) * scale).abs()
+                                    <= 0.51,
+                                "Spinner and Cancel must share the final row center"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn action_labels_center_visible_glyphs_at_each_scale_and_state() {
         for fallback in [false, true] {

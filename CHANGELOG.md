@@ -11,7 +11,7 @@ Unreleased Rust candidate.
 ### Added
 
 - Timeline filmstrips show sampled video frames, and dragged recordings preview their placement before dropping.
-- HDR recordings support native HDR preview, HDR10 export and conversion to SDR with balanced brightness and preserved highlight detail.
+- HDR recordings support native HDR preview, HDR10 export and conversion to SDR.
 - Audio can be separated from video and edited independently, with volume, mute, fades and track selection for each item.
 - Individual sections support fit, fill, crop and rotation without changing the original recordings.
 - HEVC output joins H.264 and AV1.
@@ -20,7 +20,7 @@ Unreleased Rust candidate.
 
 - Scrubbing keeps the preview visible and updating while you drag, then settles on the exact frame when you release.
 - Preview seeks faster on ordinary SDR recordings and uses hardware decoding when supported.
-- A graphite workspace puts video and trimming first, with clearer text, visually centered button text, larger thumbnails, blue trim handles and Export at the top right. Secondary controls stay in menus or expandable sections; enabled buttons show a pointing hand and clip edges show a resize cursor.
+- A graphite workspace puts video and trimming first, with clearer text, aligned button labels, larger thumbnails, blue trim handles and Export at the top right. Quick trims are available in clip menus. Secondary controls stay in menus or expandable sections; enabled buttons show a pointing hand and clip edges show a resize cursor.
 - Preview uses the Windows audio output and retries when it becomes unavailable.
 - The app has a new scissors icon with a blue play symbol.
 - The portable Rust app has a smaller download—about 25% in the compared candidate—and no bundled .NET runtime.
@@ -28,6 +28,7 @@ Unreleased Rust candidate.
 
 ### Known limitations
 
+- HDR-to-SDR appearance in some recordings remains under review after reports of gray preview and exported footage.
 - Some workflows use more memory than 1.0.4. See the [C#/Rust comparison](docs/rust-csharp-comparison.md) for measured results and remaining acceptance checks.
 - Sections join with hard cuts; transition effects remain planned.
 - Final checks remain for Windows HDR toggles, monitors with different scaling, and screen-reader workflows.

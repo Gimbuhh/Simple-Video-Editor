@@ -47,6 +47,8 @@ Let layout and control names explain the editor. Avoid repeated headings, second
 
 Keep trim boundaries and quick trims visible in the inspector. Audio, framing and source color start collapsed; expanding a group must not create a project edit or hide color warnings. Keep expanded controls within the resizable sidebar.
 
+Video and independent-audio context menus share Split and quick trims. A timeline menu selects its item without moving the playhead and pauses playback; a library preview switches to the item's timeline start. Video trim eligibility leaves decoded VFR boundaries to the existing seek/step operation. Menu tests inject secondary clicks and Shift+F10, check stable placement and disabled states, dispatch each action, and verify Escape.
+
 Enabled buttons, dropdowns and toggles use the pointing hand cursor on hover. Set it on their responses with `on_hover_cursor`: the pinned egui version does not consume `Visuals::interact_cursor`. Keep text-entry and drag cursors specific to their interactions.
 
 ## Frozen legacy oracle
@@ -97,6 +99,8 @@ The [2026-10-28 editor audit](editor-audit.md) records preview audio, action-lab
 Use the [release checklist](release-readiness.md) for the current gates and physical acceptance scope.
 
 Action buttons center the tight painted glyph bounds, then snap the label origin to the physical pixel grid. Font advance/line boxes include bearings and unused ascent/descent, so centering those boxes can visibly misalign text. `theme::ActionButton` retains egui's stock allocation, borders, pointer/keyboard input, focus and disabled handling, and supplies the label to accessibility. File/More triggers share the glyph placement and retain stock menu handling. The regression checks 2,400 combinations of installed/fallback fonts, 100–200% scale, horizontal/vertical layouts, natural/wide sizes, labels and rest/hover/press/focus/disabled states. It asserts actual state, glyph containment, accessible names and at most half a physical pixel of centering error per axis.
+
+Adjacent text actions use `row_button` to share a typographic baseline; otherwise descenders in Split make it sit higher than Undo. `action_row` reserves the padded row height before labels and spinners are allocated. Timeline, inspector quick trims and export status use this path. A separate paint test checks installed/fallback fonts, enabled/disabled states and 100–200% scale, including Cancel beside the status label and spinner. Standalone framed buttons keep optical glyph centering.
 
 Clip hover and drag start share the same bounded trim-edge hit test. The linked video/audio rectangle uses horizontal resize at either edge and grab in its body; the captured drag mode owns the cursor while trimming/moving, including outside the original edge or over another section. Desktop verification injects pointer hover on both lanes/edges and the body, then checks the actual output cursor during a trim after the pointer has left the hit band. Disabled controls do not set clip cursors.
 

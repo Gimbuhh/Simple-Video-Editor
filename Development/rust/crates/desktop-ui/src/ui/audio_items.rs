@@ -118,12 +118,7 @@ impl EditorApp {
         origin: f32,
         zoom: f32,
     ) -> bool {
-        for key in [
-            "first-audio-item",
-            "audio-item-menu",
-            "audio-item-split",
-            "audio-item-delete",
-        ] {
+        for key in ["first-audio-item", "audio-item-menu", "audio-item-delete"] {
             self.controls.remove(key);
         }
         let timeline = self
@@ -257,7 +252,15 @@ impl EditorApp {
                 )
             });
             hovered |= response.hovered();
-            if response.clicked() || response.secondary_clicked() || response.has_focus() {
+            let keyboard = response.has_focus()
+                && ui.input(|i| i.modifiers.shift && i.key_pressed(egui::Key::F10));
+            if response.secondary_clicked() || keyboard {
+                self.prepare_clip_menu(clip, true);
+            }
+            if response.clicked()
+                || response.secondary_clicked()
+                || response.has_focus() && !egui::Popup::is_any_open(ui.ctx())
+            {
                 self.selected_audio = Some(clip.id);
                 self.library_preview = false;
                 if response.clicked() {
@@ -350,28 +353,15 @@ impl EditorApp {
             if self.audio_drag.is_none() {
                 clip_hover_cursor(ui, &response);
             }
-            let keyboard = response.has_focus()
-                && ui.input(|i| i.modifiers.shift && i.key_pressed(egui::Key::F10));
-            let mut menu = egui::Popup::context_menu(&response);
+            let menu = clip_actions::context_menu(&response, keyboard, &mut self.keyboard_menu);
             let menu_id = egui::Popup::default_response_id(&response);
             let restore_focus = egui::Popup::is_id_open(ui.ctx(), menu_id)
                 && ui.input(|i| i.key_pressed(egui::Key::Escape));
-            if keyboard {
-                menu = menu
-                    .open_memory(Some(egui::SetOpenCommand::Bool(true)))
-                    .at_position(rect.center());
-            }
             menu.show(|ui| {
                 self.selected_audio = Some(clip.id);
                 self.library_preview = false;
-                let split = ui
-                    .button("Split audio")
-                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-                self.controls.insert("audio-item-split", split.rect);
-                if split.clicked() {
-                    self.split();
-                    ui.close();
-                }
+                self.clip_edit_menu(ui);
+                ui.separator();
                 if ui
                     .button("Duplicate audio")
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -384,6 +374,7 @@ impl EditorApp {
                     });
                     ui.close();
                 }
+                ui.separator();
                 let delete = ui
                     .button("Delete audio")
                     .on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -395,6 +386,11 @@ impl EditorApp {
             });
             if restore_focus && !egui::Popup::is_id_open(ui.ctx(), menu_id) {
                 ui.memory_mut(|m| m.request_focus(response.id));
+            }
+            if self.keyboard_menu.is_some_and(|(id, _)| id == menu_id)
+                && !egui::Popup::is_id_open(ui.ctx(), menu_id)
+            {
+                self.keyboard_menu = None;
             }
         }
         if ui.is_enabled()

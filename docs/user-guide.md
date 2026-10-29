@@ -18,6 +18,8 @@ Video and audio start linked. Moving, splitting, trimming or deleting a linked s
 
 Clip edges show a horizontal resize pointer for trimming; clip bodies show grab/grabbing pointers for moving. The trim pointer stays active throughout the drag, including over a neighboring section.
 
+Right-click a video or audio item for Split, Trim before and Trim after at the playhead. Opening the menu preserves the timeline position; unavailable edits are disabled. The Trim sidebar retains the same quick actions and exact In/Out fields. Unsaved changes appear beside the project name inside the editor; the Windows title stays uncluttered.
+
 Move sections freely; nearby edges snap. Existing gaps separate joined groups. Trimming a left edge follows the pointer while the right edge/following sections stay anchored; releasing closes the temporary gap within a joined group. The preview retains the current source frame or clamps to the nearest retained frame. Escape restores the original gesture state. Delete closes only the connected group, preserving separate gaps.
 
 Out points exclude the next frame. A split needs at least one retained frame on each side. Timestamp fields accept seconds, MM:SS.mmm or HH:MM:SS.mmm with a decimal point. Unchanged fields preserve their original precision. Frame stepping uses decoded timestamps, including VFR media, rather than the output frame rate.

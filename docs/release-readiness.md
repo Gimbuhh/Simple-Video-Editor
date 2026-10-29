@@ -1,6 +1,6 @@
 # 1.1.0 release checklist — 2026-10-29
 
-The Rust rewrite and graphite interface are implemented. The portable 1.1.0 package is prepared for final user acceptance; it remains unreleased. PR #8 stays open until the user finishes testing and explicitly approves merging.
+The Rust rewrite and graphite interface are implemented. Version 1.1.0 remains unreleased. HDR-to-SDR appearance is an open issue following the user's report of gray preview and exported footage; the earlier exposure regression checks do not close that report. PR #8 stays open until the issue is resolved, the user finishes testing and explicitly approves merging.
 
 ## Software acceptance
 

@@ -1,6 +1,18 @@
 # Rust 1.1.0 status — 2026-10-29
 
-The Rust production cutover, graphite interface and identified software fixes are implemented on PR #8. Version 1.1.0 remains an unreleased candidate prepared for final user acceptance. No merge, release tag or publication is authorized by this preparation.
+The Rust production cutover and graphite interface are implemented on PR #8. Version 1.1.0 remains unreleased. HDR-to-SDR appearance is open after the user's report of gray preview and export; prior numeric exposure checks do not establish acceptance of the reported footage. No merge, release tag or publication is authorized.
+
+## Timeline and action-row refinement
+
+Executable SHA-256: `a85d94c9ff85c967ce2ee72ca42d1286331b2e77c496c6c855f5a67555745689`. Video and independent-audio menus expose Split, Trim before and Trim after, preserving the timeline playhead when selecting the target. The inspector keeps exact trims. Menu actions outside the target are disabled; unavailable audio separation is omitted. Timeline and export-status captions share a text baseline, while framed buttons retain optical centering. The Windows title omits the unsaved dot; the project label retains it.
+
+Formatting, strict Clippy, workspace contracts, 73 native/software audio interaction checks with 40 scaled layouts, and 16 native/software VFR checks pass. Unit checks inject menu input for both item types and paint row baselines at 100–200% scale. Evidence: rust-desktop/9649689c650c4718877b42b47cef5fb2 and rust-desktop/3e99fde2d3c14251b55bde7847a67fb7. This candidate changes no media conversion and does not replace the running App.
+
+## Open HDR-to-SDR appearance report
+
+The reported source is full-range, 10-bit AV1/PQ with BT.2020 color. Its SDR export has limited-range Rec.709 tags. Independent pixel checks establish that the export's initial scale preserves input pixels, and forcing range on the preview scale produces the same result as automatic handling. A range-tag correction is therefore unsupported for this sample.
+
+Independent libplacebo auto, BT.2390 and BT.2446A SDR references retain the scene's muted palette but differ in shadows and white compression. The current Mobius shoulder begins at 60.9 cd/m² and maps 203 cd/m² white to approximately RGB code 213. Brighter candidate shoulders also reduce the available 8-bit highlight steps, so a saturation boost or unverified curve change is not treated as a fix. Reference-image feedback and further tone-rendering work remain pending. The required output remains SDR. Private recording paths and images stay in ignored color-and-ui-refinement artifacts.
 
 ## Audio-item click seeking
 
