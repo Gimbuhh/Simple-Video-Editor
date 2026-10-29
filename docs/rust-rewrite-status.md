@@ -2,7 +2,21 @@
 
 The Rust production cutover and graphite interface are implemented on PR #8. Version 1.1.0 remains unreleased. The HDR-to-SDR correction is checked against the user's approved SDR reference; final installed-build acceptance remains with the user. No merge, release tag or publication is authorized.
 
-## HDR-to-SDR reference correction
+## Tiny HDR highlight correction
+
+Executable SHA-256: `f4baa1b0ddd75e5b3ac005af865fe231c7829eb680392caa680ffd850eed1d93`. The reported inventory frame at 153.1 seconds exposes an additional scene-exposure problem: the original PQ recording contains a roughly 4,800-nit cursor beside 170-nit menu text. The prior preview closely matches an independent generic renderer (mean screenshot channel difference 1.31/255), but both compress normal white unnecessarily to preserve that tiny peak. Renderer agreement alone did not establish correct scene exposure.
+
+Native/software SDR conversion and exports now use the 99.99th peak percentile, excluding the brightest 0.01% from scene-peak estimation. Tiny isolated cursor/specular detail can clip instead of reducing the whole frame's exposure. Scene smoothing remains disabled for deterministic seeks. Cache generation `v5-highlight-sdr` replaces images made with the earlier peak policy. No exposure or saturation multiplier is added, and HDR-preserving output is unchanged.
+
+An independent linear-light fixture reproduces the problem with 170-nit white plus a tiny 5,000-nit cursor. Previously, adding the cursor changes converted/software/native/thumbnail/export white codes from 237/239/240/238/238 to 145/149/148/146/146. The corrected paths retain exactly their no-cursor white codes. The independent previously approved gameplay scene changes by only 0.23/255 on average. Evidence: recording-153-review/analysis.json, regression-before.log and regression-after.log; rust-playback/tiny-hdr-cursor/white-levels.json.
+
+The reported ARC inventory scene also passes native/software preview, thumbnails and CPU/NVIDIA H.264/AV1 SDR export comparisons; its source hash is unchanged. Mean channel errors are 2.70/1.91 for software/native preview, 1.80–1.90 for exports and 1.72 for the thumbnail. Evidence: recording-153-review/real-recording/adaptive-sdr/comparison.json.
+
+All six full/limited PQ/HLG reference-chart cases pass with the revised policy (recording-153-review/chart-comparisons.json). 268 native/software desktop checks and connected HDR/SDR monitor round trips also pass. Evidence: rust-desktop/4fe07f9e6b8d486fab9f910359716b00 and rust-displays/98eeadc6826146c0b7d2dda6102f086f.
+
+Formatting, strict Clippy, workspace contracts and the release inspector pass. The initial workspace run encountered a missing temporary path in the unchanged encoding persistence test; the complete repeat passes. This patch changes no project persistence code.
+
+## Earlier HDR-to-SDR reference correction
 
 Executable SHA-256: `ae43da1915563b48bb5df0d6e67693a894c30402d024f3e963fcf5a05316240c`. HDR-to-SDR preview, thumbnails and exports use scene-aware libplacebo tone/gamut mapping on compatible graphics, selected by a bounded 10-bit PQ capability probe. Eligible fitted PQ/HLG recordings retain hardware decoding and a persistent D3D11 renderer across seeks. Software preview and complex geometry use the shared processing graph. The standard CPU fallback remains available; ordinary SDR and HDR-to-HDR color paths retain their prior behavior.
 

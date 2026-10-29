@@ -25,7 +25,7 @@ impl Tools {
             "{:x}",
             Sha256::digest(
                 format!(
-                    "v4-adaptive-sdr|{:?}|{}|{}|{:?}|{}|{}|{}|{}|{}|{}|{}",
+                    "v5-highlight-sdr|{:?}|{}|{}|{:?}|{}|{}|{}|{}|{}|{}|{}",
                     if source.hdr() {
                         self.hdr_sdr_tone_mapping()
                     } else {

@@ -17,7 +17,9 @@ pub enum SdrToneMapping {
 
 // Disable temporal peak smoothing so a sought frame, thumbnail and exported
 // frame use the same brightness without depending on previously decoded frames.
-pub(crate) const ADAPTIVE_SDR: &str = "libplacebo=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv:format=yuv420p:tonemapping=auto:peak_detect=1:smoothing_period=0:extra_opts=allow_delayed_peak=no";
+// Ignore the brightest 0.01% when estimating scene exposure: captured HDR
+// cursors can reach 5,000 nits and should not dim otherwise normal UI white.
+pub(crate) const ADAPTIVE_SDR: &str = "libplacebo=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv:format=yuv420p:tonemapping=auto:peak_detect=1:percentile=99.99:smoothing_period=0:extra_opts=allow_delayed_peak=no";
 
 pub(crate) fn available(ffmpeg: &Path) -> bool {
     static AVAILABLE: OnceLock<bool> = OnceLock::new();

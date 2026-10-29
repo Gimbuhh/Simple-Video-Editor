@@ -198,7 +198,7 @@ impl Player {
             ("tone-mapping", "auto", "auto"),
             ("gamut-mapping-mode", "perceptual", "auto"),
             ("hdr-compute-peak", "yes", "auto"),
-            ("hdr-peak-percentile", "99.995", "100"),
+            ("hdr-peak-percentile", "99.99", "100"),
             ("hdr-peak-decay-rate", "0", "20"),
             ("allow-delayed-peak-detect", "no", "no"),
             ("hdr-contrast-recovery", "0.3", "0"),
