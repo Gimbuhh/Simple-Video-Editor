@@ -4,11 +4,15 @@ The Rust production cutover and graphite interface are implemented on PR #8. Ver
 
 ## HDR-to-SDR reference correction
 
-Executable SHA-256: `46cd0c31ee594dfd62541495a7f60001dc016601339a8d98fbb6c3643da5fae7`. HDR-to-SDR preview, thumbnails and exports share scene-aware libplacebo tone/gamut mapping on compatible Vulkan graphics, selected by a bounded 10-bit PQ capability probe. The standard CPU conversion remains available; ordinary SDR and HDR-to-HDR color paths retain their prior behavior.
+Executable SHA-256: `ae43da1915563b48bb5df0d6e67693a894c30402d024f3e963fcf5a05316240c`. HDR-to-SDR preview, thumbnails and exports use scene-aware libplacebo tone/gamut mapping on compatible graphics, selected by a bounded 10-bit PQ capability probe. Eligible fitted PQ/HLG recordings retain hardware decoding and a persistent D3D11 renderer across seeks. Software preview and complex geometry use the shared processing graph. The standard CPU fallback remains available; ordinary SDR and HDR-to-HDR color paths retain their prior behavior.
 
 Identical decoded HDR planes reached preview/export with different inferred chroma locations (center versus unspecified/left). The new optional source metadata preserves explicit locations; missing values use one left-sited default before scaling. HDR input precision is retained into the mapper. Thumbnail conversion explicitly uses Rec.709 limited YUV to full-range bitmap RGB. Cache generation `v4-adaptive-sdr` includes processor/chroma identity and regenerates older images. Delayed peak use and temporal smoothing are disabled so repeated seeks do not inherit another scene's brightness.
 
-Full/limited-range AV1 charts at 203/1,000 cd/m² compare native/software preview, thumbnails and CPU/NVIDIA H.264/AV1 exports with an independent literal renderer. The user's ARC recording also passes: mean per-channel differences are 2.35/2.37 for software/native video frames, 1.78–2.02 for exported frames, and 1.33 for the thumbnail (8-bit RGB units). Original-file hashes remain unchanged. These are pixel comparisons against the approved reference, not physical display measurements. Evidence: color-and-ui-refinement/adaptive-fixtures.json and adaptive-arc.json. The separate CPU absolute-luminance regression and broader GPU media matrix pass, including HLG, preserved HDR exposure, geometry, audio, gaps and cancellation.
+Six full/limited-range PQ/HLG AV1 charts compare native/software preview, repeated seeks, thumbnails and CPU/NVIDIA H.264/AV1 exports with an independent literal renderer. Native window pixels use an sRGB reference, matching production display coding; SDR files/software frames use Rec.709. The user's ARC recording passes: mean per-channel differences are 2.35/1.69 for software/native preview, 1.78–2.02 for exported frames and 1.33 for the thumbnail (8-bit RGB units). Original-file hashes remain unchanged. These are pixel comparisons against the approved reference, not physical display measurements. Evidence: color-and-ui-refinement/adaptive-fixtures-fast.json and adaptive-arc-fast.json. The earlier CPU absolute-luminance regression and broader GPU media matrix retain their separate scope and evidence.
+
+The real-recording production preview benchmark completes 24 exact seeks with median 49.8 ms, p95 73.8 ms, 38 completed updates during continuous pointer scrubbing and a 63.0 ms final-release acknowledgement, using D3D11VA. It measures UI request to playback-ready acknowledgement, not physical display latency; OS/file caching is uncontrolled. Evidence: preview-benchmark/e01deccb88e14f65beb3189d34133a24. Recreating the processing filter per seek failed this continuous-scrub gate and was replaced before installation.
+
+Formatting, strict Clippy, workspace contracts and 268 desktop checks across native/software SDR/PQ/HLG/audio runs pass. Evidence: rust-desktop/e2ac42d9c4944e6bb1520903c1a27bdd. Native/software round trips across the connected HDR/SDR monitors also pass (rust-displays/2202837e20bf4485893b09a70b2f4d49). The monitor verifier now selects its visible editor window: libmpv's hidden temporary window previously made its software-mode movement check invalid.
 
 ## Earlier timeline and action-row refinement
 
@@ -81,7 +85,7 @@ The [editor audit](editor-audit.md) describes the fixes. The [C#/Rust comparison
 
 ## Remaining physical acceptance
 
-Current-display HDR appearance is user-confirmed. Bounded game/Shadowplay checks pass; the user independently confirmed the separate HDR-to-SDR game-switch recording corruption is external to this project. That investigation remains closed.
+Current-display HDR appearance is user-confirmed. Bounded game/Shadowplay checks pass; the user independently confirmed the separate Windows/NVIDIA game-switch capture corruption is external to this project. That investigation remains closed.
 
 Manual Windows HDR toggles, genuine mixed-DPI monitor transitions and a complete screen-reader workflow still require the corresponding setup and user observation before final release approval. Current tests cover actual HDR/SDR monitor movement at 96 DPI, app scaling and accessibility-tree semantics. They do not measure physical HDR luminance, headphone loudness or every device hotplug combination.
 

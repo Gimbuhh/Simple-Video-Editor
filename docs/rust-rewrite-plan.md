@@ -4,7 +4,7 @@ Updated: 2026-10-23 (original proposal: 2026-10-09)
 
 Target application version: **1.1.0**
 
-Status: Rust production cutover is implemented on PR #8. The UI is egui/eframe on DX12 with native D3D11 playback and an SDR software fallback. Current-display HDR preview and local capture checks pass; the user confirmed the separate HDR-to-SDR game-switch recording issue is external to the project. Broader display/DPI/accessibility acceptance and the historical startup-crash investigation remain tracked; merge/publication require separate approval. Current ownership and measured evidence are in the [status ledger](rust-rewrite-status.md).
+Status: Rust production cutover is implemented on PR #8. The UI is egui/eframe on DX12 with native D3D11 playback and an SDR software fallback. Current-display HDR preview and local capture checks pass; the user confirmed the separate Windows/NVIDIA game-switch capture corruption is external to the project. Broader display/DPI/accessibility acceptance and the historical startup-crash investigation remain tracked; merge/publication require separate approval. Current ownership and measured evidence are in the [status ledger](rust-rewrite-status.md).
 
 The [C#/Rust comparison](rust-csharp-comparison.md) tracks restored launch-file handling and timeline-drop placement, event-driven idle behavior and display-sized preview processing. Keep the C# baseline and original projects for rollback and user acceptance. Visual refinement is a separate later pass, with matching or improving on the C# interface as its goal. The comparison assesses capabilities, compatibility and measured resource use without claiming a visual improvement.
 

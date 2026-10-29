@@ -191,6 +191,24 @@ impl Player {
         self.check(unsafe { (self.api.set)(self.handle.as_ptr(), key.as_ptr(), value.as_ptr()) })
     }
 
+    /// Keep scene-aware SDR conversion in the persistent GPU renderer instead
+    /// of recreating a Vulkan lavfi processor after every seek.
+    pub fn adaptive_sdr(&self, enabled: bool) -> Result<()> {
+        for (key, on, off) in [
+            ("tone-mapping", "auto", "auto"),
+            ("gamut-mapping-mode", "perceptual", "auto"),
+            ("hdr-compute-peak", "yes", "auto"),
+            ("hdr-peak-percentile", "99.995", "100"),
+            ("hdr-peak-decay-rate", "0", "20"),
+            ("allow-delayed-peak-detect", "no", "no"),
+            ("hdr-contrast-recovery", "0.3", "0"),
+            ("target-contrast", "1000", "auto"),
+        ] {
+            self.set(key, if enabled { on } else { off })?;
+        }
+        Ok(())
+    }
+
     pub fn command(&self, arguments: &[&str]) -> Result<()> {
         let strings = arguments
             .iter()

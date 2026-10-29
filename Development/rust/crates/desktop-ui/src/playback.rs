@@ -208,10 +208,20 @@ impl Playback {
                                         if software || !next.hdr_preview {
                                             output.profile = project_store::ColorProfile::Sdr;
                                         }
+                                        let native_sdr = !software
+                                            && tools.native_hdr_sdr_preview(
+                                                source,
+                                                &next.adjustment,
+                                                &output,
+                                            );
                                         player.set(
                                             "hwdec",
                                             if !software
-                                                && direct_preview(source, &next.adjustment, &output)
+                                                && (direct_preview(
+                                                    source,
+                                                    &next.adjustment,
+                                                    &output,
+                                                ) || native_sdr)
                                             {
                                                 "auto"
                                             } else if !software && source.codec == "av1" {
@@ -232,6 +242,7 @@ impl Playback {
                                             )?;
                                         }
                                         if !software {
+                                            player.adaptive_sdr(native_sdr)?;
                                             player.set(
                                                 "target-trc",
                                                 if next.hdr_preview { "auto" } else { "srgb" },
@@ -247,11 +258,19 @@ impl Playback {
                                         }
                                         player.set(
                                             "vf",
-                                            &tools.preview_mpv_filter(
-                                                source,
-                                                &next.adjustment,
-                                                &output,
-                                            ),
+                                            &if software {
+                                                tools.preview_mpv_filter(
+                                                    source,
+                                                    &next.adjustment,
+                                                    &output,
+                                                )
+                                            } else {
+                                                tools.native_preview_mpv_filter(
+                                                    source,
+                                                    &next.adjustment,
+                                                    &output,
+                                                )
+                                            },
                                         )?;
                                         player.set("start", &next.position.to_string())?;
                                         player.set("end", &next.end.to_string())?;
@@ -488,7 +507,13 @@ impl Playback {
                                 updated.frame = Some(Arc::new(frame));
                                 changed = true;
                             }
-                            updated.gamma = player.property("video-out-params/gamma");
+                            updated.gamma = if software {
+                                player.property("video-out-params/gamma")
+                            } else {
+                                player
+                                    .property("video-target-params/gamma")
+                                    .or_else(|| player.property("video-out-params/gamma"))
+                            };
                             updated.decoder = player.property("hwdec-current");
                             updated.audio_output = player.property("current-ao").filter(|_| {
                                 player.property("audio-out-params/samplerate").is_some()

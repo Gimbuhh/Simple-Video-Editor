@@ -76,6 +76,51 @@ fn hdr_conversion_preserves_known_chroma_and_normalizes_missing_metadata() {
 }
 
 #[test]
+fn native_hdr_mapping_requires_supported_color_and_fitted_geometry() {
+    let mut source = source();
+    source.transfer = "smpte2084".into();
+    source.primaries = "bt2020".into();
+    source.matrix = "bt2020nc".into();
+    let settings = ClipSettings::default();
+    let output = OutputSettings::default();
+    assert!(direct_hdr_sdr_preview(&source, &settings, &output));
+    source.transfer = "arib-std-b67".into();
+    assert!(direct_hdr_sdr_preview(&source, &settings, &output));
+    source.transfer = "bt709".into();
+    assert!(!direct_hdr_sdr_preview(&source, &settings, &output));
+    source.transfer = "smpte2084".into();
+    assert!(!direct_hdr_sdr_preview(
+        &source,
+        &settings,
+        &OutputSettings {
+            profile: ColorProfile::Hdr10,
+            ..output.clone()
+        }
+    ));
+    assert!(!direct_hdr_sdr_preview(
+        &source,
+        &ClipSettings {
+            framing: Framing::Crop,
+            ..settings.clone()
+        },
+        &output
+    ));
+    assert!(!direct_hdr_sdr_preview(
+        &source,
+        &ClipSettings {
+            rotation: 90,
+            ..settings.clone()
+        },
+        &output
+    ));
+    source.sample_aspect_ratio = 2.0;
+    assert!(!direct_hdr_sdr_preview(&source, &settings, &output));
+    source.sample_aspect_ratio = 1.0;
+    source.matrix = "bt709".into();
+    assert!(!direct_hdr_sdr_preview(&source, &settings, &output));
+}
+
+#[test]
 fn complex_presentations_keep_the_shared_transform() {
     let source = source();
     let settings = ClipSettings::default();

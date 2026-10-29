@@ -91,6 +91,49 @@ impl Tools {
         preview_mpv_filter(source, adjustment, output, self.mapping_for(source, output))
     }
 
+    pub fn native_hdr_sdr_preview(
+        &self,
+        source: &MediaSource,
+        adjustment: &ClipSettings,
+        output: &OutputSettings,
+    ) -> bool {
+        direct_hdr_sdr_preview(source, adjustment, output)
+            && self.mapping_for(source, output) == SdrToneMapping::Adaptive
+    }
+
+    pub fn native_preview_mpv_filter(
+        &self,
+        source: &MediaSource,
+        adjustment: &ClipSettings,
+        output: &OutputSettings,
+    ) -> String {
+        if self.native_hdr_sdr_preview(source, adjustment, output) {
+            let chroma = match hdr_chroma(source) {
+                "center" => "mpeg1/jpeg",
+                "topleft" => "uhd",
+                "top" => "top",
+                "bottomleft" => "bottom-left",
+                "bottom" => "bottom",
+                _ => "mpeg2/4/h264",
+            };
+            format!(
+                "format=colormatrix=bt.2020-ncl:primaries=bt.2020:gamma={}:colorlevels={}:chroma-location={chroma}",
+                if source.transfer == "smpte2084" {
+                    "pq"
+                } else {
+                    "hlg"
+                },
+                if source.range == "pc" {
+                    "full"
+                } else {
+                    "limited"
+                }
+            )
+        } else {
+            self.preview_mpv_filter(source, adjustment, output)
+        }
+    }
+
     pub fn discover(cache: PathBuf) -> Result<Self> {
         let executable = std::env::current_exe()?;
         let mut roots = vec![executable.parent().unwrap().to_path_buf()];
@@ -716,7 +759,28 @@ pub fn direct_preview(
             source.pixel_format.as_str(),
             "yuv420p" | "yuv420p10le" | "yuvj420p"
         )
-        && source.rotation == 0.0
+        && fitted_geometry(source, adjustment, output)
+}
+
+pub fn direct_hdr_sdr_preview(
+    source: &MediaSource,
+    adjustment: &ClipSettings,
+    output: &OutputSettings,
+) -> bool {
+    output.profile == ColorProfile::Sdr
+        && source.hdr()
+        && source.primaries == "bt2020"
+        && source.matrix == "bt2020nc"
+        && matches!(source.pixel_format.as_str(), "yuv420p" | "yuv420p10le")
+        && fitted_geometry(source, adjustment, output)
+}
+
+fn fitted_geometry(
+    source: &MediaSource,
+    adjustment: &ClipSettings,
+    output: &OutputSettings,
+) -> bool {
+    source.rotation == 0.0
         && source.sample_aspect_ratio == 1.0
         && adjustment.rotation == 0
         && adjustment.framing == Framing::Fit

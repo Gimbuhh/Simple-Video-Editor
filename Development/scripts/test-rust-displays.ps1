@@ -5,6 +5,7 @@ $AppPath=[IO.Path]::GetFullPath($AppPath)
 Add-Type -TypeDefinition @"
 using System;
 using System.Collections.Generic;
+using System.Text;
 using System.Runtime.InteropServices;
 public static class EditorDisplayChecks {
  [StructLayout(LayoutKind.Sequential)] public struct Rect {public int L,T,R,B;}
@@ -15,9 +16,12 @@ public static class EditorDisplayChecks {
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern bool GetMonitorInfo(IntPtr h,ref Info info);
  [DllImport("user32.dll")] static extern bool EnumWindows(WindowCallback cb,IntPtr data);
  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h,out uint pid);
+ [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr h,StringBuilder title,int length);
  [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h,IntPtr after,int x,int y,int w,int height,uint flags);
  public static Info[] Monitors(){var rows=new List<Info>();EnumDisplayMonitors(IntPtr.Zero,IntPtr.Zero,(h,dc,r,d)=>{var i=new Info();i.Size=Marshal.SizeOf<Info>();if(GetMonitorInfo(h,ref i))rows.Add(i);return true;},IntPtr.Zero);return rows.ToArray();}
- public static IntPtr Window(uint pid){IntPtr result=IntPtr.Zero;EnumWindows((h,d)=>{uint owner;GetWindowThreadProcessId(h,out owner);if(owner==pid){result=h;return false;}return true;},IntPtr.Zero);return result;}
+ // libmpv can enumerate a hidden "Temp Window" before the actual editor.
+ public static IntPtr Window(uint pid){IntPtr result=IntPtr.Zero;EnumWindows((h,d)=>{uint owner;GetWindowThreadProcessId(h,out owner);if(owner==pid && IsWindowVisible(h)){var title=new StringBuilder(256);GetWindowText(h,title,title.Capacity);if(title.ToString().StartsWith("Simple Video Editor ",StringComparison.Ordinal)){result=h;return false;}}return true;},IntPtr.Zero);return result;}
  public static bool Move(IntPtr h,int x,int y){return SetWindowPos(h,IntPtr.Zero,x,y,0,0,0x15);}
 }
 "@

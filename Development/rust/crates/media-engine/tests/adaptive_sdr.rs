@@ -99,10 +99,14 @@ fn adaptive_sdr_matches_independent_reference_in_preview_and_export() {
         .save(&chart)
         .unwrap();
         for range in ["full", "limited"] {
-            for nits in [203, 1000] {
-                let label = format!("{range}-{nits}");
+            for (nits, transfer) in [
+                (203, "smpte2084"),
+                (1000, "smpte2084"),
+                (1000, "arib-std-b67"),
+            ] {
+                let label = format!("{range}-{nits}-{transfer}");
                 let path = root.join(format!("{label}.mp4"));
-                run(&tools.ffmpeg,&vec!["-v".into(),"error".into(),"-nostdin".into(),"-y".into(),"-loop".into(),"1".into(),"-i".into(),chart.to_string_lossy().into_owned(),"-t".into(),"1".into(),"-vf".into(),format!("format=gbrpf32le,zscale=pin=bt709:tin=iec61966-2-1:min=gbr:rin=full:p=bt2020:t=smpte2084:m=bt2020nc:r={range}:npl={nits},format=yuv420p10le,setparams=range={range}:color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc"),"-c:v".into(),"av1_nvenc".into(),"-preset".into(),"p1".into(),"-rc".into(),"constqp".into(),"-qp".into(),"8".into(),path.to_string_lossy().into_owned()],&cancel,|_|{}).unwrap();
+                run(&tools.ffmpeg,&vec!["-v".into(),"error".into(),"-nostdin".into(),"-y".into(),"-loop".into(),"1".into(),"-i".into(),chart.to_string_lossy().into_owned(),"-t".into(),"1".into(),"-vf".into(),format!("format=gbrpf32le,zscale=pin=bt709:tin=iec61966-2-1:min=gbr:rin=full:p=bt2020:t={transfer}:m=bt2020nc:r={range}:npl={nits},format=yuv420p10le,setparams=range={range}:color_primaries=bt2020:color_trc={transfer}:colorspace=bt2020nc"),"-c:v".into(),"av1_nvenc".into(),"-preset".into(),"p1".into(),"-rc".into(),"constqp".into(),"-qp".into(),"8".into(),path.to_string_lossy().into_owned()],&cancel,|_|{}).unwrap();
                 cases.push((path, 0.0, label));
             }
         }
@@ -155,9 +159,18 @@ fn adaptive_sdr_matches_independent_reference_in_preview_and_export() {
             if mode == native_mpv::Mode::SoftwareSdr {
                 p.resize_software(960, 540).unwrap();
             }
+            if mode == native_mpv::Mode::NativeSdr {
+                p.adaptive_sdr(true).unwrap();
+                p.set("target-trc", "srgb").unwrap();
+                p.set("hwdec", "auto").unwrap();
+            }
             p.set(
                 "vf",
-                &tools.preview_mpv_filter(&source, &Default::default(), &output),
+                &if mode == native_mpv::Mode::NativeSdr {
+                    tools.native_preview_mpv_filter(&source, &Default::default(), &output)
+                } else {
+                    tools.preview_mpv_filter(&source, &Default::default(), &output)
+                },
             )
             .unwrap();
             p.set("start", &start.to_string()).unwrap();
@@ -165,10 +178,12 @@ fn adaptive_sdr_matches_independent_reference_in_preview_and_export() {
                 .unwrap();
             p.wait_for(15.0, |p| p.property("video-out-params/w").is_some())
                 .unwrap();
-            assert_eq!(
-                p.property("video-out-params/gamma").as_deref(),
-                Some("bt.1886")
-            );
+            if mode == native_mpv::Mode::SoftwareSdr {
+                assert_eq!(
+                    p.property("video-out-params/gamma").as_deref(),
+                    Some("bt.1886")
+                );
+            }
             p.seek(start).unwrap();
             let pts = p
                 .property("time-pos")
@@ -179,7 +194,11 @@ fn adaptive_sdr_matches_independent_reference_in_preview_and_export() {
                 &tools,
                 &path,
                 (pts - 0.000001).max(0.0),
-                Some(reference_filter.clone()),
+                Some(if mode == native_mpv::Mode::NativeSdr {
+                    reference_filter.replace("color_trc=bt709", "color_trc=iec61966-2-1")
+                } else {
+                    reference_filter.clone()
+                }),
                 &dir.join(format!("reference-{mode:?}.png")),
             );
             let captured = dir.join(format!("{mode:?}.png"));
@@ -188,7 +207,7 @@ fn adaptive_sdr_matches_independent_reference_in_preview_and_export() {
                 im.save(&captured).unwrap();
                 im
             } else {
-                p.command(&["screenshot-to-file", captured.to_str().unwrap(), "video"])
+                p.command(&["screenshot-to-file", captured.to_str().unwrap(), "window"])
                     .unwrap();
                 image::open(&captured).unwrap().into_rgb8()
             };
@@ -198,6 +217,10 @@ fn adaptive_sdr_matches_independent_reference_in_preview_and_export() {
             p.seek(start).unwrap();
             if mode == native_mpv::Mode::SoftwareSdr {
                 compare(&software_frame(&p), &im, 1.0);
+            } else {
+                p.command(&["screenshot-to-file", captured.to_str().unwrap(), "window"])
+                    .unwrap();
+                compare(&image::open(&captured).unwrap().into_rgb8(), &im, 1.0);
             }
         }
         for (gpu, codec) in [

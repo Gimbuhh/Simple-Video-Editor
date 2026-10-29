@@ -19,7 +19,7 @@ Unreleased Rust candidate.
 ### Changed
 
 - Scrubbing keeps the preview visible and updating while you drag, then settles on the exact frame when you release.
-- Preview seeks faster on ordinary SDR recordings and uses hardware decoding when supported.
+- Preview uses hardware decoding for supported SDR and fitted HDR recordings, keeping scrubbing responsive during SDR conversion.
 - A graphite workspace puts video and trimming first, with clearer text, aligned button labels, larger thumbnails, blue trim handles and Export at the top right. Quick trims are available in clip menus. Secondary controls stay in menus or expandable sections; enabled buttons show a pointing hand and clip edges show a resize cursor.
 - Preview uses the Windows audio output and retries when it becomes unavailable.
 - The app has a new scissors icon with a blue play symbol.
