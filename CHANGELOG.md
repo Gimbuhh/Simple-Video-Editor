@@ -21,7 +21,7 @@ Unreleased Rust candidate.
 - Adding or duplicating sections automatically fits the whole timeline; clip bodies keep the normal mouse pointer.
 - Scrubbing keeps the preview visible and updating while you drag, then settles on the exact frame when you release.
 - Preview uses hardware decoding for supported SDR and fitted HDR recordings, keeping scrubbing responsive during SDR conversion.
-- A graphite workspace puts video and trimming first, with clearer text, aligned button labels, larger thumbnails, blue trim handles and Export at the top right. Quick trims are available in clip menus, and export settings are in the right sidebar. Secondary controls stay in menus or expandable sections; enabled buttons show a pointing hand and clip edges show a resize cursor.
+- A graphite workspace puts video and trimming first, with clearer text, aligned button labels, larger thumbnails, blue trim handles and Export at the top right. Quick trims are available in clip menus, export settings are in the right sidebar, and Software preview sits above the video. Secondary controls stay in menus or expandable sections; enabled buttons show a pointing hand and clip edges show a resize cursor.
 - Preview uses the Windows audio output and retries when it becomes unavailable.
 - The app has a new scissors icon with a blue play symbol.
 - The portable Rust app has a smaller download—about 25% in the compared candidate—and no bundled .NET runtime.

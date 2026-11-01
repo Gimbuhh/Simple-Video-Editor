@@ -1,5 +1,41 @@
 use super::*;
 impl EditorApp {
+    fn verify_video_overlays(&self, ctx: &egui::Context) -> media_engine::Result<()> {
+        let status = self
+            .playback
+            .as_ref()
+            .ok_or("Missing preview under menu")?
+            .status();
+        if status.software {
+            return Ok(());
+        }
+        let rect = self.controls["preview"];
+        let scale = ctx.pixels_per_point();
+        let overlays = floating_rects(ctx);
+        for overlay in &overlays {
+            let overlap = rect.intersect(*overlay).shrink(2.0);
+            if overlap.is_positive() {
+                let p = (overlap.center() - rect.min) * scale;
+                if self.video.visible_at(p.x as i32, p.y as i32)? {
+                    return Err("Native video covers an overlapping popup".into());
+                }
+            }
+        }
+        let point = [
+            rect.center(),
+            rect.left_top() + Vec2::splat(4.0),
+            rect.right_bottom() - Vec2::splat(4.0),
+        ]
+        .into_iter()
+        .find(|p| !overlays.iter().any(|r| r.contains(*p)))
+        .ok_or("Menu unexpectedly covers the whole preview")?;
+        let p = (point - rect.min) * scale;
+        if !self.video.visible_at(p.x as i32, p.y as i32)? {
+            return Err("Opening a menu hides native video outside its bounds".into());
+        }
+        Ok(())
+    }
+
     pub(super) fn verify(&mut self, ctx: &egui::Context) {
         let Some(mut test) = self.verification.take() else {
             return;
@@ -988,13 +1024,19 @@ impl EditorApp {
                         test.inspector_ready_at = Instant::now();
                         test.phase = 211;
                     }
-                    211 if test.inspector_ready_at.elapsed() >= Duration::from_millis(250) => {
+                    211 if test.inspector_ready_at.elapsed() >= Duration::from_millis(250)
+                        && self.playback.as_ref().is_some_and(|p| {
+                            let s = p.status();
+                            s.ready && s.generation == self.generation
+                        }) =>
+                    {
                         if ["software-preview", "clear-cache"]
                             .iter()
                             .any(|key| !self.controls.contains_key(key))
                         {
                             return Err("More options lost maintenance controls".into());
                         }
+                        self.verify_video_overlays(ctx)?;
                         ctx.send_viewport_cmd(
                             egui::ViewportCommand::Screenshot(Default::default()),
                         );
@@ -1008,12 +1050,30 @@ impl EditorApp {
                                     test.directory.join("desktop.bmp"),
                                     test.directory.join("more-options.bmp"),
                                 )?;
-                                test.pointer(
-                                    self.controls["software-preview"].center(),
-                                    Some(true),
-                                );
-                                test.checks.push("More options retains maintenance; export settings are in the sidebar".into());
-                                test.phase = 80;
+                                if self.playback.as_ref().unwrap().status().software {
+                                    let rect = self.controls["preview"];
+                                    let scale = ctx.pixels_per_point();
+                                    let colored = (1..8)
+                                        .flat_map(|x| (1..5).map(move |y| (x, y)))
+                                        .filter(|&(x, y)| {
+                                            let p = rect.min
+                                                + rect.size()
+                                                    * Vec2::new(x as f32 / 8.0, y as f32 / 5.0);
+                                            let pixel = image
+                                                [((p.x * scale) as usize, (p.y * scale) as usize)];
+                                            pixel.r().max(pixel.g()).max(pixel.b()) > 40
+                                        })
+                                        .count();
+                                    if colored < 5 {
+                                        return Err(
+                                            "Opening More options blacked out the software preview"
+                                                .into(),
+                                        );
+                                    }
+                                }
+                                test.key(egui::Key::Escape, false);
+                                test.checks.push("More options retains cache maintenance without blanking preview; software toggle stays in the preview header".into());
+                                test.phase = 213;
                             }
                         }
                     }
@@ -1035,24 +1095,19 @@ impl EditorApp {
                                     .into(),
                             );
                         }
-                        if self.controls.contains_key("software-preview")
+                        if !self.controls.contains_key("software-preview")
                             || self.controls.contains_key("clear-cache")
                         {
                             return Err(
-                                "Maintenance options remain visible after closing More options"
-                                    .into(),
+                                "Software toggle disappeared or cache menu stayed open".into()
                             );
                         }
-                        test.pointer(self.controls["more-options"].center(), Some(true));
-                        test.phase = 213;
-                    }
-                    213 => {
-                        test.pointer(self.controls["more-options"].center(), Some(false));
-                        test.phase = 214;
-                    }
-                    214 => {
                         test.pointer(self.controls["software-preview"].center(), Some(true));
                         test.phase = 82;
+                    }
+                    213 => {
+                        test.pointer(self.controls["software-preview"].center(), Some(true));
+                        test.phase = 80;
                     }
                     82 => {
                         test.pointer(self.controls["software-preview"].center(), Some(false));
@@ -1109,12 +1164,56 @@ impl EditorApp {
                                 modifiers.shift = true;
                             }
                         }
+                        test.inspector_ready_at = Instant::now();
                         test.phase = 99;
                     }
-                    99 => {
+                    99 if test.inspector_ready_at.elapsed() >= Duration::from_millis(250)
+                        && self.playback.as_ref().is_some_and(|p| {
+                            let s = p.status();
+                            s.ready && s.generation == self.generation
+                        }) =>
+                    {
                         if !egui::Popup::is_any_open(ctx) {
                             return Err("Shift+F10 did not open the focused section menu".into());
                         }
+                        let anchor = self.controls["preview"].center();
+                        if let Some((_, position)) = &mut self.keyboard_menu {
+                            *position = anchor;
+                        }
+                        test.inspector_ready_at = Instant::now();
+                        test.phase = 179;
+                    }
+                    179 if test.inspector_ready_at.elapsed() >= Duration::from_millis(250) => {
+                        let (menu, _) =
+                            self.keyboard_menu.ok_or("Missing overlapping clip menu")?;
+                        let preview = self.controls["preview"];
+                        if ctx
+                            .memory(|m| m.area_rect(menu))
+                            .is_none_or(|r| !r.intersect(preview).is_positive())
+                        {
+                            return Err(
+                                "Clip menu did not overlap video for the clipping regression"
+                                    .into(),
+                            );
+                        }
+                        if !self.playback.as_ref().unwrap().status().software {
+                            let overlap = ctx
+                                .memory(|m| m.area_rect(menu))
+                                .unwrap()
+                                .intersect(preview)
+                                .shrink(2.0);
+                            let point = (overlap.center() - preview.min) * ctx.pixels_per_point();
+                            if self.video.visible_at(point.x as i32, point.y as i32)? {
+                                return Err(
+                                    "Native video paints through the actual clip popup".into()
+                                );
+                            }
+                        }
+                        test.anchor = ctx
+                            .memory(|m| m.area_rect(menu))
+                            .map(|r| r.intersect(preview).center());
+                        self.verify_video_overlays(ctx)?;
+                        test.checks.push("An overlapping clip menu clips only its own native-video pixels while surrounding preview stays visible".into());
                         test.key(egui::Key::S, false);
                         test.phase = 101;
                     }
@@ -1140,6 +1239,13 @@ impl EditorApp {
                         status.ready && status.generation == self.generation
                     }) =>
                     {
+                        if !self.playback.as_ref().unwrap().status().software {
+                            let point = (test.anchor.unwrap() - self.controls["preview"].min)
+                                * ctx.pixels_per_point();
+                            if !self.video.visible_at(point.x as i32, point.y as i32)? {
+                                return Err("Closing a popup left a native video hole".into());
+                            }
+                        }
                         test.keyboard_position = self.playhead;
                         test.key(egui::Key::ArrowRight, false);
                         test.phase = 97;
@@ -1699,6 +1805,13 @@ impl EditorApp {
                             return Err(
                                 "Native child bounds did not match the scaled preview".into()
                             );
+                        }
+                        let software = self.controls["software-preview"];
+                        if software.left() < viewport.left() - 0.1
+                            || software.right() > viewport.right() + 0.1
+                            || software.bottom() > viewport.top() + 0.1
+                        {
+                            return Err("Software preview toggle escaped the preview header".into());
                         }
                         if rect.width() < 1.0
                             || rect.height() < 1.0

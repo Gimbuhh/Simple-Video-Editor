@@ -2,7 +2,15 @@
 
 The Rust production cutover and graphite interface are implemented on PR #8. Version 1.1.0 remains unreleased. The user confirms that the installed HDR-to-SDR correction looks much better. Final release acceptance remains with the user. No merge, release tag or publication is authorized.
 
-## Context-menu audio caption alignment
+## Preview menus and header controls
+
+Executable SHA-256: `455ff23b7582cac6efbece9bc4ccb3d66a735fcd74d1fbcdd82812a314771e09`. Opening a menu no longer suppresses the entire preview. Native video excludes only the current floating UI rectangles from its Windows region; software video keeps painting behind menus. Closing menus restores the full native region, including while paused. Software preview moves to the right of the preview header, beside the existing color indicator. The redundant Timeline/Recording preview label is removed. Renderer switching and project/media settings retain their existing behavior.
+
+Formatting, strict Clippy, workspace tests and the release inspector pass. A real Windows-region test checks multiple cutouts, normalization/caching, resizing and restoration. Final native/software SDR/audio/PQ/HLG desktop runs pass 322 checks and 96 layouts, including 80 layouts at 100–200% app scale. The regression deliberately places a menu over video, checks the actual child region inside and outside it, verifies restored pixels after closing, checks software preview pixels with More open, and switches the relocated toggle twice without editing the project. Verification runs after the final Windows clipping update rather than sampling the prior frame's region. Evidence: preview-menus/core-final.log, rust-desktop/5c8503be2de9477d83a4ca1994b27eeb and 7ccf15111f784a0eb2646ce5e2e4e48a.
+
+Native/software HDR/SDR monitor round trips pass (rust-displays/6d52ffe6f9634835a89b81180ff2b667). This checks display transfer and native bounds, not physical HDR luminance. Encoding, tone mapping and project schemas are unchanged; broader media acceptance retains its earlier executable hashes. The rebuilt portable package and nine packaging safeguards are checked before handoff.
+
+## Earlier context-menu audio caption alignment
 
 Executable SHA-256: `2351b1aabc79be413b378495f35e4fc50def9f47c03f62f1886ba532085b205a`. Link audio uses the same left-aligned menu item as neighboring commands in both video and audio context menus. Its inspector button retains optical centering. Linking behavior, project data and media processing are unchanged.
 

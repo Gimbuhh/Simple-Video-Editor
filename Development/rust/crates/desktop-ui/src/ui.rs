@@ -1409,7 +1409,7 @@ impl EditorApp {
                         if export.clicked() {
                             self.export();
                         }
-                        self.more_options(ui, ctx);
+                        self.more_options(ui);
                         if ui
                             .add_enabled(
                                 !self.busy
@@ -1457,20 +1457,8 @@ impl EditorApp {
             });
         }
     }
-    fn more_options(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+    fn more_options(&mut self, ui: &mut egui::Ui) {
         let menu = theme::menu_button(ui, "…", |ui| {
-            let software = ui.add_enabled(!self.busy, egui::Checkbox::new(&mut self.software_preview, "Software preview"))
-                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                .on_hover_text("Use CPU-rendered SDR video if native preview has problems.");
-            self.controls.insert("software-preview", software.rect);
-            if software.changed() && let Some(tools) = self.tools.clone() {
-                self.stepping = None;
-                if self.playback.take().is_some() {
-                    self.playback = Some(Playback::new(tools, self.video.handle(), self.software_preview, ctx.clone()));
-                }
-                self.request_key.clear(); ui.close();
-            }
-            ui.separator();
             let cache = ui.add_enabled(!self.busy && self.tools.is_some(), egui::Button::new("Clear generated cache"))
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .on_hover_text("Remove temporary thumbnails and waveforms to free disk space. Recordings and projects stay untouched.");
@@ -2511,12 +2499,31 @@ impl EditorApp {
                 }
 
                 ui.horizontal(|ui| {
-                    ui.weak(if self.library_preview {
-                        "Recording"
-                    } else {
-                        "Timeline"
-                    });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let software = ui
+                            .add_enabled(
+                                !self.busy,
+                                egui::Checkbox::new(&mut self.software_preview, "Software preview"),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .on_hover_text(
+                                "Use CPU-rendered SDR video if native preview has problems.",
+                            );
+                        self.controls.insert("software-preview", software.rect);
+                        if software.changed()
+                            && let Some(tools) = self.tools.clone()
+                        {
+                            self.stepping = None;
+                            if self.playback.take().is_some() {
+                                self.playback = Some(Playback::new(
+                                    tools,
+                                    self.video.handle(),
+                                    self.software_preview,
+                                    ctx.clone(),
+                                ));
+                            }
+                            self.request_key.clear();
+                        }
                         let status = self
                             .playback
                             .as_ref()
@@ -2601,8 +2608,7 @@ impl EditorApp {
                 let visible = has_source
                     && status.presentation_key.as_ref() == Some(&expected_key)
                     && status.error.is_none()
-                    && self.startup_recovery.is_none()
-                    && !ctx.is_popup_open();
+                    && self.startup_recovery.is_none();
                 let visible = visible && self.relink.is_none();
                 let scale = ctx.pixels_per_point();
                 self.video.layout(
@@ -3232,7 +3238,6 @@ impl eframe::App for EditorApp {
         self.preview(ctx);
         self.drag_thumbnail(ctx);
         self.playback(ctx);
-        self.verify(ctx);
         if let Some((path, missing, mut replacements)) = self.relink.take() {
             let mut keep = true;
             let mut load = false;
@@ -3337,6 +3342,32 @@ impl eframe::App for EditorApp {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             }
         }
+        if let Some(rect) = self.controls.get("preview").copied() {
+            let scale = ctx.pixels_per_point();
+            let holes = floating_rects(ctx)
+                .into_iter()
+                .map(|overlay| overlay.intersect(rect))
+                .filter(|overlay| overlay.is_positive())
+                .map(|overlay| {
+                    (
+                        ((overlay.left() * scale).floor() - (rect.left() * scale).round()) as i32,
+                        ((overlay.top() * scale).floor() - (rect.top() * scale).round()) as i32,
+                        ((overlay.right() * scale).ceil() - (rect.left() * scale).round()) as i32,
+                        ((overlay.bottom() * scale).ceil() - (rect.top() * scale).round()) as i32,
+                    )
+                })
+                .collect::<Vec<_>>();
+            match self.video.occlude(&holes) {
+                Ok(true) => ctx.request_repaint(),
+                Ok(false) => {}
+                Err(error) => {
+                    self.video.layout(0, 0, 1, 1, false);
+                    self.fail(error);
+                }
+            }
+        }
+        // Verification observes the final Windows region for this frame.
+        self.verify(ctx);
         let title = format!("Simple Video Editor {}", env!("CARGO_PKG_VERSION"));
         if title != self.window_title {
             self.window_title.clone_from(&title);
@@ -3394,6 +3425,26 @@ fn timeline_tick_step(zoom: f32) -> f32 {
     } else {
         (80.0 / zoom).max(300.0)
     }
+}
+
+// Area visibility includes last-frame entries. Only shapes painted this pass
+// may cut holes, otherwise a closed popup could leave a hole while idle.
+fn floating_rects(ctx: &egui::Context) -> Vec<Rect> {
+    let areas = ctx.memory(|m| {
+        m.areas()
+            .visible_layer_ids()
+            .into_iter()
+            .filter(|layer| matches!(layer.order, egui::Order::Foreground | egui::Order::Tooltip))
+            .filter_map(|layer| m.area_rect(layer.id).map(|rect| (layer, rect)))
+            .collect::<Vec<_>>()
+    });
+    ctx.graphics(|g| {
+        areas
+            .into_iter()
+            .filter(|(layer, _)| g.get(*layer).is_some_and(|paint| !paint.is_empty()))
+            .map(|(_, rect)| rect)
+            .collect()
+    })
 }
 
 fn clip_drag_mode(bounds: Rect, x: f32) -> u8 {

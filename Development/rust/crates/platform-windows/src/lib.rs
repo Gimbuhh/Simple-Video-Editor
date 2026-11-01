@@ -54,9 +54,11 @@ pub fn same_file(left: &Path, right: &Path) -> io::Result<bool> {
 }
 
 type VideoLayout = (i32, i32, i32, i32, bool);
+type VideoOcclusion = (i32, i32, Vec<(i32, i32, i32, i32)>);
 pub struct VideoWindow {
     handle: HWND,
     layout: std::cell::Cell<Option<VideoLayout>>,
+    occlusion: std::cell::RefCell<Option<VideoOcclusion>>,
     _thread: std::marker::PhantomData<std::rc::Rc<()>>,
 }
 impl VideoWindow {
@@ -86,6 +88,7 @@ impl VideoWindow {
         Ok(Self {
             handle,
             layout: std::cell::Cell::new(None),
+            occlusion: std::cell::RefCell::new(None),
             _thread: std::marker::PhantomData,
         })
     }
@@ -95,6 +98,84 @@ impl VideoWindow {
     pub fn is_visible(&self) -> bool {
         // SAFETY: this owned child remains live on the UI thread.
         unsafe { IsWindowVisible(self.handle) != 0 }
+    }
+    /// Let the parent paint its floating controls over this native video child.
+    /// Rectangles use physical child-local coordinates. Windows owns a region
+    /// only after SetWindowRgn succeeds; all other region handles stay ours.
+    pub fn occlude(&self, rectangles: &[(i32, i32, i32, i32)]) -> io::Result<bool> {
+        use windows_sys::Win32::Graphics::Gdi::*;
+        let (_, _, width, height, _) = self.layout.get().unwrap_or((0, 0, 1, 1, false));
+        let mut holes: Vec<_> = rectangles
+            .iter()
+            .map(|&(l, t, r, b)| {
+                (
+                    l.clamp(0, width),
+                    t.clamp(0, height),
+                    r.clamp(0, width),
+                    b.clamp(0, height),
+                )
+            })
+            .filter(|&(l, t, r, b)| l < r && t < b)
+            .collect();
+        holes.sort_unstable();
+        holes.dedup();
+        let key = (width, height, holes);
+        if self.occlusion.borrow().as_ref() == Some(&key) {
+            return Ok(false);
+        }
+        // SAFETY: live owned HWND, valid rectangle dimensions and thread-local
+        // GDI handles. Transferred handles are never subsequently deleted here.
+        unsafe {
+            let region = if key.2.is_empty() {
+                0
+            } else {
+                CreateRectRgn(0, 0, width, height)
+            };
+            if !key.2.is_empty() && region == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            for &(l, t, r, b) in &key.2 {
+                let hole = CreateRectRgn(l, t, r, b);
+                if hole == 0 {
+                    DeleteObject(region);
+                    return Err(io::Error::last_os_error());
+                }
+                let result = CombineRgn(region, region, hole, RGN_DIFF);
+                DeleteObject(hole);
+                if result == ERROR {
+                    DeleteObject(region);
+                    return Err(io::Error::other(
+                        "Cannot clip video around floating controls",
+                    ));
+                }
+            }
+            if SetWindowRgn(self.handle, region, 1) == 0 {
+                if region != 0 {
+                    DeleteObject(region);
+                }
+                return Err(io::Error::last_os_error());
+            }
+        }
+        *self.occlusion.borrow_mut() = Some(key);
+        Ok(true)
+    }
+    /// Inspect the actual child style/region, including when its parent is hidden.
+    pub fn visible_at(&self, x: i32, y: i32) -> io::Result<bool> {
+        use windows_sys::Win32::Graphics::Gdi::*;
+        // SAFETY: this child is live; the temporary region is deleted locally.
+        unsafe {
+            if GetWindowLongW(self.handle, GWL_STYLE) as u32 & WS_VISIBLE == 0 {
+                return Ok(false);
+            }
+            let region = CreateRectRgn(0, 0, 0, 0);
+            if region == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            let kind = GetWindowRgn(self.handle, region);
+            let contains = kind == ERROR || PtInRegion(region, x, y) != 0;
+            DeleteObject(region);
+            Ok(contains)
+        }
     }
     /// Read this owned child's physical bounds relative to its live parent.
     pub fn bounds(&self) -> io::Result<(i32, i32, i32, i32)> {
@@ -249,4 +330,65 @@ pub fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
         return Err(io::Error::last_os_error());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod video_region_tests {
+    use super::*;
+
+    #[test]
+    fn floating_controls_cut_only_their_own_pixels_and_restore_after_resize() {
+        struct Parent(HWND);
+        impl Drop for Parent {
+            fn drop(&mut self) {
+                // SAFETY: the hidden test-owned parent outlives its video child.
+                unsafe {
+                    DestroyWindow(self.0);
+                }
+            }
+        }
+        // SAFETY: registered STATIC class and terminated text; no window is activated.
+        let parent = Parent(unsafe {
+            CreateWindowExW(
+                0,
+                wide(std::ffi::OsStr::new("STATIC")).as_ptr(),
+                std::ptr::null(),
+                WS_OVERLAPPEDWINDOW,
+                0,
+                0,
+                800,
+                600,
+                0,
+                0,
+                GetModuleHandleW(std::ptr::null()),
+                std::ptr::null(),
+            )
+        });
+        assert_ne!(parent.0, 0);
+        let video = VideoWindow::new(parent.0).unwrap();
+        video.layout(10, 20, 400, 200, true);
+        let holes = [
+            (0, 0, 90, 60),
+            (100, 70, 180, 130),
+            (100, 70, 180, 130),
+            (-20, -20, -1, -1),
+        ];
+        assert!(video.occlude(&holes).unwrap());
+        assert!(!video.visible_at(40, 20).unwrap());
+        assert!(!video.visible_at(130, 100).unwrap());
+        assert!(video.visible_at(350, 150).unwrap());
+        assert!(
+            !video
+                .occlude(&holes.into_iter().rev().collect::<Vec<_>>())
+                .unwrap()
+        );
+        video.layout(10, 20, 800, 400, true);
+        assert!(video.occlude(&holes).unwrap());
+        assert!(video.visible_at(700, 300).unwrap());
+        assert!(video.occlude(&[]).unwrap());
+        assert!(video.visible_at(40, 20).unwrap());
+        assert!(video.visible_at(130, 100).unwrap());
+        video.layout(10, 20, 800, 400, false);
+        assert!(!video.visible_at(350, 150).unwrap());
+    }
 }
