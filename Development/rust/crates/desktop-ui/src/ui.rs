@@ -2067,7 +2067,7 @@ impl EditorApp {
                                         ui.close();
                                     }
                                 }
-                                if separated && self.link_audio_button(ui, Some(clip.id)) {
+                                if separated && self.link_audio_button(ui, Some(clip.id), true) {
                                     ui.close();
                                 }
                                 if ui
@@ -2303,7 +2303,7 @@ impl EditorApp {
                         }
                         if independent_audio || adjustment.audio_separated {
                             let video = if independent_audio {self.video_for_selected_audio()} else {Some(clip.id)};
-                            if self.link_audio_button(ui, video) {return;}
+                            if self.link_audio_button(ui, video, false) {return;}
                         }
                         if !independent_audio {
                         let framing = egui::CollapsingHeader::new("Framing")

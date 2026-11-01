@@ -2,7 +2,13 @@
 
 The Rust production cutover and graphite interface are implemented on PR #8. Version 1.1.0 remains unreleased. The user confirms that the installed HDR-to-SDR correction looks much better. Final release acceptance remains with the user. No merge, release tag or publication is authorized.
 
-## Release cleanup and audio-only preview acceptance
+## Context-menu audio caption alignment
+
+Executable SHA-256: `2351b1aabc79be413b378495f35e4fc50def9f47c03f62f1886ba532085b205a`. Link audio uses the same left-aligned menu item as neighboring commands in both video and audio context menus. Its inspector button retains optical centering. Linking behavior, project data and media processing are unchanged.
+
+Formatting, strict Clippy, workspace contracts and the release inspector pass. Native/software SDR and independent-audio desktop checks pass 164 checks and 80 layouts at 100–200% app scale (rust-desktop/0c06b06930234475b45dc2a793306cc9). Portable and packaging checks cover the rebuilt bundle. The preceding broader media/release evidence retains its own executable hash.
+
+## Earlier release cleanup and audio-only preview acceptance
 
 Executable SHA-256: `bac8ef1d27b453933560877be3c1b43a89f5059fcdbd8dbd21fc5b6dae70059a`. Audio continuing beyond video now previews black, matching export; releasing a scrub in that range retains its requested time. The final-video-frame exception applies only when video also reaches the complete project endpoint. Black-range and fresh audio-only project scrubs preserve playback intent without waiting for a nonexistent video decoder. Audio relinking uses a linear reverse lookup and one shared exact-range predicate. No measured latency claim, project-schema change or color-processing change is introduced.
 

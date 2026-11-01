@@ -5,14 +5,20 @@ impl EditorApp {
     pub(super) fn video_for_selected_audio(&self) -> Option<ClipId> {
         matching_video(&self.editor, self.selected_audio?)
     }
-    pub(super) fn link_audio_button(&mut self, ui: &mut egui::Ui, video: Option<ClipId>) -> bool {
+    pub(super) fn link_audio_button(
+        &mut self,
+        ui: &mut egui::Ui,
+        video: Option<ClipId>,
+        in_menu: bool,
+    ) -> bool {
         let enabled = video.is_some_and(|id| matching_audio(&self.editor, id).is_some());
-        let response = ui
-            .add_enabled(enabled, theme::button("Link audio"))
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .on_disabled_hover_text(
-                "Align audio with the video and match its trim before linking.",
-            );
+        let response = if in_menu {
+            ui.add_enabled(enabled, egui::Button::new("Link audio"))
+        } else {
+            ui.add_enabled(enabled, theme::button("Link audio"))
+        }
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_disabled_hover_text("Align audio with the video and match its trim before linking.");
         self.controls.insert("link-audio", response.rect);
         if response.clicked()
             && let Some(video) = video
@@ -399,7 +405,7 @@ impl EditorApp {
                 self.clip_edit_menu(ui);
                 ui.separator();
                 let video = self.video_for_selected_audio();
-                if self.link_audio_button(ui, video) {
+                if self.link_audio_button(ui, video, true) {
                     ui.close();
                 }
                 if ui
