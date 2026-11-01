@@ -40,3 +40,17 @@ The root launcher instructions now point to the actual App executable and stop p
 Retained: the frozen C# parity oracle, schema-1/2 compatibility, CPU color fallback, source validation, asynchronous generations and isolated native verification tools. Their callers and supported contracts remain active. No dependency removal or large UI restructuring is justified by this pass. Genuine mixed-DPI transitions, manual HDR toggles and a full screen-reader workflow remain physical acceptance items; broader UI polish is a separate refinement task.
 
 Verification: the new concurrency regression fails before the fix and passes after it. The full workspace formatting/lint/contracts and release inspector pass, along with focused cache/export/cancellation/source-protection integrations. Media/color and UI behavior are unchanged; prior HDR and interface evidence retains its own executable hashes.
+
+
+## Release preparation — 2026-11-01
+
+The audit follows startup/import, timeline edits and relinking, preview clocks/presentation, atomic save/recovery/export, native fallbacks and portable release ownership. Compatibility readers, source authorization, CPU color conversion, asynchronous generations and the frozen comparison oracle retain active consumers. No native or Rust dependency is removed without an equivalent supported path.
+
+| Finding | Resolution |
+| --- | --- |
+| The final-frame preview exception also applies after video ends when independent audio continues. Scrub release can jump back to the old video endpoint. | Restrict that exception to a video endpoint that is also the full project endpoint. Audio-only tails remain black and keep the requested seek position. |
+| Releasing a scrub in a fresh audio-only project waits for a video decoder that is never created. | Black-range scrubs settle directly and preserve playback intent; the independent audio actor owns its audio seek. |
+| Audio-to-video relinking scans the complete audio lane once per video section. | Look up the audio item once, then scan video candidates using one shared exact-range predicate. Verify the unique match in both directions. This removes repeated scans; no timing claim is made. |
+| README and the release checklist describe older candidates and repeat investigation history. | Keep the README focused on use and measured Rust benefits; collect current verification and remaining physical acceptance in the checklist and status ledger. |
+
+The tail regression fails against the prior implementation and passes after the fix. A desktop scenario checks settled audio-tail seeking, actual native-window visibility and black rendered pixels in native/software preview. The audio export integration checks black tail pixels as well as retained audio, gain, fades and source hashes. Detailed final checks and immutable executable hashes belong in the status ledger.

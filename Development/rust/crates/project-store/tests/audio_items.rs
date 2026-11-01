@@ -35,6 +35,35 @@ fn editor() -> ProjectEditor {
 }
 
 #[test]
+fn preview_and_scrub_show_black_for_audio_only_tails_without_jumping_back() {
+    let mut editor = editor();
+    let end = editor.timeline().duration();
+    assert!(preview_at(editor.timeline(), editor.metadata(), end).is_some());
+    separate_audio(&mut editor, ClipId(1)).unwrap();
+    editor.metadata_mut().audio_items[0].clip.timeline_start = end + 1.0;
+    SavedProject::capture(&editor).validate().unwrap();
+    let duration = editor.metadata().duration(editor.timeline());
+    assert!(duration > end + 1.0);
+    for time in [0.0, 6.0, end, end + 0.5, end + 1.125, duration] {
+        assert_eq!(
+            preview_at(editor.timeline(), editor.metadata(), time),
+            None,
+            "Preview holds a video frame in a gap or audio-only tail at {time}"
+        );
+        assert_eq!(
+            settle_preview_time(editor.timeline(), editor.metadata(), time, None),
+            time,
+            "Releasing the scrubber jumps out of the audio-only range"
+        );
+    }
+    assert!(preview_at(editor.timeline(), editor.metadata(), end - 0.1).is_some());
+    assert_eq!(
+        preview_at(&Timeline::default(), editor.metadata(), end + 1.125),
+        None
+    );
+}
+
+#[test]
 fn relink_retains_audio_changes_video_framing_and_atomic_history() {
     let mut editor = editor();
     let video = editor.timeline().clone();
@@ -61,6 +90,7 @@ fn relink_retains_audio_changes_video_framing_and_atomic_history() {
     item.settings.fade_out = 0.4;
     let before = SavedProject::capture(&editor);
     assert_eq!(matching_audio(&editor, ClipId(1)), Some(audio));
+    assert_eq!(matching_video(&editor, audio), Some(ClipId(1)));
     link_audio(&mut editor, ClipId(1)).unwrap();
     assert_eq!(editor.timeline(), &video);
     let settings = &editor.metadata().adjustments[&ClipId(1)];
@@ -86,6 +116,7 @@ fn relink_retains_audio_changes_video_framing_and_atomic_history() {
     assert!(editor.redo());
     assert_eq!(SavedProject::capture(&editor), linked);
     assert!(link_audio(&mut editor, ClipId(1)).is_err());
+    assert_eq!(matching_video(&editor, audio), None);
     assert_eq!(SavedProject::capture(&editor), linked);
 }
 
@@ -93,7 +124,7 @@ fn relink_retains_audio_changes_video_framing_and_atomic_history() {
 fn relink_rejects_missing_moved_trimmed_or_different_source_audio_without_changes() {
     for variant in 0..5 {
         let mut editor = editor();
-        separate_audio(&mut editor, ClipId(1)).unwrap();
+        let audio = separate_audio(&mut editor, ClipId(1)).unwrap();
         match variant {
             0 => editor.metadata_mut().audio_items.clear(),
             1 => editor.metadata_mut().audio_items[0].clip.timeline_start += 0.5,
@@ -103,6 +134,7 @@ fn relink_rejects_missing_moved_trimmed_or_different_source_audio_without_change
         }
         let before = SavedProject::capture(&editor);
         assert_eq!(matching_audio(&editor, ClipId(1)), None);
+        assert_eq!(matching_video(&editor, audio), None);
         assert!(link_audio(&mut editor, ClipId(1)).is_err());
         assert_eq!(SavedProject::capture(&editor), before);
     }

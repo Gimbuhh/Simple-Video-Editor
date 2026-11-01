@@ -3,15 +3,7 @@ use crate::audio_playback::{AudioPlayback, AudioRequest};
 
 impl EditorApp {
     pub(super) fn video_for_selected_audio(&self) -> Option<ClipId> {
-        let audio = self.selected_audio?;
-        let mut matches = self
-            .editor
-            .timeline()
-            .clips()
-            .iter()
-            .filter(|c| matching_audio(&self.editor, c.id) == Some(audio));
-        let id = matches.next()?.id;
-        matches.next().is_none().then_some(id)
+        matching_video(&self.editor, self.selected_audio?)
     }
     pub(super) fn link_audio_button(&mut self, ui: &mut egui::Ui, video: Option<ClipId>) -> bool {
         let enabled = video.is_some_and(|id| matching_audio(&self.editor, id).is_some());

@@ -4,11 +4,9 @@ A portable Windows editor for trimming and combining local recordings. Edits lea
 
 ![Rust editor with linked video and audio lanes](docs/images/editor.png)
 
-Version 1.1.0 is the Rust release candidate on this branch. The latest published 1.0.x release remains available for rollback. Current-display HDR preview is user-confirmed and local game/Shadowplay controls pass. The user confirmed the separate Windows/NVIDIA game-switch capture corruption is external to this project. The PR stays open for remaining testing and approval.
+Version 1.1.0 is the Rust release candidate. It includes responsive native preview, HDR-to-SDR conversion, timeline thumbnails and independent audio editing. The portable app needs no .NET runtime; its compared download is about 25% smaller than 1.0.4. See the [comparison](docs/rust-csharp-comparison.md) for measurements and memory tradeoffs.
 
-Current startup checks pass. The current candidate includes automatic audio-output recovery, accessible playback/trim labels and preview-cache cleanup when changing projects. Connected HDR/SDR monitor round trips pass. The [release checklist](docs/release-readiness.md) separates automated checks from the remaining physical DPI/HDR-toggle and screen-reader acceptance.
-
-The Rust candidate opens project/media filenames and places library/File Explorer drops at the timeline pointer. Idle previews sleep between updates and use display-sized processing while exports retain their chosen resolution. The [C#/Rust comparison](docs/rust-csharp-comparison.md) records the verified benefits, resource measurements and remaining tradeoffs. Keep the C# release and original projects for rollback while testing continues.
+The [release checklist](docs/release-readiness.md) records verified software checks and remaining physical acceptance. Version 1.1 is unpublished; keep the published 1.0.x app and original projects for rollback while testing.
 
 ## Run
 
@@ -19,8 +17,8 @@ Extract the complete portable ZIP and open **Simple Video Editor.exe**. Keep **b
 ## Editing
 
 1. Import recordings, select one for preview, and use **Add to timeline**, **Add all**, or drag a recording onto the timeline.
-2. Drag linked sections to move them. Drag edges to trim, split at the playhead, or remove sections. Right-click a section and choose **Separate audio** to edit its audio independently. Gaps and repeated sections are preserved.
-3. Choose output size, rational frame rate, SDR/HDR10 profile and codec. Per-section audio stream, gain, mute, fades, fit/fill/crop and rotation are saved with the project.
+2. Drag linked sections to move them. Drag edges to trim, split at the playhead, or remove sections. Right-click a section and choose **Separate audio** to edit its audio independently; **Link audio** rejoins items with matching trim and position. Gaps and repeated sections are preserved.
+3. Expand **Export settings** in the right sidebar to choose size, frame rate, SDR/HDR10 color and codec. Per-section audio stream, gain, mute, fades, fit/fill/crop and rotation are saved with the project.
 4. Export an MP4 using NVIDIA encoding when supported, with CPU fallback.
 
 PQ and HLG inputs are supported. HDR-to-SDR conversion uses scene-aware tone and color mapping on compatible Vulkan graphics, with standard CPU conversion otherwise. Preview, thumbnails and exports share that choice. Native HDR presentation is requested only when Windows reports active HDR on the preview display; software preview uses SDR. Physical HDR presentation is not certified by metadata or screenshots.

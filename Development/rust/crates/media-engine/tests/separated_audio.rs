@@ -138,6 +138,33 @@ fn separated_audio_exports_offsets_per_item_gain_mute_fades_and_audio_tail() {
     tools.export(&saved, &output, &cancel, |_| {}).unwrap();
     let probe = tools.probe(&output, SourceId(2), &cancel).unwrap();
     assert!((probe.duration - 3.0).abs() < 0.05);
+    let tail = run(
+        &tools.ffmpeg,
+        &[
+            "-v",
+            "error",
+            "-ss",
+            "2.5",
+            "-i",
+            output.to_str().unwrap(),
+            "-frames:v",
+            "1",
+            "-vf",
+            "format=rgb24",
+            "-f",
+            "rawvideo",
+            "-",
+        ]
+        .map(str::to_owned),
+        &cancel,
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(tail.len(), 320 * 180 * 3);
+    assert!(
+        tail.iter().all(|&v| v <= 3),
+        "Audio-only export tail is not black"
+    );
     assert!(
         rms(&tools, &output, 0.1) < 0.0001,
         "Detached video still had embedded sound"

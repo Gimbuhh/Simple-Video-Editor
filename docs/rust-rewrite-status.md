@@ -2,7 +2,19 @@
 
 The Rust production cutover and graphite interface are implemented on PR #8. Version 1.1.0 remains unreleased. The user confirms that the installed HDR-to-SDR correction looks much better. Final release acceptance remains with the user. No merge, release tag or publication is authorized.
 
-## Sidebar export settings and audio relinking
+## Release cleanup and audio-only preview acceptance
+
+Executable SHA-256: `bac8ef1d27b453933560877be3c1b43a89f5059fcdbd8dbd21fc5b6dae70059a`. Audio continuing beyond video now previews black, matching export; releasing a scrub in that range retains its requested time. The final-video-frame exception applies only when video also reaches the complete project endpoint. Black-range and fresh audio-only project scrubs preserve playback intent without waiting for a nonexistent video decoder. Audio relinking uses a linear reverse lookup and one shared exact-range predicate. No measured latency claim, project-schema change or color-processing change is introduced.
+
+The audio-tail regression fails before the correction and passes after it (release-audit/tail-before.log and tail-after.log). Formatting, strict Clippy, workspace tests and release inspector pass (release-audit/core.log). The complete native media suite passes with NVIDIA enabled, including independent HDR references, tiny-highlight/absolute-luminance/full/limited AV1 checks, geometry, direct preview, audio mixing/gain/fades/tails, VFR stepping, cancellation and source protection (release-audit/media.log). Black exported tail pixels are checked explicitly.
+
+Final native/software SDR/PQ/HLG desktop runs plus endpoint-recovery and native-fallback cases pass 483 checks and 112 rendered layouts, including 80 layouts at 100–200% app scale. The new scenarios verify actual hidden native video, black preview pixels, retained tail seeks and fresh audio-only scrub resumption. Evidence: rust-desktop/f138b7f259a2440381d4679cab30c98b, 1cb506d99558422bad93a45d1e3b37e3, 21778f9fd4cb430ba8cc2436965a9005 and 5d04e8aaa5654f188197273c7347bec9. The earlier intermediate candidate's reports retain their different executable hash.
+
+Twenty isolated startup cycles and ordinary Unicode/space-project, multiple-recording and relative-filename launches pass on the final executable. Evidence: startup-stress/b4cf75c9027d44b0956fe2b90e267132 and rust-launch/d99a9559503e451e9f0501f3d38f205e. The final portable package is checked for embedded version, checksum, native pins/licenses, relocation, persistence, export and playback; all nine packaging safeguards pass.
+
+The README, user guide, changelog and release checklist describe the current candidate. Source authorization, compatibility readers, native/CPU fallbacks and the frozen C# comparison oracle remain because their contracts and consumers remain active. Windows CI passes on preceding commit `1c64fca`; the final cleanup commit requires its own passing check before merge. Manual HDR-toggle, genuine mixed-DPI and full screen-reader acceptance remain outstanding. No merge, tag or publication is authorized.
+
+## Earlier sidebar export settings and audio relinking
 
 Executable SHA-256: `748865346b39932e72a39a52db72dc9121b173ca95284afe97663ba4f4d4302e`. Export settings are available in a collapsible section of the right sidebar, including an empty project. More options retains software preview and cache maintenance. Link audio is available from the inspector and both timeline item menus for uniquely matching same-source/range/position items. Linking removes the independent item, retains its audio settings and the video's framing, and commits both lanes and selection as one undoable edit. Differently positioned or trimmed audio stays independent until it matches; the operation does not discard those edits.
 

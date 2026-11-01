@@ -669,11 +669,20 @@ impl EditorApp {
                 },
             );
             self.seek(time);
-            self.settling = Some(Settling {
-                generation: None,
-                resume: resume.unwrap_or(scrub.resume),
-                started: Instant::now(),
-            });
+            let resume = resume.unwrap_or(scrub.resume);
+            if !self.library_preview
+                && preview_at(self.timeline(), self.editor.metadata(), time).is_none()
+            {
+                // Black gaps and audio-only projects have no video frame to await.
+                self.settling = None;
+                self.playing = resume && time < self.preview_duration();
+            } else {
+                self.settling = Some(Settling {
+                    generation: None,
+                    resume,
+                    started: Instant::now(),
+                });
+            }
             self.request_key.clear();
         }
     }

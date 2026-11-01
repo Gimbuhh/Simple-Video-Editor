@@ -400,15 +400,100 @@ impl EditorApp {
                     return Err("Link audio redo did not restore video selection".into());
                 }
                 test.checks.push("Sidebar Link audio rejoins synchronized items, retains volume, removes duplicate sound and undoes/redoes both audio and selection".into());
-                self.editor = test.audio_original.take().unwrap().editor()?;
-                self.selected_audio = None;
-                self.audio_preview = None;
-                self.audio_drag = None;
-                drop(self.audio_playback.take());
-                self.sync_selection();
-                self.update_dirty();
-                self.request_key.clear();
-                test.phase = 60;
+                self.separate_selected_audio();
+                let end = self.editor.timeline().duration();
+                let id = self.selected_audio.unwrap();
+                let rate = self
+                    .editor
+                    .metadata()
+                    .sources
+                    .iter()
+                    .find(|s| s.id == original.clips[0].source)
+                    .unwrap()
+                    .rate;
+                self.apply_audio(Command::Move {
+                    clip: id,
+                    position: end + 0.5,
+                    rate,
+                    snap: 0.0,
+                });
+                test.keyboard_position = end + 0.75;
+                self.begin_scrub(2);
+                self.seek(test.keyboard_position);
+                self.end_scrub(Some(false));
+                test.phase = 255;
+            }
+            255 => {
+                if self.settling.is_some() {
+                    return Ok(true);
+                }
+                if (self.playhead - test.keyboard_position).abs() > 0.000001
+                    || preview_at(self.timeline(), self.editor.metadata(), self.playhead).is_some()
+                    || self.video.is_visible()
+                {
+                    return Err(
+                        "Audio-tail scrub jumped to video or retained its native image".into(),
+                    );
+                }
+                let audio = self.audio_playback.as_ref().unwrap().status();
+                let item = &self.editor.metadata().audio_items[0];
+                let position = item.clip.source_in + self.playhead - item.clip.timeline_start;
+                if !audio.ready
+                    || !audio.paused
+                    || audio.item != self.selected_audio
+                    || (audio.position - position).abs() > 0.05
+                {
+                    return Ok(true);
+                }
+                for event in ctx.input(|i| i.events.clone()) {
+                    if let egui::Event::Screenshot { image, .. } = event {
+                        let rect = self.controls["preview"].shrink(4.0);
+                        let scale = ctx.pixels_per_point();
+                        let min = rect.min * scale;
+                        let max = rect.max * scale;
+                        for y in min.y.ceil() as usize..max.y.floor() as usize {
+                            for x in min.x.ceil() as usize..max.x.floor() as usize {
+                                if image[(x, y)] != Color32::BLACK {
+                                    return Err(
+                                        "Audio-only tail did not render a black preview".into()
+                                    );
+                                }
+                            }
+                        }
+                        test.screenshot(&image)?;
+                        std::fs::copy(
+                            test.directory.join("desktop.bmp"),
+                            test.directory.join("audio-tail.bmp"),
+                        )?;
+                        test.checks.push("Audio-only tail renders black, hides native video and settles scrubbing without jumping back".into());
+                        // Opening an audio-only project has no video actor. A
+                        // scrub release must not wait for a nonexistent decoder.
+                        edit_project(&mut self.editor, Command::Replace { clips: Vec::new() })?;
+                        self.clear_preview();
+                        self.begin_scrub(2);
+                        self.seek(test.keyboard_position);
+                        self.end_scrub(Some(true));
+                        if self.settling.is_some()
+                            || !self.playing
+                            || (self.playhead - test.keyboard_position).abs() > 0.000001
+                        {
+                            return Err("Audio-only project waits for a missing video decoder after scrubbing".into());
+                        }
+                        test.checks.push("Fresh audio-only project resumes scrubbing without creating or awaiting a video decoder".into());
+                        self.playing = false;
+                        self.editor = test.audio_original.take().unwrap().editor()?;
+                        self.selected_audio = None;
+                        self.audio_preview = None;
+                        self.audio_drag = None;
+                        drop(self.audio_playback.take());
+                        self.sync_selection();
+                        self.update_dirty();
+                        self.request_key.clear();
+                        test.phase = 60;
+                        return Ok(true);
+                    }
+                }
+                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
             }
             _ => return Ok(false),
         }

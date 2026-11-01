@@ -92,6 +92,10 @@ impl VideoWindow {
     pub fn handle(&self) -> isize {
         self.handle
     }
+    pub fn is_visible(&self) -> bool {
+        // SAFETY: this owned child remains live on the UI thread.
+        unsafe { IsWindowVisible(self.handle) != 0 }
+    }
     /// Read this owned child's physical bounds relative to its live parent.
     pub fn bounds(&self) -> io::Result<(i32, i32, i32, i32)> {
         // SAFETY: the child and its parent are live on this UI thread. Windows

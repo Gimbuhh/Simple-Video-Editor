@@ -297,14 +297,39 @@ pub fn matching_audio(editor: &ProjectEditor, video: ClipId) -> Option<ClipId> {
         return None;
     }
     let video = editor.timeline().clips().iter().find(|c| c.id == video)?;
-    let mut matches = editor.metadata().audio_items.iter().filter(|a| {
-        a.clip.source == video.source
-            && a.clip.source_in == video.source_in
-            && a.clip.source_out == video.source_out
-            && a.clip.timeline_start == video.timeline_start
-    });
+    let mut matches = editor
+        .metadata()
+        .audio_items
+        .iter()
+        .filter(|a| synchronized_ranges(&a.clip, video));
     let id = matches.next()?.clip.id;
     matches.next().is_none().then_some(id)
+}
+
+/// Reverse lookup in linear time, without scanning the audio lane per video section.
+pub fn matching_video(editor: &ProjectEditor, audio: ClipId) -> Option<ClipId> {
+    let item = editor
+        .metadata()
+        .audio_items
+        .iter()
+        .find(|a| a.clip.id == audio)?;
+    let mut matches = editor.timeline().clips().iter().filter(|video| {
+        synchronized_ranges(video, &item.clip)
+            && editor
+                .metadata()
+                .adjustments
+                .get(&video.id)
+                .is_some_and(|a| a.audio_separated)
+    });
+    let video = matches.next()?.id;
+    (matches.next().is_none() && matching_audio(editor, video) == Some(audio)).then_some(video)
+}
+
+fn synchronized_ranges(a: &Clip, b: &Clip) -> bool {
+    a.source == b.source
+        && a.source_in == b.source_in
+        && a.source_out == b.source_out
+        && a.timeline_start == b.timeline_start
 }
 
 pub fn link_audio(editor: &mut ProjectEditor, video: ClipId) -> Result<(), ProjectError> {
@@ -365,7 +390,11 @@ pub fn preview_at(
     if let Some(at) = timeline.source_at(time) {
         return Some(at);
     }
-    if time.is_finite() && time >= timeline.duration() && timeline.duration() > 0.0 {
+    if time.is_finite()
+        && time >= timeline.duration()
+        && timeline.duration() > 0.0
+        && metadata.duration(timeline) == timeline.duration()
+    {
         let clip = timeline.clips().last()?;
         let rate = metadata.sources.iter().find(|s| s.id == clip.source)?.rate;
         return Some((

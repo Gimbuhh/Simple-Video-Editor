@@ -1,28 +1,31 @@
-# 1.1.0 release checklist — 2026-10-29
+# 1.1.0 release checklist — 2026-11-01
 
-The Rust rewrite and graphite interface are implemented. Version 1.1.0 remains unreleased. The user confirms that the installed HDR-to-SDR correction looks much better. Pixel comparisons and the tiny-highlight regression cover preview, thumbnails and exports. Windows CI passes on the HDR correction commit `a71af30`; later changes require their own checks. The standard CPU fallback remains separately verified. PR #8 stays open until the user finishes testing the installed candidate and explicitly approves merging.
+Version 1.1.0 is an unpublished Rust release candidate on PR #8. Release preparation includes the sidebar export controls, reversible audio relinking, automatic timeline fit and the corrected audio-only preview tail. The changelog and release notes describe the complete change from published 1.0.4; intermediate candidates are not separate releases.
 
-## Software acceptance
+## Software verification
 
-- Core contracts, strict formatting/Clippy, legacy project compatibility and source protection.
-- Native/software preview, exact/VFR trims, timeline drops, undo/redo, thumbnails and keyboard focus.
-- Independent audio separation, per-item volume, trims/splits/moves, atomic undo/save/reopen and offset/mixed/tail exports.
-- Audible two-track playback, unavailable-endpoint recovery and native-to-software fallback.
-- Named playback controls and labelled trim fields in the accessibility tree.
-- Project reset releases old players and preview caches; startup stress closes isolated helpers normally.
-- SDR/PQ/HLG and geometry exports, NVIDIA encoding, cancellation and immutable source hashes.
-- Layouts at 100–200% app scale; physical HDR/SDR monitor round trips with native bounds and transfer checks.
-- Portable ZIP version, checksum, native pins/licenses, Unicode relocation and ordinary filename startup.
-- Current Windows CI passes on the feature-branch commit before any merge.
+Local software checks pass on the recorded candidate, including 483 desktop checks, 112 rendered layouts and 20 isolated startup cycles. The final revision still requires passing Windows CI before merge. Results and the exact executable hash are recorded in the [status ledger](rust-rewrite-status.md); generated recordings and full reports remain in ignored artifacts.
 
-Detailed final results and exact executable hashes are recorded in the [rewrite status](rust-rewrite-status.md). The [resource comparison](rust-csharp-comparison.md) preserves measurement scope and tradeoffs. Generated fixtures and full reports stay in ignored local artifacts.
+| Gate | Scope |
+| --- | --- |
+| Core and persistence | Formatting, strict Clippy, workspace tests, compatibility readers, exact trims/gaps, atomic save/recovery, undo/redo and release inspector. |
+| Native media and NVIDIA exports | SDR/PQ/HLG, scene-aware and CPU color conversion, geometry, exact/VFR stepping, mixed audio, gain/fades, black audio tails, cancellation and unchanged sources. |
+| Desktop interaction | Native/software preview, audible selected-track playback, timeline drops, cursor/trim behavior, relinking and audio-tail scrubbing. Rendered layouts cover 100–200% app scale. |
+| Failure recovery | Missing audio endpoint, native-to-software fallback and release of old players/caches on project reset. |
+| Startup and portable package | Repeated isolated startup, ordinary filename opening, Unicode relocation, version/checksum/native pins/licenses, no .NET runtime and nine packaging safeguards. |
+| Windows CI | The final feature-branch revision must pass before merge. Local passing checks do not substitute for that revision's CI result. |
 
-## Final physical acceptance
+The [C#/Rust comparison](rust-csharp-comparison.md) records measured benefits and memory tradeoffs. The rewrite uses a smaller portable package and hardware preview where supported; it does not promise lower memory use in every workflow.
 
-The user has confirmed HDR appearance on the current display and that the separate Windows/NVIDIA game-switch recording problem is external. Connected-monitor transitions pass without changing Windows settings. Both connected monitors currently use 96 DPI.
+## Physical acceptance
 
-Manual Windows HDR toggles, actual mixed-DPI monitor transitions and a full screen-reader workflow remain unverified. Simulated app scaling and accessibility-tree inspection cover narrower contracts. These checks require the corresponding setup and user observation before final release approval; they are not reported as fixed defects or certified combinations.
+The user confirms HDR appearance on the current display and improved HDR-to-SDR conversion. The separate Windows/NVIDIA game-switch recording issue is confirmed external to this project. Earlier automated native/software HDR/SDR monitor round trips passed without changing Windows settings; that setup used two 96-DPI monitors. These results do not cover mixed-DPI transitions.
 
-## Release and rollback
+Manual Windows HDR toggles, genuine mixed-DPI transitions and a complete screen-reader workflow remain unverified. App scaling, framebuffer comparisons and accessibility-tree checks establish narrower contracts. These are outstanding acceptance checks, not confirmed defects or certified configurations.
 
-Review and test the packaged App, then approve the PR merge after CI passes. Tag only the merged main commit; the release workflow creates a draft. Publishing still requires explicit authorization. Preserve published 1.0.x assets and original schema-1 projects: projects saved by 1.1 cannot be opened in 1.0.x. Sections continue to use hard cuts; transitions remain later work.
+## Merge, release and rollback
+
+- Finish testing the packaged App and explicitly approve the PR merge after its checks pass. PR #8 remains open until then.
+- Create a version tag only from the merged main commit. The workflow prepares a draft; publishing requires separate authorization.
+- Preserve published 1.0.x releases, the pinned native-dependency mirror and original projects. Projects saved by 1.1 cannot be opened by 1.0.x.
+- Sections join with hard cuts. Transitions, music-file import and additional audio mixing lanes remain later work.
