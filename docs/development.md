@@ -94,6 +94,8 @@ The approved icon source is `Development/assets/app-icon.png`. Run `Development/
 
 Physical HDR luminance/color accuracy, monitor movement/HDR toggles, 100–200% DPI, screen-reader navigation and concurrent game/Shadowplay capture require the corresponding hardware/session. Automated metadata and framebuffer checks do not prove these gates. Record unavailable combinations honestly in the [rewrite ledger](rust-rewrite-status.md).
 
+For NVIDIA classifying the editor itself as a game, see the [optional per-editor driver profile](nvidia-capture.md). Its helper defaults to read-only Inspect; Exclude/Restore are explicit administrator maintenance actions and are never called by app startup or packaging.
+
 Use feature branches and open PRs. Enable the tracked guard with `git config --local core.hooksPath .githooks`; never push directly to main. Keep PRs open until the user finishes testing and approves merge. Tags come from merged main, after checks, and workflows prepare draft releases only. See [release instructions](releasing.md).
 
 The [2026-10-28 editor audit](editor-audit.md) records preview audio, action-label alignment, color-history refresh and focused cleanup findings.

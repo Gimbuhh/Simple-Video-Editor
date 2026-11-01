@@ -155,6 +155,14 @@ An earlier Glow startup access violation remains unattributed. Production uses D
 
 ## Evidence and history
 
+### NVIDIA editor classification — 2026-11-01
+
+The user reported the NVIDIA overlay banner on editor launch. On the unchanged packaged executable `455ff23b7582cac6efbec9ebc4ccb3d66a735fcd74d1fbcdd82812a314771e09`, an isolated native-preview launch loaded `nvspcap64.dll` and NVIDIA's current-game API returned the editor's own PID. This establishes classification beyond the banner alone. No game, manual recording or Instant Replay was active during the reproduction.
+
+Read-only driver inspection found the same non-game flag in NVIDIA's predefined OBS, VLC, Blender, Chrome and Edge profiles. The opt-in maintenance helper creates a dedicated exact-path editor profile with that flag. Windows required administrator consent to save it. Post-exclusion native SDR, native PQ HDR and software launches initialized preview without the capture hook or a detected game. Before/after capture settings match, repeat application is a no-op, and removing/reapplying the owned profile verifies successfully. The local exclusion remains enabled for App. The app binary, renderer, media paths and portable ZIP are unchanged; there was no Rust rebuild for this maintenance change.
+
+Evidence remains private in `Development/artifacts/capture-target-investigation`: `before/result.json`, `after-native/result.json`, `after-native-hdr/result.json`, `after-software/result.json`, `profile-roundtrip.json` and `idempotent.json`. These are isolated classification/preview checks, not a new live game/replay certification. See [scope and rollback](nvidia-capture.md); the undocumented driver flag is not silently applied to other installations. The previously closed game-switch color-corruption investigation stays separate.
+
 Current ignored artifacts: release-1.1/verification.json; rust-desktop/8c631cba89544efb9cfc785fb644d000, 1ab5904c15cb44d1a6a1556c82fbb0f8, 1ca59d874db84310955cd26ddf949d24 and 1b83dccc8b6f4651977b0219593b9e4d; rust-displays/987f0a6c2a2f4bd1b1f193e90cfd52fd; startup-stress/a87096facb1a45dd94496473720e4719; version-comparison/b7c46c74995e41e5909d73231255fe97; rust-package-verification/f9324bb3860c4d0a9dd7d7c47552edaa.
 
 The [previous ledger](https://github.com/Gimbuhh/Simple-Video-Editor/blob/3817dd3002c495f64f92f18c7d0b6ef94d64ce4c/docs/rust-rewrite-status.md) preserves the detailed rewrite, HDR/capture, seek and startup investigation history. Earlier measurements keep their original scope and artifact hashes; they are not silently reassigned to this executable. Native pins/licenses remain unchanged. Published assets and original recordings are preserved.

@@ -23,6 +23,8 @@ The user confirms HDR appearance on the current display and improved HDR-to-SDR 
 
 Manual Windows HDR toggles, genuine mixed-DPI transitions and a complete screen-reader workflow remain unverified. App scaling, framebuffer comparisons and accessibility-tree checks establish narrower contracts. These are outstanding acceptance checks, not confirmed defects or certified configurations.
 
+NVIDIA can separately recognize the editor as a game. A [per-editor driver exclusion](nvidia-capture.md) resolves that classification on the tested machine without changing game/capture settings. It is optional machine configuration using an undocumented vendor flag, not a portable app-wide guarantee. Isolated SDR/HDR/software launches and profile rollback pass; game/editor transitions with active replay still require a matched live test.
+
 ## Merge, release and rollback
 
 - Finish testing the packaged App and explicitly approve the PR merge after its checks pass. PR #8 remains open until then.

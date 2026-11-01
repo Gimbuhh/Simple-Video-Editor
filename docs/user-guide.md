@@ -75,3 +75,5 @@ Opening schema-1 projects preserves library order, repeated recordings, gaps and
 Projects save stable identities, audio/framing/color choices and output settings. Atomic replacement protects the previous saved file if writing fails. Unsaved recovery sessions live under %LOCALAPPDATA%/SimpleVideoEditor/recovery, each with an independent exclusive lease. Recovery skips live windows and other active prompts. Closing/discarding affects only the current session; the legacy recovery file is recognized.
 
 Clear generated cache under … is optional disk-space maintenance; normal editing does not require it. It clears recognized generated thumbnails and waveform files. It preserves unrelated files, recovery and current source identities, and refuses linked cache folders. Native dependencies and decoded caches stay local; no recording is uploaded by the editor.
+
+If NVIDIA shows its game-overlay banner over the editor or selects it for game capture, an optional [editor-only NVIDIA exclusion](nvidia-capture.md) is available. It leaves game recording settings unchanged and is configured separately from the portable app.
