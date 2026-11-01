@@ -98,6 +98,28 @@ fn separated_audio_exports_offsets_per_item_gain_mute_fades_and_audio_tail() {
     )
     .unwrap();
     let audio = separate_audio(&mut editor, ClipId(1)).unwrap();
+    let settings = &mut editor.metadata_mut().audio_items[0].settings;
+    settings.gain_db = -9.0;
+    settings.fade_in = 0.4;
+    settings.fade_out = 0.4;
+    let separated = root.join("relink-before.mp4");
+    tools
+        .export(&SavedProject::capture(&editor), &separated, &cancel, |_| {})
+        .unwrap();
+    link_audio(&mut editor, ClipId(1)).unwrap();
+    let linked = root.join("relink-after.mp4");
+    tools
+        .export(&SavedProject::capture(&editor), &linked, &cancel, |_| {})
+        .unwrap();
+    for start in [0.02, 0.8, 1.8] {
+        let before = rms(&tools, &separated, start);
+        let after = rms(&tools, &linked, start);
+        assert!(
+            before > 0.001 && (after / before - 1.0).abs() < 0.05,
+            "Relinking changed gain/fades or doubled audio at {start}: {before} -> {after}"
+        );
+    }
+    assert!(editor.undo());
     edit_audio(
         &mut editor,
         Command::Split {

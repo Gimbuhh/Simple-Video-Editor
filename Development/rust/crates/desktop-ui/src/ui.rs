@@ -1450,10 +1450,6 @@ impl EditorApp {
     }
     fn more_options(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let menu = theme::menu_button(ui, "…", |ui| {
-            let settings = ui.button("Export settings…").on_hover_cursor(egui::CursorIcon::PointingHand);
-            self.controls.insert("export-settings", settings.rect);
-            if settings.clicked() { self.settings = !self.settings; ui.close(); }
-            ui.separator();
             let software = ui.add_enabled(!self.busy, egui::Checkbox::new(&mut self.software_preview, "Software preview"))
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .on_hover_text("Use CPU-rendered SDR video if native preview has problems.");
@@ -2062,6 +2058,9 @@ impl EditorApp {
                                         ui.close();
                                     }
                                 }
+                                if separated && self.link_audio_button(ui, Some(clip.id)) {
+                                    ui.close();
+                                }
                                 if ui
                                     .button("Duplicate")
                                     .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -2180,14 +2179,9 @@ impl EditorApp {
             "framing-mode",
             "recording-interpretation",
             "inspector-separate-audio",
+            "link-audio",
         ] {
             self.controls.remove(control);
-        }
-        if !self.settings
-            && self.selected_clip().is_none()
-            && !(self.library_preview && self.library_selected.is_some())
-        {
-            return;
         }
         egui::SidePanel::right("inspector-graphite")
             .frame(theme::panel(theme::PANEL))
@@ -2200,86 +2194,6 @@ impl EditorApp {
                     let mut metadata = self.editor.metadata().clone();
                     let before = metadata.clone();
                     let recording=if self.library_preview{self.library_selected}else{self.selected_clip().map(|c|c.source)};
-                    if self.settings {
-                        ui.heading("Output");
-                        if metadata.output.profile==ColorProfile::Hdr10{
-                            let display=self.playback.as_ref().and_then(|p|p.status().display);
-                            let state=match display {Some(display) if display.hdr_active=>"Windows HDR is active on the preview display",Some(display) if display.state_known=>"Windows HDR is inactive on the preview display",_=>"Display HDR state unavailable"};
-                            ui.checkbox(&mut self.hdr_preview,"HDR preview").on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(format!("{state}. Uses tone-mapped SDR when Windows HDR is inactive or the preview uses software rendering."));
-                        }
-                        ui.horizontal(|ui| {
-                            ui.label("Size");
-                            ui.add(
-                                egui::DragValue::new(&mut metadata.output.width)
-                                    .range(2..=16384)
-                                    .speed(2),
-                            );
-                            ui.label("×");
-                            ui.add(
-                                egui::DragValue::new(&mut metadata.output.height)
-                                    .range(2..=16384)
-                                    .speed(2),
-                            );
-                        });
-                        egui::ComboBox::from_label("Frame rate")
-                            .selected_text(metadata.output.rate.rational())
-                            .show_ui(ui, |ui| {
-                                for rate in [
-                                    "24/1",
-                                    "25/1",
-                                    "30/1",
-                                    "30000/1001",
-                                    "50/1",
-                                    "60/1",
-                                    "60000/1001",
-                                    "120/1",
-                                ] {
-                                    let value = editor_core::FrameRate::parse(rate).unwrap();
-                                    ui.selectable_value(&mut metadata.output.rate, value, rate).on_hover_cursor(egui::CursorIcon::PointingHand);
-                                }
-                            }).response.on_hover_cursor(egui::CursorIcon::PointingHand);
-                        egui::ComboBox::from_label("Color")
-                            .selected_text(match metadata.output.profile {ColorProfile::Sdr=>"SDR",ColorProfile::Hdr10=>"HDR10"})
-                            .show_ui(ui, |ui| {
-                                ui.selectable_value(
-                                    &mut metadata.output.profile,
-                                    ColorProfile::Sdr,
-                                    "SDR · Rec.709",
-                                ).on_hover_cursor(egui::CursorIcon::PointingHand);
-                                ui.selectable_value(
-                                    &mut metadata.output.profile,
-                                    ColorProfile::Hdr10,
-                                    "HDR10 · PQ / Rec.2020",
-                                ).on_hover_cursor(egui::CursorIcon::PointingHand);
-                            }).response.on_hover_cursor(egui::CursorIcon::PointingHand);
-                        egui::ComboBox::from_label("Codec")
-                            .selected_text(match metadata.output.codec {Codec::Av1=>"AV1",Codec::Hevc=>"HEVC",Codec::H264=>"H.264"})
-                            .show_ui(ui, |ui| {
-                                ui.selectable_value(&mut metadata.output.codec, Codec::Av1, "AV1").on_hover_cursor(egui::CursorIcon::PointingHand);
-                                ui.selectable_value(
-                                    &mut metadata.output.codec,
-                                    Codec::Hevc,
-                                    "HEVC",
-                                ).on_hover_cursor(egui::CursorIcon::PointingHand);
-                                if metadata.output.profile == ColorProfile::Sdr {
-                                    ui.selectable_value(
-                                        &mut metadata.output.codec,
-                                        Codec::H264,
-                                        "H.264",
-                                    ).on_hover_cursor(egui::CursorIcon::PointingHand);
-                                }
-                            }).response.on_hover_cursor(egui::CursorIcon::PointingHand);
-                        if metadata.output.profile == ColorProfile::Hdr10
-                            && metadata.output.codec == Codec::H264
-                        {
-                            metadata.output.codec = Codec::Hevc;
-                        }
-                        ui.checkbox(&mut metadata.output.gpu, "NVIDIA GPU encoding").on_hover_cursor(egui::CursorIcon::PointingHand);
-                        ui.add(
-                            egui::Slider::new(&mut metadata.output.quality, 0..=51).text("Quality"),
-                        ).on_hover_text("Lower values preserve more detail and create larger files.");
-                        ui.separator();
-                    }
                     if !self.library_preview && let Some(clip) = self.selected_clip() {
                         ui.horizontal(|ui| {
                             ui.heading("Trim").on_hover_text(format!("Timeline position: {}", time(clip.timeline_start)));
@@ -2378,6 +2292,10 @@ impl EditorApp {
                             if separate.clicked() {self.separate_selected_audio();return;}
                         }
                         }
+                        if independent_audio || adjustment.audio_separated {
+                            let video = if independent_audio {self.video_for_selected_audio()} else {Some(clip.id)};
+                            if self.link_audio_button(ui, video) {return;}
+                        }
                         if !independent_audio {
                         let framing = egui::CollapsingHeader::new("Framing")
                             .id_salt("section-framing")
@@ -2435,6 +2353,91 @@ impl EditorApp {
                         if source.hdr() && source.primaries!="bt2020"{ui.label("Conflicting HDR metadata").on_hover_text("HDR transfer and color primaries disagree. Confirm the intended interpretation.");}
 
                     }
+                    let export = egui::CollapsingHeader::new("Export settings")
+                        .id_salt("export-settings-sidebar")
+                        .open(Some(self.settings))
+                        .show_unindented(ui, |ui| {
+                        if metadata.output.profile==ColorProfile::Hdr10{
+                            let display=self.playback.as_ref().and_then(|p|p.status().display);
+                            let state=match display {Some(display) if display.hdr_active=>"Windows HDR is active on the preview display",Some(display) if display.state_known=>"Windows HDR is inactive on the preview display",_=>"Display HDR state unavailable"};
+                            ui.checkbox(&mut self.hdr_preview,"HDR preview").on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(format!("{state}. Uses tone-mapped SDR when Windows HDR is inactive or the preview uses software rendering."));
+                        }
+                        ui.horizontal(|ui| {
+                            ui.label("Size");
+                            ui.add(
+                                egui::DragValue::new(&mut metadata.output.width)
+                                    .range(2..=16384)
+                                    .speed(2),
+                            );
+                            ui.label("×");
+                            ui.add(
+                                egui::DragValue::new(&mut metadata.output.height)
+                                    .range(2..=16384)
+                                    .speed(2),
+                            );
+                        });
+                        egui::ComboBox::from_label("Frame rate")
+                            .selected_text(metadata.output.rate.rational())
+                            .show_ui(ui, |ui| {
+                                for rate in [
+                                    "24/1",
+                                    "25/1",
+                                    "30/1",
+                                    "30000/1001",
+                                    "50/1",
+                                    "60/1",
+                                    "60000/1001",
+                                    "120/1",
+                                ] {
+                                    let value = editor_core::FrameRate::parse(rate).unwrap();
+                                    ui.selectable_value(&mut metadata.output.rate, value, rate).on_hover_cursor(egui::CursorIcon::PointingHand);
+                                }
+                            }).response.on_hover_cursor(egui::CursorIcon::PointingHand);
+                        egui::ComboBox::from_label("Color")
+                            .selected_text(match metadata.output.profile {ColorProfile::Sdr=>"SDR",ColorProfile::Hdr10=>"HDR10"})
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(
+                                    &mut metadata.output.profile,
+                                    ColorProfile::Sdr,
+                                    "SDR · Rec.709",
+                                ).on_hover_cursor(egui::CursorIcon::PointingHand);
+                                ui.selectable_value(
+                                    &mut metadata.output.profile,
+                                    ColorProfile::Hdr10,
+                                    "HDR10 · PQ / Rec.2020",
+                                ).on_hover_cursor(egui::CursorIcon::PointingHand);
+                            }).response.on_hover_cursor(egui::CursorIcon::PointingHand);
+                        egui::ComboBox::from_label("Codec")
+                            .selected_text(match metadata.output.codec {Codec::Av1=>"AV1",Codec::Hevc=>"HEVC",Codec::H264=>"H.264"})
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut metadata.output.codec, Codec::Av1, "AV1").on_hover_cursor(egui::CursorIcon::PointingHand);
+                                ui.selectable_value(
+                                    &mut metadata.output.codec,
+                                    Codec::Hevc,
+                                    "HEVC",
+                                ).on_hover_cursor(egui::CursorIcon::PointingHand);
+                                if metadata.output.profile == ColorProfile::Sdr {
+                                    ui.selectable_value(
+                                        &mut metadata.output.codec,
+                                        Codec::H264,
+                                        "H.264",
+                                    ).on_hover_cursor(egui::CursorIcon::PointingHand);
+                                }
+                            }).response.on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if metadata.output.profile == ColorProfile::Hdr10
+                            && metadata.output.codec == Codec::H264
+                        {
+                            metadata.output.codec = Codec::Hevc;
+                        }
+                        ui.checkbox(&mut metadata.output.gpu, "NVIDIA GPU encoding").on_hover_cursor(egui::CursorIcon::PointingHand);
+                        ui.add(
+                            egui::Slider::new(&mut metadata.output.quality, 0..=51).text("Quality"),
+                        ).on_hover_text("Lower values preserve more detail and create larger files.");
+                        });
+                    self.controls.insert("export-settings", export.header_response.rect);
+                    if export.header_response.clicked() { self.settings = !self.settings; }
+                    export.header_response.on_hover_cursor(egui::CursorIcon::PointingHand);
+
                     if metadata != before {
                         self.metadata(metadata);
                     }

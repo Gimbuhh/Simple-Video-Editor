@@ -33,6 +33,80 @@ fn editor() -> ProjectEditor {
     )
     .unwrap()
 }
+
+#[test]
+fn relink_retains_audio_changes_video_framing_and_atomic_history() {
+    let mut editor = editor();
+    let video = editor.timeline().clone();
+    editor.metadata_mut().adjustments.insert(
+        ClipId(1),
+        ClipSettings {
+            rotation: 90,
+            framing: Framing::Fill,
+            ..Default::default()
+        },
+    );
+    let audio = separate_audio(&mut editor, ClipId(1)).unwrap();
+    separate_audio(&mut editor, ClipId(2)).unwrap();
+    let item = editor
+        .metadata_mut()
+        .audio_items
+        .iter_mut()
+        .find(|a| a.clip.id == audio)
+        .unwrap();
+    item.settings.gain_db = -12.0;
+    item.settings.stream = Some(2);
+    item.settings.muted = true;
+    item.settings.fade_in = 0.2;
+    item.settings.fade_out = 0.4;
+    let before = SavedProject::capture(&editor);
+    assert_eq!(matching_audio(&editor, ClipId(1)), Some(audio));
+    link_audio(&mut editor, ClipId(1)).unwrap();
+    assert_eq!(editor.timeline(), &video);
+    let settings = &editor.metadata().adjustments[&ClipId(1)];
+    assert!(!settings.audio_separated);
+    assert_eq!(settings.gain_db, -12.0);
+    assert_eq!(settings.stream, Some(2));
+    assert!(settings.muted);
+    assert_eq!((settings.fade_in, settings.fade_out), (0.2, 0.4));
+    assert_eq!((settings.rotation, settings.framing), (90, Framing::Fill));
+    assert_eq!(
+        editor.metadata().audio_items,
+        before.metadata.audio_items[1..]
+    );
+    let linked = SavedProject::capture(&editor);
+    let restored: SavedProject =
+        serde_json::from_str(&serde_json::to_string(&linked).unwrap()).unwrap();
+    restored.validate().unwrap();
+    assert_eq!(restored.clips, linked.clips);
+    assert_eq!(restored.metadata.audio_items, linked.metadata.audio_items);
+    assert_eq!(restored.metadata.adjustments, linked.metadata.adjustments);
+    assert!(editor.undo());
+    assert_eq!(SavedProject::capture(&editor), before);
+    assert!(editor.redo());
+    assert_eq!(SavedProject::capture(&editor), linked);
+    assert!(link_audio(&mut editor, ClipId(1)).is_err());
+    assert_eq!(SavedProject::capture(&editor), linked);
+}
+
+#[test]
+fn relink_rejects_missing_moved_trimmed_or_different_source_audio_without_changes() {
+    for variant in 0..5 {
+        let mut editor = editor();
+        separate_audio(&mut editor, ClipId(1)).unwrap();
+        match variant {
+            0 => editor.metadata_mut().audio_items.clear(),
+            1 => editor.metadata_mut().audio_items[0].clip.timeline_start += 0.5,
+            2 => editor.metadata_mut().audio_items[0].clip.source_in += 0.1,
+            3 => editor.metadata_mut().audio_items[0].clip.source_out -= 0.1,
+            _ => editor.metadata_mut().audio_items[0].clip.source = SourceId(999),
+        }
+        let before = SavedProject::capture(&editor);
+        assert_eq!(matching_audio(&editor, ClipId(1)), None);
+        assert!(link_audio(&mut editor, ClipId(1)).is_err());
+        assert_eq!(SavedProject::capture(&editor), before);
+    }
+}
 #[test]
 fn separation_volume_independent_edits_roundtrip_and_undo_preserve_video() {
     let mut editor = editor();

@@ -941,9 +941,47 @@ impl EditorApp {
                             return Err("Escape failed after Ctrl+F".into());
                         }
                         test.checks.push("Legacy Ctrl+B/Ctrl+F shortcuts and frame-inclusive quick trim remain undoable".into());
-                        test.was_software = self.software_preview;
-                        test.pointer(self.controls["more-options"].center(), Some(true));
-                        test.phase = 210;
+                        self.settings = false;
+                        test.audio_click_project = Some(SavedProject::capture(&self.editor));
+                        test.pointer(self.controls["export-settings"].center(), Some(true));
+                        test.phase = 176;
+                    }
+                    176 => {
+                        test.pointer(self.controls["export-settings"].center(), Some(false));
+                        test.inspector_ready_at = Instant::now();
+                        test.phase = 177;
+                    }
+                    177 if test.inspector_ready_at.elapsed() >= Duration::from_millis(250) => {
+                        if !self.settings
+                            || SavedProject::capture(&self.editor)
+                                != *test.audio_click_project.as_ref().unwrap()
+                        {
+                            return Err(
+                                "Sidebar export settings did not open without editing the project"
+                                    .into(),
+                            );
+                        }
+                        ctx.send_viewport_cmd(
+                            egui::ViewportCommand::Screenshot(Default::default()),
+                        );
+                        test.phase = 178;
+                    }
+                    178 => {
+                        for event in ctx.input(|i| i.events.clone()) {
+                            if let egui::Event::Screenshot { image, .. } = event {
+                                test.screenshot(&image)?;
+                                std::fs::copy(
+                                    test.directory.join("desktop.bmp"),
+                                    test.directory.join("export-sidebar.bmp"),
+                                )?;
+                                test.checks.push("Export settings open from the persistent sidebar without editing the project".into());
+                                self.settings = false;
+                                test.audio_click_project = None;
+                                test.was_software = self.software_preview;
+                                test.pointer(self.controls["more-options"].center(), Some(true));
+                                test.phase = 210;
+                            }
+                        }
                     }
                     210 => {
                         test.pointer(self.controls["more-options"].center(), Some(false));
@@ -951,11 +989,11 @@ impl EditorApp {
                         test.phase = 211;
                     }
                     211 if test.inspector_ready_at.elapsed() >= Duration::from_millis(250) => {
-                        if ["export-settings", "software-preview", "clear-cache"]
+                        if ["software-preview", "clear-cache"]
                             .iter()
                             .any(|key| !self.controls.contains_key(key))
                         {
-                            return Err("More options lost export or maintenance controls".into());
+                            return Err("More options lost maintenance controls".into());
                         }
                         ctx.send_viewport_cmd(
                             egui::ViewportCommand::Screenshot(Default::default()),
@@ -974,7 +1012,7 @@ impl EditorApp {
                                     self.controls["software-preview"].center(),
                                     Some(true),
                                 );
-                                test.checks.push("More options reveals export settings and maintenance without cluttering the workspace".into());
+                                test.checks.push("More options retains maintenance; export settings are in the sidebar".into());
                                 test.phase = 80;
                             }
                         }

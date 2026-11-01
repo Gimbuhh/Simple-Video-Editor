@@ -352,6 +352,54 @@ impl EditorApp {
                     return Err("Delete did not target selected audio only".into());
                 }
                 test.checks.push("Audio separation preserves exact trims; independent volume, drag, edge trim, split, delete, undo and schema-3 save/reopen leave video unchanged".into());
+                self.editor = original.clone().editor()?;
+                self.selected_audio = None;
+                self.selected = Some(original.clips[0].id);
+                self.separate_selected_audio();
+                self.editor.metadata_mut().audio_items[0].settings.gain_db = test.audio_gain;
+                test.phase = 252;
+            }
+            252 => {
+                let Some(button) = self.controls.get("link-audio") else {
+                    return Ok(true);
+                };
+                test.pointer(button.center(), Some(true));
+                test.phase = 253;
+            }
+            253 => {
+                test.pointer(self.controls["link-audio"].center(), Some(false));
+                test.phase = 254;
+            }
+            254 => {
+                let video = original.clips[0].id;
+                let settings = &self.editor.metadata().adjustments[&video];
+                if !self.editor.metadata().audio_items.is_empty()
+                    || settings.audio_separated
+                    || settings.gain_db != test.audio_gain
+                    || self.selected_audio.is_some()
+                    || self.selected != Some(video)
+                {
+                    return Err(
+                        "Sidebar Link audio lost gain, selection or left duplicate sound".into(),
+                    );
+                }
+                self.history(false);
+                if self.editor.metadata().audio_items.len() != 1
+                    || self.editor.metadata().audio_items[0].settings.gain_db != test.audio_gain
+                    || self.selected_audio.is_none()
+                {
+                    return Err(
+                        "Link audio undo did not restore independent audio and selection".into(),
+                    );
+                }
+                self.history(true);
+                if !self.editor.metadata().audio_items.is_empty()
+                    || self.selected_audio.is_some()
+                    || self.selected != Some(video)
+                {
+                    return Err("Link audio redo did not restore video selection".into());
+                }
+                test.checks.push("Sidebar Link audio rejoins synchronized items, retains volume, removes duplicate sound and undoes/redoes both audio and selection".into());
                 self.editor = test.audio_original.take().unwrap().editor()?;
                 self.selected_audio = None;
                 self.audio_preview = None;

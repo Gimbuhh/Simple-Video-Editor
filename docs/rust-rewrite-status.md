@@ -2,7 +2,15 @@
 
 The Rust production cutover and graphite interface are implemented on PR #8. Version 1.1.0 remains unreleased. The user confirms that the installed HDR-to-SDR correction looks much better. Final release acceptance remains with the user. No merge, release tag or publication is authorized.
 
-## Timeline auto-fit and normal pointer
+## Sidebar export settings and audio relinking
+
+Executable SHA-256: `748865346b39932e72a39a52db72dc9121b173ca95284afe97663ba4f4d4302e`. Export settings are available in a collapsible section of the right sidebar, including an empty project. More options retains software preview and cache maintenance. Link audio is available from the inspector and both timeline item menus for uniquely matching same-source/range/position items. Linking removes the independent item, retains its audio settings and the video's framing, and commits both lanes and selection as one undoable edit. Differently positioned or trimmed audio stays independent until it matches; the operation does not discard those edits.
+
+Formatting, strict Clippy, workspace tests and the release inspector pass. Persistence tests cover relinking with changed gain/track/mute/fades, unchanged video framing and timestamps, other audio items, save serialization, undo/redo and atomic rejection of missing/moved/trimmed/different-source audio. The native-media export regression compares measured audio levels before and after linking through fades and steady audio, excluding doubled or lost sound; the existing independent-lane offsets/mixing/tail/source-protection checks also pass. Evidence: sidebar-audio-core.log and sidebar-audio-media.log.
+
+Native/software SDR and independent-audio desktop input passes 160 checks and 80 rendered layouts at 100–200% app scale. It opens the sidebar export section without editing the project, checks the maintenance menu, clicks Link audio and verifies gain, selection and undo/redo. Evidence: rust-desktop/ba4d96001c394522b75ce4305186d59c. Portable relocation, package/native pins, persistence/export/playback, ordinary filename startup and all nine packaging safeguards pass. Color conversion and native playback processing are unchanged; earlier HDR evidence retains its original executable hashes.
+
+## Earlier timeline auto-fit and normal pointer
 
 Executable SHA-256: `33e983e6d6a0f9ab2d417abef39352a0133bf39c3f1bcca7ce7abf24a8e14c85`. Successful recording additions and section duplication request a fit against the actual timeline viewport and complete video/independent-audio duration. The fit consumes the updated extent on the next rendered timeline and resets horizontal pan/momentum. Manual Fit uses the same path. Trimming, splitting and ordinary seeks retain the chosen zoom. Very long sequences use a smaller fitted scale and bounded ruler tick spacing. Clip bodies keep the normal Windows arrow during hover and movement; trim edges retain horizontal resize, including captured drags outside the original edge.
 

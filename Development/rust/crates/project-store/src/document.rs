@@ -290,6 +290,44 @@ pub fn edit_audio(
         .collect();
     commit_audio_metadata(editor, metadata)
 }
+
+/// Only rejoin synchronized ranges: the linked representation has no independent offset.
+pub fn matching_audio(editor: &ProjectEditor, video: ClipId) -> Option<ClipId> {
+    if !editor.metadata().adjustments.get(&video)?.audio_separated {
+        return None;
+    }
+    let video = editor.timeline().clips().iter().find(|c| c.id == video)?;
+    let mut matches = editor.metadata().audio_items.iter().filter(|a| {
+        a.clip.source == video.source
+            && a.clip.source_in == video.source_in
+            && a.clip.source_out == video.source_out
+            && a.clip.timeline_start == video.timeline_start
+    });
+    let id = matches.next()?.clip.id;
+    matches.next().is_none().then_some(id)
+}
+
+pub fn link_audio(editor: &mut ProjectEditor, video: ClipId) -> Result<(), ProjectError> {
+    let audio = matching_audio(editor, video)
+        .ok_or_else(|| error("Align audio with the video and match its trim before linking"))?;
+    let mut metadata = editor.metadata().clone();
+    let item = metadata.audio_items.remove(
+        metadata
+            .audio_items
+            .iter()
+            .position(|a| a.clip.id == audio)
+            .unwrap(),
+    );
+    let settings = metadata.adjustments.entry(video).or_default();
+    settings.audio_separated = false;
+    settings.stream = item.settings.stream;
+    settings.gain_db = item.settings.gain_db;
+    settings.muted = item.settings.muted;
+    settings.fade_in = item.settings.fade_in;
+    settings.fade_out = item.settings.fade_out;
+    metadata.view = Some(ViewSelection::Clip(video));
+    commit_audio_metadata(editor, metadata)
+}
 fn commit_audio_metadata(
     editor: &mut ProjectEditor,
     metadata: ProjectMetadata,

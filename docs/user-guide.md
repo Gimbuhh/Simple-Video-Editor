@@ -2,7 +2,7 @@
 
 Simple Video Editor 1.1 edits local recordings non-destructively. Keep the executable, bin and docs folders together. The portable app needs no .NET runtime.
 
-The empty workspace keeps only the essentials visible. Import starts the workflow; search, playback and timeline controls appear when useful. File contains New project, Open project and Save as. Save stays in the toolbar, and the blue Export button stays at the top right. The … menu (More options) contains Export settings, Software preview and Clear generated cache.
+The empty workspace keeps only the essentials visible. Import starts the workflow; search, playback and timeline controls appear when useful. File contains New project, Open project and Save as. Save stays in the toolbar, and the blue Export button stays at the top right. Export settings live in a collapsible section of the right sidebar. The … menu (More options) contains Software preview and Clear generated cache.
 
 The graphite workspace uses high-contrast text and Windows UI fonts when available, with a built-in font fallback. Recording names wrap to two lines; hover for the full filename and details. A narrow library and compact Trim sidebar leave more room for the video. Blue timeline edges identify the selected section and its trim handles.
 
@@ -14,7 +14,7 @@ Dropping recordings from the library or File Explorer onto the timeline places l
 
 Recordings keep a floating thumbnail outside the timeline. Over the timeline, a linked clip preview shows thumbnails and the actual drop position before release, including snapping and avoiding overlap. Hovering does not edit the project. Timeline video sections show sampled source frames that follow their trim and zoom; images load in the background.
 
-Video and audio start linked. Moving, splitting, trimming or deleting a linked section moves both. Right-click a section and choose **Separate audio**, or use the same button in the inspector, to create an independent item in the audio lane (AUDIO 2 when other sections still have linked audio). Separation keeps its exact trim, timeline position and audio settings. The video then has no linked sound; moving or deleting either item leaves the other in place. Undo restores the link. Repeated sections of one recording have separate identities. Right-click a recording to remove it and all its sections from the project; the original file remains untouched and Undo restores the edit.
+Video and audio start linked. Moving, splitting, trimming or deleting a linked section moves both. Right-click a section and choose **Separate audio**, or use the same button in the inspector, to create an independent item in the audio lane (AUDIO 2 when other sections still have linked audio). Separation keeps its exact trim, timeline position and audio settings. The video then has no linked sound; moving or deleting either item leaves the other in place. Choose **Link audio** in the sidebar or either item’s right-click menu to rejoin matching audio and video, retaining the audio’s volume, track, mute and fades. Their source, trim and timeline position must match; otherwise align them first. Undo and Redo restore either state. Repeated sections of one recording have separate identities. Right-click a recording to remove it and all its sections from the project; the original file remains untouched and Undo restores the edit.
 
 Clip edges show a horizontal resize pointer for trimming; clip bodies keep the normal arrow when hovering or moving. The trim pointer stays active throughout the drag, including over a neighboring section.
 
@@ -64,7 +64,7 @@ Current-display HDR appearance is user-confirmed and local game/Shadowplay contr
 
 ## Export
 
-Choose dimensions, rational frame rate, color, codec, quality and GPU preference under … → Export settings before exporting. Lower quality numbers preserve more detail. NVIDIA support is probed using the actual encoder; unsupported hardware falls back to CPU. Export freezes its project/settings snapshot, encodes sections and black/silent gaps consistently, then joins video with AAC audio.
+Choose dimensions, rational frame rate, color, codec, quality and GPU preference under **Export settings** in the right sidebar before exporting. Lower quality numbers preserve more detail. NVIDIA support is probed using the actual encoder; unsupported hardware falls back to CPU. Export freezes its project/settings snapshot, encodes sections and black/silent gaps consistently, then joins video with AAC audio.
 
 Existing output is replaced only after duration/color/full-decode verification. Cancel preserves the prior destination. Project saves and exports reject source paths and source file identities, including hard links. Temporary .sve-export-* work folders are removed after completion or cancellation. An interrupted export may leave its own work folder beside the destination; remove it only once that editor is closed.
 

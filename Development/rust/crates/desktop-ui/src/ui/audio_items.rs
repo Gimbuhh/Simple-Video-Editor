@@ -2,6 +2,48 @@ use super::*;
 use crate::audio_playback::{AudioPlayback, AudioRequest};
 
 impl EditorApp {
+    pub(super) fn video_for_selected_audio(&self) -> Option<ClipId> {
+        let audio = self.selected_audio?;
+        let mut matches = self
+            .editor
+            .timeline()
+            .clips()
+            .iter()
+            .filter(|c| matching_audio(&self.editor, c.id) == Some(audio));
+        let id = matches.next()?.id;
+        matches.next().is_none().then_some(id)
+    }
+    pub(super) fn link_audio_button(&mut self, ui: &mut egui::Ui, video: Option<ClipId>) -> bool {
+        let enabled = video.is_some_and(|id| matching_audio(&self.editor, id).is_some());
+        let response = ui
+            .add_enabled(enabled, theme::button("Link audio"))
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_disabled_hover_text(
+                "Align audio with the video and match its trim before linking.",
+            );
+        self.controls.insert("link-audio", response.rect);
+        if response.clicked()
+            && let Some(video) = video
+        {
+            self.editor.metadata_mut().view = self.current_view();
+            match link_audio(&mut self.editor, video) {
+                Ok(()) => {
+                    self.selected_audio = None;
+                    self.selected = Some(video);
+                    self.library_preview = false;
+                    self.playing = false;
+                    self.scrub = None;
+                    self.settling = None;
+                    self.stepping = None;
+                    self.request_key.clear();
+                    self.update_dirty();
+                    return true;
+                }
+                Err(error) => self.fail(error),
+            }
+        }
+        false
+    }
     pub(super) fn has_linked_audio_lane(&self) -> bool {
         self.timeline().clips().iter().any(|c| {
             !self
@@ -364,6 +406,10 @@ impl EditorApp {
                 self.library_preview = false;
                 self.clip_edit_menu(ui);
                 ui.separator();
+                let video = self.video_for_selected_audio();
+                if self.link_audio_button(ui, video) {
+                    ui.close();
+                }
                 if ui
                     .button("Duplicate audio")
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
