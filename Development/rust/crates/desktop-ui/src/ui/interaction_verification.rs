@@ -205,6 +205,7 @@ impl EditorApp {
                             .first()
                             .ok_or("Fixture failed to import")?
                             .id;
+                        self.zoom = 500.0;
                         self.add(vec![id]);
                         self.selected = self.editor.timeline().clips().first().map(|c| c.id);
                         self.seek(0.5);
@@ -219,6 +220,10 @@ impl EditorApp {
                             && (!status.software || status.frame.is_some())
                     }) =>
                     {
+                        self.verify_fitted_timeline()?;
+                        test.checks.push(
+                            "Adding a recording fits the full timeline from a close zoom".into(),
+                        );
                         let status = self.playback.as_ref().unwrap().status();
                         if test.fail_native {
                             if !status.software {
@@ -389,11 +394,14 @@ impl EditorApp {
                         test.phase = 16;
                     }
                     16 => {
-                        test.pointer(test.anchor.unwrap() + Vec2::new(300.0, 0.0), None);
+                        test.pointer(test.anchor.unwrap() + Vec2::new(3.4 * self.zoom, 0.0), None);
                         test.phase = 17;
                     }
                     17 => {
-                        test.pointer(test.anchor.unwrap() + Vec2::new(300.0, 0.0), Some(false));
+                        test.pointer(
+                            test.anchor.unwrap() + Vec2::new(3.4 * self.zoom, 0.0),
+                            Some(false),
+                        );
                         test.phase = 18;
                     }
                     18 => {
@@ -426,7 +434,7 @@ impl EditorApp {
                         test.phase = 20;
                     }
                     20 => {
-                        test.pointer(test.anchor.unwrap() + Vec2::new(300.0, 0.0), None);
+                        test.pointer(test.anchor.unwrap() + Vec2::new(3.4 * self.zoom, 0.0), None);
                         test.phase = 21;
                     }
                     21 => {
@@ -434,7 +442,10 @@ impl EditorApp {
                         test.phase = 22;
                     }
                     22 => {
-                        test.pointer(test.anchor.unwrap() + Vec2::new(300.0, 0.0), Some(false));
+                        test.pointer(
+                            test.anchor.unwrap() + Vec2::new(3.4 * self.zoom, 0.0),
+                            Some(false),
+                        );
                         test.phase = 23;
                     }
                     23 => {
@@ -521,13 +532,26 @@ impl EditorApp {
                         test.phase = 31;
                     }
                     31 if !self.playing => {
+                        // Capture the ruler inside its fitted viewport before
+                        // dragging beyond the end, where a new press cannot hit it.
+                        test.pointer(
+                            test.anchor.unwrap()
+                                + Vec2::new(
+                                    (self.preview_duration() as f32 - 0.1) * self.zoom,
+                                    0.0,
+                                ),
+                            Some(true),
+                        );
+                        test.phase = 174;
+                    }
+                    174 => {
                         test.pointer(
                             test.anchor.unwrap()
                                 + Vec2::new(
                                     (self.preview_duration() as f32 + 1.0) * self.zoom,
                                     0.0,
                                 ),
-                            Some(true),
+                            None,
                         );
                         test.phase = 32;
                     }
@@ -605,7 +629,7 @@ impl EditorApp {
                         let expected = if test.focus_steps < 4 {
                             egui::CursorIcon::ResizeHorizontal
                         } else {
-                            egui::CursorIcon::Grab
+                            egui::CursorIcon::Default
                         };
                         if ctx.output(|o| o.cursor_icon) != expected {
                             return Err(format!(
@@ -620,7 +644,7 @@ impl EditorApp {
                         if test.focus_steps < 5 {
                             test.phase = 220;
                         } else {
-                            test.checks.push("Video/audio trim edges use horizontal resize and clip bodies use grab cursors".into());
+                            test.checks.push("Video/audio trim edges use horizontal resize and clip bodies use the normal arrow".into());
                             test.phase = 34;
                         }
                     }
@@ -772,6 +796,28 @@ impl EditorApp {
                         if self.editor.timeline().clips() != test.expected.as_ref().unwrap() {
                             return Err("Search-hidden selection was added to the timeline".into());
                         }
+                        self.zoom = 500.0;
+                        test.pointer(self.timeline_drop.unwrap().0.center(), None);
+                        test.phase = 170;
+                    }
+                    170 => {
+                        test.input.push(egui::Event::MouseWheel {
+                            unit: egui::MouseWheelUnit::Point,
+                            delta: Vec2::new(-400.0, 0.0),
+                            modifiers: egui::Modifiers::default(),
+                        });
+                        test.phase = 175;
+                    }
+                    175 => {
+                        // ScrollArea commits wheel offset after painting; inspect
+                        // the next rendered viewport rather than the old frame.
+                        test.phase = 171;
+                    }
+                    171 => {
+                        let (canvas, origin, _) = self.timeline_drop.unwrap();
+                        if origin >= canvas.left() + 64.0 {
+                            return Err("Auto-fit test did not pan the zoomed timeline".into());
+                        }
                         test.pointer(self.controls["add-all"].center(), Some(true));
                         test.phase = 51;
                     }
@@ -779,7 +825,10 @@ impl EditorApp {
                         test.pointer(self.controls["add-all"].center(), Some(false));
                         test.phase = 52;
                     }
-                    52 => {
+                    52 if !self.fit_timeline => {
+                        self.verify_fitted_timeline()?;
+                        test.checks
+                            .push("Add all fits the expanded timeline".into());
                         let original = test.expected.as_ref().unwrap();
                         let added = &self.editor.timeline().clips()[original.len()..];
                         let expected: Vec<_> = self
@@ -801,6 +850,22 @@ impl EditorApp {
                         if self.editor.timeline().clips() != test.expected.as_ref().unwrap() {
                             return Err("Filtered Add all was not one undo step".into());
                         }
+                        self.zoom = 500.0;
+                        test.pointer(self.controls["timeline-fit"].center(), Some(true));
+                        test.phase = 172;
+                    }
+                    172 => {
+                        test.pointer(self.controls["timeline-fit"].center(), Some(false));
+                        test.phase = 173;
+                    }
+                    173 => {
+                        self.verify_fitted_timeline()?;
+                        if self.editor.timeline().clips() != test.expected.as_ref().unwrap() {
+                            return Err("Fit changed timeline contents".into());
+                        }
+                        test.checks.push(
+                            "Manual Fit uses the timeline viewport without creating an edit".into(),
+                        );
                         test.pointer(self.controls["recording-search"].center(), Some(true));
                         test.phase = 54;
                     }
@@ -1187,7 +1252,8 @@ impl EditorApp {
                         );
                         test.phase = 112;
                     }
-                    112 => {
+                    112 if !self.fit_timeline => {
+                        self.verify_fitted_timeline()?;
                         let clips = self.editor.timeline().clips();
                         if clips.len() != 1
                             || (clips[0].timeline_start - test.keyboard_position).abs() > 0.001
@@ -1216,7 +1282,8 @@ impl EditorApp {
                         // External drops are dispatched after verification in update.
                         test.phase = 115;
                     }
-                    115 if !self.busy => {
+                    115 if !self.busy && !self.fit_timeline => {
+                        self.verify_fitted_timeline()?;
                         let clips = self.editor.timeline().clips();
                         if clips.len() != 1
                             || (clips[0].timeline_start - test.keyboard_position).abs() > 0.001
@@ -1474,7 +1541,9 @@ impl EditorApp {
                             }
                         }
                     }
-                    136 => {
+                    136 if !self.fit_timeline => {
+                        self.verify_fitted_timeline()?;
+                        test.checks.push("Dropping a clip fits its committed placement without changing the drop time".into());
                         let previous = test.expected.as_ref().unwrap();
                         let clips = self.editor.timeline().clips();
                         if clips.len() != previous.len() + 1
@@ -1858,6 +1927,19 @@ impl EditorApp {
                 test.phase = 6;
             }
             _ => {}
+        }
+        Ok(())
+    }
+}
+
+impl EditorApp {
+    fn verify_fitted_timeline(&self) -> media_engine::Result<()> {
+        let (canvas, origin, zoom) = self.timeline_drop.ok_or("Missing timeline viewport")?;
+        let duration = self.editor.metadata().duration(self.editor.timeline());
+        if (origin - canvas.left() - 65.0).abs() > 1.0
+            || origin + duration as f32 * zoom > canvas.right() - 30.0
+        {
+            return Err(format!("New clips are outside the fitted timeline viewport: canvas={canvas:?}, origin={origin}, zoom={zoom}, duration={duration}, pending={}, clips={}", self.fit_timeline, self.editor.timeline().clips().len()).into());
         }
         Ok(())
     }

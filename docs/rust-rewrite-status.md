@@ -1,8 +1,14 @@
-# Rust 1.1.0 status — 2026-10-29
+# Rust 1.1.0 status — 2026-11-01
 
 The Rust production cutover and graphite interface are implemented on PR #8. Version 1.1.0 remains unreleased. The user confirms that the installed HDR-to-SDR correction looks much better. Final release acceptance remains with the user. No merge, release tag or publication is authorized.
 
-## Temporary-file reliability and cleanup
+## Timeline auto-fit and normal pointer
+
+Executable SHA-256: `33e983e6d6a0f9ab2d417abef39352a0133bf39c3f1bcca7ce7abf24a8e14c85`. Successful recording additions and section duplication request a fit against the actual timeline viewport and complete video/independent-audio duration. The fit consumes the updated extent on the next rendered timeline and resets horizontal pan/momentum. Manual Fit uses the same path. Trimming, splitting and ordinary seeks retain the chosen zoom. Very long sequences use a smaller fitted scale and bounded ruler tick spacing. Clip bodies keep the normal Windows arrow during hover and movement; trim edges retain horizontal resize, including captured drags outside the original edge.
+
+Formatting, strict Clippy, workspace contracts and the release inspector pass. Native/software SDR and independent-audio desktop runs pass 154 checks, with 80 rendered layouts at 100–200% app scale. Actual input verifies close/panned Add all, append, library/external drops, committed drop placement, manual Fit without an edit, normal clip/audio move cursors and existing trim/scrub/undo behavior. Earlier pointer checks are expressed in timeline seconds rather than assuming the old zoom; the endpoint test captures the ruler before moving outside its fitted bounds. Evidence: rust-desktop/b016033f59f3494cb57c44fdc7bbd00c and timeline-fit/core.log. Media processing and project schemas are unchanged; earlier HDR/media evidence retains its original executable hashes.
+
+## Earlier temporary-file reliability and cleanup
 
 Executable SHA-256: `b979e3d5ed3b9ae1b36b81382b8251f64533487f0d6abfae6d501748f7675cf8`. Temporary identifiers used by project saves, recovery, thumbnail/waveform workers and exports now include a process-local atomic sequence. Clock readings can repeat across workers; the sequence makes names distinct within a process even if the clock stops or moves backwards. Exclusive project-file creation also completes before cleanup assumes ownership of that temporary file. Project schemas and media/color processing are unchanged.
 

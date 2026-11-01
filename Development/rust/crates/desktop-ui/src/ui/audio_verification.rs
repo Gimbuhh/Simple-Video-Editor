@@ -164,6 +164,11 @@ impl EditorApp {
                 test.phase = 233;
             }
             233 => {
+                if ctx.output(|o| o.cursor_icon) != egui::CursorIcon::Default {
+                    return Err(
+                        "Moving an independent audio item did not retain the normal arrow".into(),
+                    );
+                }
                 test.pointer(
                     test.anchor.unwrap() + Vec2::new(self.zoom * 0.5, 0.0),
                     Some(false),

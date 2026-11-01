@@ -16,7 +16,7 @@ Recordings keep a floating thumbnail outside the timeline. Over the timeline, a 
 
 Video and audio start linked. Moving, splitting, trimming or deleting a linked section moves both. Right-click a section and choose **Separate audio**, or use the same button in the inspector, to create an independent item in the audio lane (AUDIO 2 when other sections still have linked audio). Separation keeps its exact trim, timeline position and audio settings. The video then has no linked sound; moving or deleting either item leaves the other in place. Undo restores the link. Repeated sections of one recording have separate identities. Right-click a recording to remove it and all its sections from the project; the original file remains untouched and Undo restores the edit.
 
-Clip edges show a horizontal resize pointer for trimming; clip bodies show grab/grabbing pointers for moving. The trim pointer stays active throughout the drag, including over a neighboring section.
+Clip edges show a horizontal resize pointer for trimming; clip bodies keep the normal arrow when hovering or moving. The trim pointer stays active throughout the drag, including over a neighboring section.
 
 Right-click a video or audio item for Split, Trim before and Trim after at the playhead. Opening the menu preserves the timeline position; unavailable edits are disabled. The Trim sidebar retains the same quick actions and exact In/Out fields. Unsaved changes appear beside the project name inside the editor; the Windows title stays uncluttered.
 
@@ -44,7 +44,7 @@ Drag the recording scrubber or timeline ruler to seek. The pointer owns the play
 | Escape while dragging | Cancel the gesture |
 | Escape during import | Cancel import |
 
-Tab moves keyboard focus between controls, including timeline sections; Enter selects the focused section. A white inner outline identifies the focused section. Frame stepping, Split, Delete, Undo and Space playback remain available while a section has focus. Shift+F10 opens its context menu; Escape closes the menu and restores section focus. Text fields own ordinary editing keys while focused. Use the timeline Zoom slider or Fit to change the visible scale.
+Tab moves keyboard focus between controls, including timeline sections; Enter selects the focused section. A white inner outline identifies the focused section. Frame stepping, Split, Delete, Undo and Space playback remain available while a section has focus. Shift+F10 opens its context menu; Escape closes the menu and restores section focus. Text fields own ordinary editing keys while focused. Adding or duplicating sections automatically fits the whole timeline, including independent audio, and returns the view to its start. Use the timeline Zoom slider or Fit to change the visible scale; trimming and splitting retain your chosen zoom.
 
 ## Audio, framing and color
 

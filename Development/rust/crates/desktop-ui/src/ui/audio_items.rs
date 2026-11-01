@@ -33,6 +33,7 @@ impl EditorApp {
             return;
         }
         self.editor.metadata_mut().view = self.current_view();
+        let fit_added = matches!(&command, Command::Duplicate { .. });
         let new = matches!(&command, Command::Split { .. } | Command::Duplicate { .. });
         let old: Vec<_> = self
             .editor
@@ -44,6 +45,7 @@ impl EditorApp {
         match edit_audio(&mut self.editor, command) {
             Ok(()) => {
                 if new {
+                    self.fit_timeline |= fit_added;
                     self.selected_audio = self
                         .editor
                         .metadata()
@@ -397,7 +399,7 @@ impl EditorApp {
             && let Some(drag) = &self.audio_drag
             && ui.input(|i| i.pointer.primary_down())
         {
-            ui.ctx().set_cursor_icon(clip_drag_cursor(drag.mode, true));
+            ui.ctx().set_cursor_icon(clip_drag_cursor(drag.mode));
         }
         hovered || self.audio_drag.is_some()
     }

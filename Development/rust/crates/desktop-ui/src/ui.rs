@@ -106,6 +106,7 @@ pub struct EditorApp {
     request_key: String,
     volume: f64,
     zoom: f32,
+    fit_timeline: bool,
     drag: Option<Drag>,
     preview_timeline: Option<Timeline>,
     waveforms: BTreeMap<SourceId, Arc<Vec<f32>>>,
@@ -208,6 +209,7 @@ impl EditorApp {
             request_key: String::new(),
             volume: 70.0,
             zoom: 90.0,
+            fit_timeline: false,
             drag: None,
             preview_timeline: None,
             waveforms: BTreeMap::new(),
@@ -382,6 +384,7 @@ impl EditorApp {
         self.stepping = None;
         self.drag = None;
         self.preview_timeline = None;
+        self.fit_timeline = false;
         self.recovery.clear();
         self.recovery_saved = None;
     }
@@ -408,6 +411,10 @@ impl EditorApp {
         }
         self.selected_audio = None;
         self.editor.metadata_mut().view = self.current_view();
+        let fit_added = matches!(
+            &command,
+            Command::Append { .. } | Command::Insert { .. } | Command::Duplicate { .. }
+        );
         let select_new = matches!(
             &command,
             Command::Split { .. }
@@ -442,6 +449,7 @@ impl EditorApp {
                 {
                     self.selected = Some(clip.id);
                     self.playhead = clip.timeline_start;
+                    self.fit_timeline |= fit_added;
                 }
                 self.sync_selection();
                 self.update_dirty();
@@ -1544,6 +1552,7 @@ impl EditorApp {
     fn timeline_ui(&mut self, ctx: &egui::Context) {
         self.controls.remove("drop-preview");
         self.controls.remove("separate-audio");
+        self.controls.remove("timeline-fit");
         for key in [
             "clip-menu-split",
             "clip-menu-trim-before",
@@ -1614,23 +1623,33 @@ impl EditorApp {
                         self.selected = None;
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
+                        let fit_button = ui
                             .add(theme::row_button("Fit"))
-                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .clicked()
-                        {
-                            self.zoom = ((ui.available_width().max(400.0) - 80.0)
-                                / self.preview_duration().max(5.0) as f32)
-                                .clamp(0.05, 500.0);
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        self.controls.insert("timeline-fit", fit_button.rect);
+                        if fit_button.clicked() {
+                            self.fit_timeline = true;
                         }
+                        let minimum_zoom = timeline_fit_zoom(
+                            ui.available_width(),
+                            self.editor.metadata().duration(self.timeline()),
+                        )
+                        .min(0.05);
                         ui.add(
-                            egui::Slider::new(&mut self.zoom, 0.05..=500.0)
+                            egui::Slider::new(&mut self.zoom, minimum_zoom..=500.0)
                                 .logarithmic(true)
                                 .show_value(false)
                                 .text("Zoom"),
                         );
                     });
                 });
+                let fit = std::mem::take(&mut self.fit_timeline);
+                if fit {
+                    self.zoom = timeline_fit_zoom(
+                        ui.available_width(),
+                        self.editor.metadata().duration(self.timeline()),
+                    );
+                }
                 let zoom = self.zoom;
                 let dragged_duration = egui::DragAndDrop::payload::<SourceId>(ctx)
                     .and_then(|id| {
@@ -1643,9 +1662,14 @@ impl EditorApp {
                     })
                     .unwrap_or(0.0);
                 let duration =
-                    (self.editor.metadata().duration(self.timeline()) + dragged_duration).max(10.0);
+                    (self.editor.metadata().duration(self.timeline()) + dragged_duration).max(5.0);
                 let width = (duration as f32 * zoom + 100.0).max(ui.available_width());
                 let height = (ui.available_height() - 8.0).max(150.0);
+                if fit {
+                    // Reset pan and momentum, not just zoom, after fitting.
+                    egui::scroll_area::State::default()
+                        .store(ctx, ui.make_persistent_id(egui::Id::new("timeline-scroll")));
+                }
                 egui::ScrollArea::horizontal()
                     .id_salt("timeline-scroll")
                     .show(ui, |ui| {
@@ -1654,17 +1678,7 @@ impl EditorApp {
                         let painter = ui.painter_at(rect);
                         painter.rect_filled(rect, 4.0, theme::CANVAS);
                         let origin = rect.left() + 65.0;
-                        let second_step = if zoom > 180.0 {
-                            0.5
-                        } else if zoom > 55.0 {
-                            1.0
-                        } else if zoom > 12.0 {
-                            5.0
-                        } else if zoom > 2.0 {
-                            30.0
-                        } else {
-                            300.0
-                        };
+                        let second_step = timeline_tick_step(zoom);
                         let visible = painter.clip_rect();
                         self.timeline_drop = Some((rect.intersect(visible), origin, zoom));
                         let first = ((visible.left() - origin).max(0.0) / zoom / second_step)
@@ -2118,7 +2132,7 @@ impl EditorApp {
                             && let Some(drag) = &self.drag
                             && ui.input(|i| i.pointer.primary_down())
                         {
-                            ctx.set_cursor_icon(clip_drag_cursor(drag.mode, true));
+                            ctx.set_cursor_icon(clip_drag_cursor(drag.mode));
                         }
                         if !over_clip
                             && !self.ignore_scrub_until_release
@@ -3316,6 +3330,9 @@ impl eframe::App for EditorApp {
             self.window_title.clone_from(&title);
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
         }
+        if self.fit_timeline {
+            ctx.request_repaint();
+        }
         if self.playing || self.settling.is_some() || self.stepping.is_some() {
             ctx.request_repaint_after(Duration::from_millis(16));
         } else if self.dirty() && (!self.busy || self.exporting) {
@@ -3349,6 +3366,24 @@ impl Drop for EditorApp {
         }
     }
 }
+fn timeline_fit_zoom(viewport_width: f32, duration: f64) -> f32 {
+    ((f64::from((viewport_width - 100.0).max(1.0)) / duration.max(5.0)).min(500.0)) as f32
+}
+
+fn timeline_tick_step(zoom: f32) -> f32 {
+    if zoom > 180.0 {
+        0.5
+    } else if zoom > 55.0 {
+        1.0
+    } else if zoom > 12.0 {
+        5.0
+    } else if zoom > 2.0 {
+        30.0
+    } else {
+        (80.0 / zoom).max(300.0)
+    }
+}
+
 fn clip_drag_mode(bounds: Rect, x: f32) -> u8 {
     let edge = 8.0_f32.min(bounds.width() / 3.0);
     if x - bounds.left() < edge {
@@ -3359,23 +3394,19 @@ fn clip_drag_mode(bounds: Rect, x: f32) -> u8 {
         0
     }
 }
-fn clip_drag_cursor(mode: u8, dragging: bool) -> egui::CursorIcon {
+fn clip_drag_cursor(mode: u8) -> egui::CursorIcon {
     if mode != 0 {
         egui::CursorIcon::ResizeHorizontal
-    } else if dragging {
-        egui::CursorIcon::Grabbing
     } else {
-        egui::CursorIcon::Grab
+        egui::CursorIcon::Default
     }
 }
 fn clip_hover_cursor(ui: &egui::Ui, response: &egui::Response) {
     if ui.is_enabled()
         && let Some(pointer) = response.hover_pos()
     {
-        ui.ctx().set_cursor_icon(clip_drag_cursor(
-            clip_drag_mode(response.rect, pointer.x),
-            false,
-        ));
+        ui.ctx()
+            .set_cursor_icon(clip_drag_cursor(clip_drag_mode(response.rect, pointer.x)));
     }
 }
 
@@ -3489,5 +3520,23 @@ mod accessibility_tests {
                 .any(|(_, node)| node.role() == egui::accesskit::Role::Button
                     && node.label() == Some("Play (Space)"))
         );
+    }
+}
+
+#[cfg(test)]
+mod timeline_view_tests {
+    use super::*;
+
+    #[test]
+    fn fitted_zoom_keeps_short_long_and_extreme_sequences_in_view() {
+        for width in [320.0, 800.0, 1920.0, 3840.0] {
+            for duration in [0.5, 5.0, 180.0, 86_400.0, editor_core::MAX_TIMELINE_SECONDS] {
+                let zoom = timeline_fit_zoom(width, duration);
+                assert!(zoom.is_finite() && zoom > 0.0 && zoom <= 500.0);
+                assert!(duration as f32 * zoom <= width - 99.0);
+                let ticks = width / zoom / timeline_tick_step(zoom);
+                assert!(ticks.is_finite() && ticks <= width / 50.0 + 1.0);
+            }
+        }
     }
 }

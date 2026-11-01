@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.0 — 2026-10-29
+## 1.1.0 — 2026-11-01
 
 Unreleased Rust candidate.
 
@@ -18,6 +18,7 @@ Unreleased Rust candidate.
 
 ### Changed
 
+- Adding or duplicating sections automatically fits the whole timeline; clip bodies keep the normal mouse pointer.
 - Scrubbing keeps the preview visible and updating while you drag, then settles on the exact frame when you release.
 - Preview uses hardware decoding for supported SDR and fitted HDR recordings, keeping scrubbing responsive during SDR conversion.
 - A graphite workspace puts video and trimming first, with clearer text, aligned button labels, larger thumbnails, blue trim handles and Export at the top right. Quick trims are available in clip menus. Secondary controls stay in menus or expandable sections; enabled buttons show a pointing hand and clip edges show a resize cursor.
