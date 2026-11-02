@@ -38,6 +38,7 @@ pub struct Player {
     renderer: Option<software::Renderer>,
     mode: Mode,
     audio_only: bool,
+    sdr_shader: std::cell::RefCell<Option<std::path::PathBuf>>,
     // Do not allow a handle to escape the thread that owns its control API.
     _thread_confined: PhantomData<Rc<()>>,
 }
@@ -95,6 +96,7 @@ impl Player {
             renderer: None,
             mode,
             audio_only: audio && window.is_none(),
+            sdr_shader: std::cell::RefCell::new(None),
             _thread_confined: PhantomData,
         };
         for (key, value) in [
@@ -195,7 +197,7 @@ impl Player {
     /// of recreating a Vulkan lavfi processor after every seek.
     pub fn adaptive_sdr(&self, enabled: bool) -> Result<()> {
         for (key, on, off) in [
-            ("tone-mapping", "auto", "auto"),
+            ("tone-mapping", "bt.2390", "auto"),
             ("gamut-mapping-mode", "perceptual", "auto"),
             ("hdr-compute-peak", "yes", "auto"),
             ("hdr-peak-percentile", "99.99", "100"),
@@ -205,6 +207,38 @@ impl Player {
             ("target-contrast", "1000", "auto"),
         ] {
             self.set(key, if enabled { on } else { off })?;
+        }
+        if enabled {
+            let mut shader = self.sdr_shader.borrow_mut();
+            if shader.is_none() {
+                use std::io::Write;
+                static SEQUENCE: std::sync::atomic::AtomicU64 =
+                    std::sync::atomic::AtomicU64::new(0);
+                let nonce = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)?
+                    .as_nanos();
+                let path = std::env::temp_dir().join(format!(
+                    "sve-sdr-{}-{nonce}-{}.glsl",
+                    std::process::id(),
+                    SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ));
+                let mut file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&path)?;
+                *shader = Some(path);
+                file.write_all(include_bytes!("sdr-contrast.glsl"))?;
+            }
+            self.set(
+                "glsl-shaders",
+                shader
+                    .as_ref()
+                    .unwrap()
+                    .to_str()
+                    .ok_or("Invalid shader path")?,
+            )?;
+        } else {
+            self.set("glsl-shaders", "")?;
         }
         Ok(())
     }
@@ -449,6 +483,9 @@ impl Drop for Player {
         // SAFETY: handle was created once, is thread-confined, and is freed once.
         unsafe {
             (self.api.destroy)(self.handle.as_ptr());
+        }
+        if let Some(path) = self.sdr_shader.get_mut().take() {
+            let _ = std::fs::remove_file(path);
         }
     }
 }

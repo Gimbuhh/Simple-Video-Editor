@@ -732,7 +732,7 @@ pub fn color_transform(
                 1000.0 / 203.0
             };
             format!(
-                "zscale=pin={prim}:tin={trc}:min={matrix}:rin={range}:p={prim}:t=linear:m=gbr:r=full:npl=203,format=gbrpf32le,tonemap=tonemap=mobius:desat=0:peak={peak},zscale=pin={prim}:tin=linear:min=gbr:rin=full:p=bt709:t=bt709:m=bt709:r=limited,format=yuv420p"
+                "zscale=pin={prim}:tin={trc}:min={matrix}:rin={range}:p={prim}:t=linear:m=gbr:r=full:npl=203,format=gbrpf32le,tonemap=tonemap=mobius:desat=0:peak={peak},zscale=pin={prim}:tin=linear:min=gbr:rin=full:p=bt709:t=bt709:m=bt709:r=limited,format=yuv420p,lutyuv=y=16+219*((val-16+abs(val-16))/438)^(1/0.9):u=(val-128)*1.05+128:v=(val-128)*1.05+128"
             )
         }
         ColorProfile::Sdr => format!(

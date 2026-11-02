@@ -1,8 +1,22 @@
-# Rust 1.1.0 status — 2026-11-01
+# Rust 1.1.0 status — 2026-11-02
 
-The Rust production cutover and graphite interface are implemented on PR #8. Version 1.1.0 remains unreleased. The user confirms that the installed HDR-to-SDR correction looks much better. Final release acceptance remains with the user. No merge, release tag or publication is authorized.
+The Rust production cutover and graphite interface are implemented on PR #8. Version 1.1.0 remains unreleased. The user confirms native HDR appearance on the current display and prefers the stronger SDR contrast trial. Final installed-build and release acceptance remain with the user. No merge, release tag or publication is authorized.
 
-## Preview menus and header controls
+## Timeline clicks and SDR contrast
+
+Executable SHA-256: `9ba55709b8f6682db906a8f5f3849ddd35c2848f64c16e8f1a060a65a4af7856`. Primary timeline clicks retain playing/paused intent, including while another seek settles. The resize hit bands select the first or last retained frame instead of a nearby pointer time or the next clip. The end-edge decoder path resolves the actual preceding timestamp, including VFR, restores the clip's exclusive end before playback resumes, and supports a fresh decoder at the source EOF. Dragging still trims or moves; saved bounds, gaps and audio/video links are unchanged.
+
+The user compared a Fortnite HDR source with its SDR export and identified washed-out contrast/color across players. The sampled export matched the existing production transform; the user preferred the stronger-contrast visual trial. The final conversion uses explicit BT.2390 tone mapping to stabilize exposure across preview sizes, followed by a mild display-referred luma/chroma adjustment relative to legal black so near-black detail remains. The native output shader retains hardware decoding and accounts for BT.1886's finite target black level; software preview, thumbnails and export use the corresponding lookup math. Normal whites and tiny-highlight behavior remain protected. HDR presentation/exports and ordinary SDR sources bypass the adjustment. Cache generation v7 refreshes generated images.
+
+Formatting, strict Clippy, workspace contracts and release inspector pass. All 14 NVIDIA/media checks pass, including full/limited PQ/HLG reference matching through native/software preview and CPU/NVIDIA exports, neutral ramps, absolute HDR-export luminance, tiny highlights, geometry, exact stepping, audio, cancellation and source protection. The reference harness waits for actual media duration as well as output dimensions and matches renderer resize order, transfer and bitmap conversion. Final desktop checks pass 350 assertions across ten native/software SDR, PQ, HLG, audio and VFR runs, including cold EOF and paused/playing edge clicks. Evidence: `Development/artifacts/fortnite-sdr-review/stable-core.log`, `stable-media.log`, `stable-desktop.log` and `Development/artifacts/rust-desktop/9d85f3cdf58746e698c3d4880fa7cc3c`.
+
+Indoor and outdoor sections of the supplied Fortnite recording pass strict reference comparisons through both previews, thumbnails and CPU/NVIDIA H.264/AV1 exports without relaxing their error limits. The matching 34.35-second corrected SDR review copy contains 2,061 frames with limited-range Rec.709 metadata; hashes confirm both supplied originals are unchanged. Evidence: `fortnite-sdr-review/private-contrast-reference.log`, `private-outdoor.log` and `review-video.json`; private media remains ignored.
+
+The production preview benchmark on that recording completes 24 seeks with a 30.22 ms median and 44.45 ms p95 using `d3d11va`, with 42 continuous-scrub frames and a 58.39 ms final release. This measures UI request to playback-ready acknowledgement, not physical display latency; OS/filesystem caching is uncontrolled. Evidence: `Development/artifacts/preview-benchmark/241651a4111f4f08aa9e845288af3b72/summary.json`. Earlier startup, monitor and scaled-layout checks retain their own executable hashes and scope.
+
+The rebuilt portable package passes embedded-version/checksum/native-pin/license checks, Unicode relocation, persistence, export, playback and damaged-bundle rejection. All nine packaging safeguards pass. Evidence: `fortnite-sdr-review/packaging.log`, `portable.log` and `Development/artifacts/rust-package-verification/2ab77f9bfb4440a39830adeba88b8817`. The exact-path NVIDIA exclusion remains active locally. The final feature-branch revision still requires its own passing Windows CI before merge.
+
+## Earlier preview menus and header controls
 
 Executable SHA-256: `455ff23b7582cac6efbece9bc4ccb3d66a735fcd74d1fbcdd82812a314771e09`. Opening a menu no longer suppresses the entire preview. Native video excludes only the current floating UI rectangles from its Windows region; software video keeps painting behind menus. Closing menus restores the full native region, including while paused. Software preview moves to the right of the preview header, beside the existing color indicator. The redundant Timeline/Recording preview label is removed. Renderer switching and project/media settings retain their existing behavior.
 

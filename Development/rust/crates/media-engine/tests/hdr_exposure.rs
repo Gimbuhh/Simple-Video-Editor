@@ -32,18 +32,19 @@ fn check_exposure(image: &image::RgbImage) {
         .map(|v| v as f64 / 3.0)
         .collect();
     assert!(levels[0] < 3.0, "Raised black: {levels:?}");
-    // 18/203 linear light is about code 93 in BT.1886, or 84 in sRGB.
-    // Both are distinct from the previous 100-nit normalization (code 124).
+    // The display-referred 0.9 shadow curve moves the 18-nit patch from
+    // about 93/84 to 83/74 (BT.1886/sRGB). It must remain distinct from
+    // the old 100-nit normalization (about code 124) and from black.
     assert!(
-        (80.0..=105.0).contains(&levels[3]),
+        (70.0..=95.0).contains(&levels[3]),
         "18-nit midtone was lifted or crushed: {levels:?}"
     );
     assert!(
-        (170.0..=195.0).contains(&levels[5]),
+        (160.0..=190.0).contains(&levels[5]),
         "100-nit patch lost its brightness relationship: {levels:?}"
     );
     assert!(
-        (185.0..=225.0).contains(&levels[6]),
+        (180.0..=225.0).contains(&levels[6]),
         "203-nit reference white lost highlight headroom: {levels:?}"
     );
     assert!(

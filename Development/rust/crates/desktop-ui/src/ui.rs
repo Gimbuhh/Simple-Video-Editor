@@ -1,5 +1,6 @@
 mod audio_items;
 mod audio_verification;
+mod click_verification;
 mod clip_actions;
 mod interaction_verification;
 mod preview_benchmark;
@@ -63,6 +64,7 @@ struct Settling {
     generation: Option<u64>,
     resume: bool,
     started: Instant,
+    last_frame: Option<ClipId>,
 }
 struct Stepping {
     generation: Option<u64>,
@@ -668,23 +670,41 @@ impl EditorApp {
                     None
                 },
             );
-            self.seek(time);
             let resume = resume.unwrap_or(scrub.resume);
-            if !self.library_preview
-                && preview_at(self.timeline(), self.editor.metadata(), time).is_none()
-            {
-                // Black gaps and audio-only projects have no video frame to await.
-                self.settling = None;
-                self.playing = resume && time < self.preview_duration();
-            } else {
-                self.settling = Some(Settling {
-                    generation: None,
-                    resume,
-                    started: Instant::now(),
-                });
-            }
-            self.request_key.clear();
+            self.finish_seek(time, resume, None);
         }
+    }
+    fn finish_seek(&mut self, time: f64, resume: bool, last_frame: Option<ClipId>) {
+        self.seek(time);
+        if !self.library_preview
+            && preview_at(self.timeline(), self.editor.metadata(), time).is_none()
+        {
+            // Black gaps and audio-only projects have no video frame to await.
+            self.settling = None;
+            self.playing = resume && time < self.preview_duration();
+        } else {
+            self.settling = Some(Settling {
+                generation: None,
+                resume,
+                started: Instant::now(),
+                last_frame,
+            });
+        }
+        self.request_key.clear();
+    }
+    fn click_clip(&mut self, clip: &Clip, bounds: Rect, x: f32, zoom: f32, video: bool) {
+        let resume = self.play_intent();
+        let mode = clip_drag_mode(bounds, x);
+        let time = match mode {
+            1 => clip.timeline_start,
+            2 => (clip.timeline_end() - 0.000001).max(clip.timeline_start),
+            _ => (clip.timeline_start + f64::from((x - bounds.left()) / zoom))
+                .clamp(clip.timeline_start, clip.timeline_end() - 0.000001),
+        };
+        self.library_preview = false;
+        self.scrub = None;
+        self.playing = false;
+        self.finish_seek(time, resume, (video && mode == 2).then_some(clip.id));
     }
     fn preview_duration(&self) -> f64 {
         if self.library_preview {
@@ -1882,15 +1902,10 @@ impl EditorApp {
                             if interaction.clicked() {
                                 self.selected_audio = None;
                                 self.selected = Some(clip.id);
-                                self.library_preview = false;
-                                self.playing = false;
-                                let position = interaction.interact_pointer_pos().map_or(
-                                    clip.timeline_start,
-                                    |p| {
-                                        clip.timeline_start + f64::from((p.x - video.left()) / zoom)
-                                    },
-                                );
-                                self.seek(position.min(clip.timeline_end()));
+                                let x = interaction
+                                    .interact_pointer_pos()
+                                    .map_or(linked.left(), |p| p.x);
+                                self.click_clip(&clip, linked, x, zoom, true);
                             }
                             if interaction.drag_started() {
                                 self.selected_audio = None;
@@ -2867,6 +2882,14 @@ impl EditorApp {
             .is_some_and(|s| s.generation == Some(status.generation) && status.ready)
         {
             let settling = self.settling.take().unwrap();
+            if let Some(id) = settling.last_frame
+                && let Some(clip) = self.timeline().clips().iter().find(|c| c.id == id)
+                && self.playhead >= clip.timeline_start
+                && self.playhead < clip.timeline_end()
+            {
+                self.playhead = clip.timeline_start
+                    + (status.position - clip.source_in).clamp(0.0, clip.duration() - 0.000001);
+            }
             self.playing = settling.resume && self.playhead < self.preview_duration();
         }
         if self
@@ -3022,6 +3045,11 @@ impl EditorApp {
                 volume: self.volume,
                 hdr_preview,
                 steps: self.stepping.as_ref().map_or(0, |s| s.count),
+                last_frame: self
+                    .settling
+                    .as_ref()
+                    .and_then(|s| s.last_frame)
+                    .is_some_and(|id| mapped.is_some_and(|(clip, _, _)| clip == id)),
             });
         }
         self.update_audio_playback(ctx);

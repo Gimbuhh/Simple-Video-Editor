@@ -112,7 +112,9 @@ impl EditorApp {
                 } else if test.scale_layouts {
                     240
                 } else {
-                    90
+                    // Include ten paused/playing clip-click cases, each with
+                    // a fresh exact seek and decode in both preview backends.
+                    150
                 })
             {
                 return Err(format!(
@@ -124,7 +126,7 @@ impl EditorApp {
             if let Some(error) = self.playback.as_ref().and_then(|p| p.status().error) {
                 return Err(error.into());
             }
-            if self.verify_audio_items(&mut test, ctx)? {
+            if self.verify_clip_clicks(&mut test)? || self.verify_audio_items(&mut test, ctx)? {
                 return Ok(());
             }
             if test.capture_hold && test.phase == 80 {
@@ -1964,6 +1966,46 @@ impl EditorApp {
                     "VFR trim after excludes the actual next PTS and restores the retained frame"
                         .into(),
                 );
+                test.phase = 21;
+            }
+            21 => {
+                let rect = self.controls["first-clip"];
+                test.anchor = Some(Pos2::new(rect.right() - 2.0, rect.top() + 24.0));
+                test.pointer(test.anchor.unwrap(), Some(true));
+                test.phase = 22;
+            }
+            22 => {
+                test.pointer(test.anchor.unwrap(), Some(false));
+                test.phase = 23;
+            }
+            23 if ready && self.settling.is_none() => {
+                if (self.playhead - 0.38).abs() > 0.002 {
+                    return Err(format!(
+                        "VFR right-edge click missed the last retained PTS: {}",
+                        self.playhead
+                    )
+                    .into());
+                }
+                let rect = self.controls["first-clip"];
+                test.anchor = Some(Pos2::new(rect.left() + 2.0, rect.top() + 24.0));
+                test.pointer(test.anchor.unwrap(), Some(true));
+                test.phase = 24;
+            }
+            24 => {
+                test.pointer(test.anchor.unwrap(), Some(false));
+                test.phase = 25;
+            }
+            25 if ready && self.settling.is_none() => {
+                if self.playhead.abs() > 0.002
+                    || self.playing
+                    || (self.editor.timeline().clips()[0].source_out - 0.42).abs() > 0.002
+                {
+                    return Err("VFR edge clicks changed pause intent or clip geometry".into());
+                }
+                test.checks.push(
+                    "Clip edges select actual first/last retained VFR frames without trimming"
+                        .into(),
+                );
                 test.key(egui::Key::Z, true);
                 test.phase = 8;
             }
@@ -1971,6 +2013,34 @@ impl EditorApp {
                 if self.editor.timeline().clips()[0].source_out < 0.8 {
                     return Err("VFR quick trim undo failed".into());
                 }
+                test.phase = 26;
+            }
+            26 => {
+                let rect = self.controls["first-clip"];
+                test.anchor = Some(Pos2::new(rect.right() - 2.0, rect.top() + 24.0));
+                test.pointer(test.anchor.unwrap(), Some(true));
+                test.phase = 27;
+            }
+            27 => {
+                test.pointer(test.anchor.unwrap(), Some(false));
+                // The release must also work when it creates a fresh decoder
+                // at the source EOF, rather than reusing a loaded middle frame.
+                drop(self.playback.take());
+                self.request_key.clear();
+                test.phase = 28;
+            }
+            28 if ready && self.settling.is_none() => {
+                if (self.playhead - 0.82).abs() > 0.002 {
+                    return Err(format!(
+                        "Cold EOF edge click missed the last VFR frame: {}",
+                        self.playhead
+                    )
+                    .into());
+                }
+                test.checks.push(
+                    "A cold decoder resolves the source EOF to the final retained VFR timestamp"
+                        .into(),
+                );
                 self.seek(0.2);
                 test.phase = 9;
             }

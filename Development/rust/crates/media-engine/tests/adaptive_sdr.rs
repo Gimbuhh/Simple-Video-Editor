@@ -135,6 +135,13 @@ fn tiny_hdr_cursor_does_not_dim_the_entire_sdr_frame() {
         let mut values = vec![reference_white(&converted)];
         for mode in [native_mpv::Mode::SoftwareSdr, native_mpv::Mode::NativeSdr] {
             let p = native_mpv::Player::open(&tools.mpv, mode).unwrap();
+            p.set(
+                "log-file",
+                root.join(format!("mpv-{mode:?}-{cursor}.log"))
+                    .to_str()
+                    .unwrap(),
+            )
+            .unwrap();
             if mode == native_mpv::Mode::SoftwareSdr {
                 p.resize_software(960, 540).unwrap();
             } else {
@@ -149,8 +156,13 @@ fn tiny_hdr_cursor_does_not_dim_the_entire_sdr_frame() {
             p.set("vf", &vf).unwrap();
             p.command(&["loadfile", source.path.as_str(), "replace"])
                 .unwrap();
-            p.wait_for(15.0, |p| p.property("video-out-params/w").is_some())
-                .unwrap();
+            p.wait_for(15.0, |p| {
+                p.property("video-out-params/w").is_some()
+                    && p.property("duration")
+                        .and_then(|v| v.parse::<f64>().ok())
+                        .is_some_and(|d| d > 0.0)
+            })
+            .unwrap();
             p.seek(0.3).unwrap();
             let image = if mode == native_mpv::Mode::SoftwareSdr {
                 software_frame(&p)
@@ -293,13 +305,31 @@ fn adaptive_sdr_matches_independent_reference_in_preview_and_export() {
             _ => "left",
         };
         let reference_filter = format!(
-            "setparams=chroma_location={chroma},libplacebo=w=960:h=540:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv:format=yuv420p:tonemapping=auto:peak_detect=1:percentile=99.99:smoothing_period=0:extra_opts=allow_delayed_peak=no"
+            "setparams=chroma_location={chroma},libplacebo=w=960:h=540:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv:format=yuv420p:tonemapping=bt.2390:peak_detect=1:percentile=99.99:smoothing_period=0:extra_opts=allow_delayed_peak=no,lutyuv=y='16+219*pow(max(val-16,0)/219,1/0.9)':u=(val-128)*1.05+128:v=(val-128)*1.05+128"
+        );
+        std::fs::write(dir.join("reference-filter.txt"), &reference_filter).unwrap();
+        std::fs::write(
+            dir.join("production-filter.txt"),
+            tools.video_filters(&source, &Default::default(), &output, false),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("source.json"),
+            serde_json::to_vec_pretty(&source).unwrap(),
+        )
+        .unwrap();
+        // The renderer estimates peaks after downscaling. Export maps at
+        // native resolution before the CPU output scaler; native preview maps
+        // at its surface size. Moving footage must use the matching order.
+        let export_reference = format!(
+            "{},scale=960:540",
+            reference_filter.replace("w=960:h=540:", "")
         );
         let reference = frame(
             &tools,
             &path,
             start,
-            Some(reference_filter.clone()),
+            Some(export_reference),
             &dir.join("reference.png"),
         );
         let converted = frame(
@@ -313,6 +343,11 @@ fn adaptive_sdr_matches_independent_reference_in_preview_and_export() {
         let mut errors = Vec::new();
         for mode in [native_mpv::Mode::SoftwareSdr, native_mpv::Mode::NativeSdr] {
             let p = native_mpv::Player::open(&tools.mpv, mode).unwrap();
+            p.set(
+                "log-file",
+                dir.join(format!("mpv-{mode:?}.log")).to_str().unwrap(),
+            )
+            .unwrap();
             if mode == native_mpv::Mode::SoftwareSdr {
                 p.resize_software(960, 540).unwrap();
             }
@@ -333,8 +368,15 @@ fn adaptive_sdr_matches_independent_reference_in_preview_and_export() {
             p.set("start", &start.to_string()).unwrap();
             p.command(&["loadfile", source.path.as_str(), "replace"])
                 .unwrap();
-            p.wait_for(15.0, |p| p.property("video-out-params/w").is_some())
-                .unwrap();
+            // A native force-window can expose output dimensions before the
+            // asynchronous file load has produced media properties.
+            p.wait_for(15.0, |p| {
+                p.property("video-out-params/w").is_some()
+                    && p.property("duration")
+                        .and_then(|v| v.parse::<f64>().ok())
+                        .is_some_and(|d| d > 0.0)
+            })
+            .unwrap();
             if mode == native_mpv::Mode::SoftwareSdr {
                 assert_eq!(
                     p.property("video-out-params/gamma").as_deref(),
@@ -352,9 +394,16 @@ fn adaptive_sdr_matches_independent_reference_in_preview_and_export() {
                 &path,
                 (pts - 0.000001).max(0.0),
                 Some(if mode == native_mpv::Mode::NativeSdr {
-                    reference_filter.replace("color_trc=bt709", "color_trc=iec61966-2-1")
+                    // The output shader grades BT.1886-coded RGB, then
+                    // returns to sRGB. A second scalar LUT is an independent
+                    // reference for that transfer, including its linear toe.
+                    let trc = "if(lt(val,9.3),255*12.92*pow(0.943765867481*val/255+0.056234132519,2.4),255*(1.055*(0.943765867481*val/255+0.056234132519)-0.055))";
+                    format!("{reference_filter},format=rgb24,lutrgb=r='{trc}':g='{trc}':b='{trc}'")
                 } else {
-                    reference_filter.clone()
+                    format!(
+                        "setparams=chroma_location={chroma},scale=w='min(iw,960)':h='min(ih,960)':force_original_aspect_ratio=decrease:force_divisible_by=2,{},scale=960:540",
+                        reference_filter.replace("w=960:h=540:", "")
+                    )
                 }),
                 &dir.join(format!("reference-{mode:?}.png")),
             );
@@ -436,7 +485,7 @@ fn adaptive_sdr_matches_independent_reference_in_preview_and_export() {
         // YUV downscaling. Resizing an already RGB-converted 960px reference
         // changes chroma resampling and is not a valid pixel comparison.
         let small_filter = format!(
-            "{},scale=160:90",
+            "{},scale=160:90,format=yuv420p,scale=in_color_matrix=bt709:in_range=limited:out_range=full,format=rgb24",
             reference_filter.replace("w=960:h=540:", "")
         );
         let small = frame(

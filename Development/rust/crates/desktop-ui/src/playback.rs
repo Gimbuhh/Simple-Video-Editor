@@ -26,6 +26,7 @@ pub struct Request {
     pub volume: f64,
     pub hdr_preview: bool,
     pub steps: i32,
+    pub last_frame: bool,
 }
 impl Request {
     // Finish a frame during a continuing gesture, then take the newest target.
@@ -272,8 +273,24 @@ impl Playback {
                                                 )
                                             },
                                         )?;
-                                        player.set("start", &next.position.to_string())?;
-                                        player.set("end", &next.end.to_string())?;
+                                        player.set(
+                                            "start",
+                                            &if next.last_frame {
+                                                next.start
+                                            } else {
+                                                next.position
+                                            }
+                                            .to_string(),
+                                        )?;
+                                        player.set(
+                                            "end",
+                                            &if next.last_frame {
+                                                source.duration
+                                            } else {
+                                                next.end
+                                            }
+                                            .to_string(),
+                                        )?;
                                         player.command(&[
                                             "loadfile",
                                             path.as_path()
@@ -385,6 +402,19 @@ impl Playback {
                                         player.set("af", &audio)?;
                                     }
                                 }
+                                if let Some(source) = &next.source {
+                                    // Decode past an exclusive trim boundary if necessary,
+                                    // then step back to its actual previous PTS (also VFR).
+                                    player.set(
+                                        "end",
+                                        &if next.last_frame {
+                                            source.duration
+                                        } else {
+                                            next.end
+                                        }
+                                        .to_string(),
+                                    )?;
+                                }
                                 if next.source.is_some()
                                     && !player.seek_interruptible(next.position, || {
                                         stopped.load(Ordering::Acquire)
@@ -402,6 +432,28 @@ impl Playback {
                                     .and_then(|p| p.parse::<f64>().ok())
                                     .filter(|p| p.is_finite())
                                     .unwrap_or(next.position);
+                                if next.last_frame {
+                                    if position >= next.end - 0.000001 {
+                                        let Some(previous) = player.step_frames(-1, || {
+                                            stopped.load(Ordering::Acquire)
+                                                || requests
+                                                    .lock()
+                                                    .unwrap()
+                                                    .as_ref()
+                                                    .is_some_and(|r| r.interrupts(&next))
+                                        })?
+                                        else {
+                                            continue;
+                                        };
+                                        position = previous;
+                                    }
+                                    player.set("end", &next.end.to_string())?;
+                                    if position < next.start - 0.000001 || position >= next.end {
+                                        return Err(
+                                            "Could not resolve the last retained frame".into()
+                                        );
+                                    }
+                                }
                                 state.lock().unwrap().seek_position = position;
                                 if next.steps != 0 && next.source.is_some() {
                                     player.wait_for(5.0, |p| {

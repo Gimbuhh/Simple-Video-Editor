@@ -19,7 +19,12 @@ pub enum SdrToneMapping {
 // frame use the same brightness without depending on previously decoded frames.
 // Ignore the brightest 0.01% when estimating scene exposure: captured HDR
 // cursors can reach 5,000 nits and should not dim otherwise normal UI white.
-pub(crate) const ADAPTIVE_SDR: &str = "libplacebo=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv:format=yuv420p:tonemapping=auto:peak_detect=1:percentile=99.99:smoothing_period=0:extra_opts=allow_delayed_peak=no";
+// A mild display-referred adjustment retains shadow contrast and chroma in
+// desktop SDR playback. Calibrated against the user-reviewed Fortnite capture;
+// native HDR presentation and HDR exports do not use this adjustment.
+// Work relative to legal black (16), so deep shadows retain detail. The
+// half-wave rectifier avoids a negative power for sub-black input codes.
+pub(crate) const ADAPTIVE_SDR: &str = "libplacebo=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv:format=yuv420p:tonemapping=bt.2390:peak_detect=1:percentile=99.99:smoothing_period=0:extra_opts=allow_delayed_peak=no,lutyuv=y=16+219*((val-16+abs(val-16))/438)^(1/0.9):u=(val-128)*1.05+128:v=(val-128)*1.05+128";
 
 pub(crate) fn available(ffmpeg: &Path) -> bool {
     static AVAILABLE: OnceLock<bool> = OnceLock::new();

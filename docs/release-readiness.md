@@ -1,10 +1,10 @@
-# 1.1.0 release checklist — 2026-11-01
+# 1.1.0 release checklist — 2026-11-02
 
 Version 1.1.0 is an unpublished Rust release candidate on PR #8. Release preparation includes the sidebar export controls, reversible audio relinking, automatic timeline fit and the corrected audio-only preview tail. The changelog and release notes describe the complete change from published 1.0.4; intermediate candidates are not separate releases.
 
 ## Software verification
 
-Local software checks pass on the recorded candidate, including 483 desktop checks, 112 rendered layouts and 20 isolated startup cycles. The final revision still requires passing Windows CI before merge. Results and the exact executable hash are recorded in the [status ledger](rust-rewrite-status.md); generated recordings and full reports remain in ignored artifacts.
+Core, all 14 NVIDIA/media checks and 350 desktop assertions pass on the latest timeline-click/SDR-contrast candidate. Indoor/outdoor Fortnite comparisons and a 24-seek production preview benchmark also pass. Earlier broader layout, recovery and startup results retain their recorded executable hashes. The final revision requires passing Windows CI before merge. Results and exact executable hashes are recorded in the [status ledger](rust-rewrite-status.md); generated recordings and full reports remain in ignored artifacts.
 
 | Gate | Scope |
 | --- | --- |

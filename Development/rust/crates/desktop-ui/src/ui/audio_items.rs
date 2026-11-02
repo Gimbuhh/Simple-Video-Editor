@@ -306,13 +306,8 @@ impl EditorApp {
                 self.selected_audio = Some(clip.id);
                 self.library_preview = false;
                 if response.clicked() {
-                    self.playing = false;
-                    let position = response
-                        .interact_pointer_pos()
-                        .map_or(clip.timeline_start, |p| {
-                            clip.timeline_start + f64::from((p.x - rect.left()) / zoom)
-                        });
-                    self.seek(position.clamp(clip.timeline_start, clip.timeline_end()));
+                    let x = response.interact_pointer_pos().map_or(rect.left(), |p| p.x);
+                    self.click_clip(clip, rect, x, zoom, false);
                 }
             }
             let source = self
