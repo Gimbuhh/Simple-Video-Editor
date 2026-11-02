@@ -1,6 +1,12 @@
-# Rust 1.1.0 status — 2026-11-02
+# Rust 1.1.0 verification record — 2026-11-03
 
-The Rust production cutover and graphite interface are implemented on PR #8. Version 1.1.0 remains unreleased. The user confirms native HDR appearance on the current display and prefers the stronger SDR contrast trial. Final installed-build and release acceptance remain with the user. No merge, release tag or publication is authorized.
+This record documents the Rust implementation, graphite interface and verification evidence for version 1.1.0 on PR #8. The user confirms native HDR appearance on the current display and prefers the stronger SDR contrast. Historical entries below retain their original executable hashes and testing scope. Merge and publication follow the [release procedure](releasing.md).
+
+## Release documentation and follow-up
+
+The release date is 2026-11-03. User-facing notes describe the complete update from 1.0.4, including project compatibility, Rust package benefits and known limitations. Windows CI passes on runtime source revision `1c4b736` ([run 80](https://github.com/Gimbuhh/Simple-Video-Editor/actions/runs/41521511965)). Additional native/software UI-scale checks on that executable pass 79 assertions and 40 layouts at 100–200%: `Development/artifacts/rust-desktop/d71625f1a85b4b959a82520e366214e4`.
+
+Cleanup retains reports and 13,660 older screenshots in 99 lossless, hash-verified archives, removes three validated disposable apps and reclaims 35.57 GB. The current App, portable ZIP, original media/projects and corrected SDR review video remain intact. The latest screenshots remain directly accessible. Evidence: `Development/artifacts/release-finish/cleanup-manifest.json`, `cleanup-summary.json` and `final-verification.json`. Only one monitor is connected during this follow-up, so a fresh cross-monitor run is unavailable. Physical HDR-toggle, mixed-DPI, full screen-reader and matched game/replay coverage remain as recorded in the release checklist.
 
 ## Timeline clicks and SDR contrast
 

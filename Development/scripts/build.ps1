@@ -73,7 +73,7 @@ SIMPLE VIDEO EDITOR $editorRustVersion
 
 Run Simple Video Editor.exe. Keep bin and docs beside it.
 No .NET runtime or installation is required.
-This release candidate awaits remaining acceptance; see docs/rust-rewrite-status.md.
+For editing instructions and compatibility, see docs/user-guide.md.
 Original recordings remain untouched. Save legacy projects to a new filename.
 "@ | Set-Content (Join-Path $editorRustStage 'README.txt') -Encoding utf8
 Assert-RustOutputStopped

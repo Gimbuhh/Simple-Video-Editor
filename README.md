@@ -4,15 +4,15 @@ A portable Windows editor for trimming and combining local recordings. Edits lea
 
 ![Rust editor with linked video and audio lanes](docs/images/editor.png)
 
-Version 1.1.0 is the Rust release candidate. It includes responsive native preview, HDR-to-SDR conversion, timeline thumbnails and independent audio editing. The portable app needs no .NET runtime; its compared download is about 25% smaller than 1.0.4. See the [comparison](docs/rust-csharp-comparison.md) for measurements and memory tradeoffs.
+Version 1.1.0 introduces the Rust implementation, responsive native preview, HDR-to-SDR conversion, timeline thumbnails and independent audio editing. The portable app needs no .NET runtime; its measured download is about 25% smaller than 1.0.4. See the [comparison](docs/rust-csharp-comparison.md) for measurements and memory tradeoffs.
 
-The [release checklist](docs/release-readiness.md) records verified software checks and remaining physical acceptance. Version 1.1 is unpublished; keep the published 1.0.x app and original projects for rollback while testing.
+Projects saved by 1.1 cannot be opened in 1.0.x. Keep original project files and the previous app version if you need to go back. See the [1.1.0 release notes](release-notes/1.1.0.md) for changes and compatibility limitations.
 
 ## Run
 
 Extract the complete portable ZIP and open **Simple Video Editor.exe**. Keep **bin** and **docs** beside it. The Rust app needs no installer, account, .NET runtime, or separately installed FFmpeg.
 
-[Published Windows releases](https://github.com/Gimbuhh/simple-video-editor/releases) require access to this private repository. Build the candidate from this branch using the commands below.
+[Windows releases](https://github.com/Gimbuhh/simple-video-editor/releases) require access to this private repository. To build from source, use the commands below.
 
 ## Editing
 

@@ -1,8 +1,6 @@
 # Changelog
 
-## 1.1.0 — 2026-11-02
-
-Unreleased Rust candidate.
+## 1.1.0 — 2026-11-03
 
 ### Breaking Changes
 
@@ -11,7 +9,7 @@ Unreleased Rust candidate.
 ### Added
 
 - Timeline filmstrips show sampled video frames, and dragged recordings preview their placement before dropping.
-- HDR recordings support native HDR preview, HDR10 export and scene-aware SDR conversion with consistent preview, thumbnail and export colors. SDR conversion retains shadow contrast and color, and keeps normal scene brightness around tiny bright cursors.
+- HDR recordings support native HDR preview, HDR10 export and SDR conversion that preserves contrast, color and shadow detail. Tiny bright cursors no longer dim the rest of the scene during conversion.
 - Audio can be separated from video and edited independently, with volume, mute, fades and track selection for each item. Matching items can be linked again without losing audio settings. Audio can continue past the video against a black background.
 - Individual sections support fit, fill, crop and rotation without changing the original recordings.
 - HEVC output joins H.264 and AV1.
@@ -19,20 +17,18 @@ Unreleased Rust candidate.
 ### Changed
 
 - Adding or duplicating sections automatically fits the whole timeline; clip bodies keep the normal mouse pointer.
-- Scrubbing keeps the preview visible and updating while you drag, then settles on the exact frame when you release. Clicking a timeline item preserves playback; clicking its trim edge selects its first or last retained frame.
-- Preview uses hardware decoding for supported SDR and fitted HDR recordings, keeping scrubbing responsive during SDR conversion.
-- A graphite workspace puts video and trimming first, with clearer text, aligned button labels, larger thumbnails, blue trim handles and Export at the top right. Quick trims are available in clip menus, export settings are in the right sidebar, and Software preview sits above the video. Secondary controls stay in menus or expandable sections; enabled buttons show a pointing hand and clip edges show a resize cursor.
-- Preview uses the Windows audio output and retries when it becomes unavailable.
-- The app has a new scissors icon with a blue play symbol.
-- The portable Rust app has a smaller download—about 25% in the compared candidate—and no bundled .NET runtime.
-- Frame stepping and quick trims follow actual frame boundaries in variable-frame-rate recordings.
+- Preview uses hardware decoding where supported and updates continuously while scrubbing. Releasing the scrubber selects the exact frame, and timeline clicks preserve playback. Clip-edge clicks, frame stepping and quick trims follow actual frame boundaries, including variable-frame-rate footage.
+- A simpler graphite workspace includes clearer text, larger thumbnails, blue trim handles and a new scissors icon. Export stays at the top right, export settings are in the sidebar, and quick trims are available in clip menus.
+- Preview automatically retries the Windows audio output if it becomes unavailable.
+- The Rust implementation removes the bundled .NET runtime. The measured portable download is about 25% smaller than 1.0.4; memory use varies by workflow.
 
 ### Known limitations
 
 - Scene-aware HDR-to-SDR conversion requires compatible graphics hardware. Standard software conversion remains available.
 - Some workflows use more memory than 1.0.4. See the [C#/Rust comparison](docs/rust-csharp-comparison.md) for measured results and remaining acceptance checks.
 - Sections join with hard cuts; transition effects remain planned.
-- Final checks remain for Windows HDR toggles, monitors with different scaling, and screen-reader workflows.
+- NVIDIA capture may require a per-app driver exclusion. See [capture compatibility](docs/nvidia-capture.md).
+- Windows HDR mode changes, mixed-DPI transitions and complete screen-reader workflows are not fully validated. See the [release checklist](docs/release-readiness.md).
 
 ## 1.0.4 — 2026-10-09
 
