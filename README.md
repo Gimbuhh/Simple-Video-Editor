@@ -2,7 +2,7 @@
 
 A portable Windows editor for trimming and combining local recordings. Edits leave the original files untouched.
 
-![Rust editor with linked video and audio lanes](docs/images/editor.png)
+![ARC Raiders gameplay in Simple Video Editor, with timeline thumbnails and an audio waveform](docs/images/editor.png)
 
 Version 1.1.0 introduces the Rust implementation, responsive native preview, HDR-to-SDR conversion, timeline thumbnails and independent audio editing. The portable app needs no .NET runtime; its measured download is about 25% smaller than 1.0.4. See the [comparison](docs/rust-csharp-comparison.md) for measurements and memory tradeoffs.
 
