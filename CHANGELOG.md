@@ -22,14 +22,6 @@
 - Preview automatically retries the Windows audio output if it becomes unavailable.
 - The Rust implementation removes the bundled .NET runtime. The measured portable download is about 25% smaller than 1.0.4; memory use varies by workflow.
 
-### Known limitations
-
-- Scene-aware HDR-to-SDR conversion requires compatible graphics hardware. Standard software conversion remains available.
-- Some workflows use more memory than 1.0.4. See the [C#/Rust comparison](docs/rust-csharp-comparison.md) for measured results and remaining acceptance checks.
-- Sections join with hard cuts; transition effects remain planned.
-- NVIDIA capture may require a per-app driver exclusion. See [capture compatibility](docs/nvidia-capture.md).
-- Windows HDR mode changes, mixed-DPI transitions and complete screen-reader workflows are not fully validated. See the [release checklist](docs/release-readiness.md).
-
 ## 1.0.4 — 2026-10-09
 
 ### Changed
