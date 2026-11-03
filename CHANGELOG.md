@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.1.0 — 2026-11-03
+
+### Breaking Changes
+
+- Newly saved projects use a format that 1.0.x cannot open. Keep original project files for rollback.
+
+### Added
+
+- Timeline filmstrips show sampled video frames, and dragged recordings preview their placement before dropping.
+- HDR recordings support native HDR preview, HDR10 export and SDR conversion that preserves contrast, color and shadow detail. Tiny bright cursors no longer dim the rest of the scene during conversion.
+- Audio can be separated from video and edited independently, with volume, mute, fades and track selection for each item. Matching items can be linked again without losing audio settings. Audio can continue past the video against a black background.
+- Individual sections support fit, fill, crop and rotation without changing the original recordings.
+- HEVC output joins H.264 and AV1.
+
+### Changed
+
+- Adding or duplicating sections automatically fits the whole timeline; clip bodies keep the normal mouse pointer.
+- Preview uses hardware decoding where supported and updates continuously while scrubbing. Releasing the scrubber selects the exact frame, and timeline clicks preserve playback. Clip-edge clicks, frame stepping and quick trims follow actual frame boundaries, including variable-frame-rate footage.
+- A simpler graphite workspace includes clearer text, larger thumbnails, blue trim handles and a new scissors icon. Export stays at the top right, export settings are in the sidebar, and quick trims are available in clip menus.
+- Preview automatically retries the Windows audio output if it becomes unavailable.
+- The Rust implementation removes the bundled .NET runtime. The measured portable download is about 25% smaller than 1.0.4; memory use varies by workflow.
+
 ## 1.0.4 — 2026-10-09
 
 ### Changed

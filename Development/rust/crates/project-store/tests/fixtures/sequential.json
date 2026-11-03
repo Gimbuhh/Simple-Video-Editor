@@ -1,0 +1,7 @@
+{
+  "Version": 1,
+  "Clips": [
+    { "Path": "C:/fixtures/source A's clip.mp4", "Start": 1.1500000000000001, "End": 2.15 },
+    { "Path": "C:/fixtures/source B.mp4", "Start": 0.5, "End": 1.5 }
+  ]
+}

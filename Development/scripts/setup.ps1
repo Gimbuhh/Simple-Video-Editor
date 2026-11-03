@@ -1,4 +1,4 @@
-param([string]$FfmpegDirectory, [string]$MediaBundlePath)
+param([string]$FfmpegDirectory, [string]$MediaBundlePath,[switch]$LegacyOracle)
 $ErrorActionPreference = 'Stop'
 $editorRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'project-paths.ps1')
@@ -65,7 +65,8 @@ function Restore-EditorReleaseMirror([string]$DownloadError) {
     try { Restore-EditorMediaBundle $editorMirrorZip } finally { Remove-Item -LiteralPath $editorMirrorZip -Force }
 }
 $editorSdkArchive = Join-Path $editorTools 'dotnet-sdk.zip'
-if (!(Test-Path -LiteralPath (Join-Path $editorTools 'dotnet\dotnet.exe'))) {
+& (Join-Path $PSScriptRoot 'setup-rust.ps1')
+if ($LegacyOracle -and !(Test-Path -LiteralPath (Join-Path $editorTools 'dotnet\dotnet.exe'))) {
     Get-VerifiedArchive $editorDependencies.SdkUrl $editorSdkArchive 'SHA512' $editorDependencies.SdkSha512
     Expand-Archive -LiteralPath $editorSdkArchive -DestinationPath (Join-Path $editorTools 'dotnet') -Force
     Remove-Item -LiteralPath $editorSdkArchive -Force

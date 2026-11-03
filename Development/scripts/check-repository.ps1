@@ -1,13 +1,13 @@
 param([string]$ReleaseTag)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'project-paths.ps1')
-$editorProject = [xml](Get-Content -LiteralPath (Join-Path $editorDevelopment 'src/SimpleVideoEditor/SimpleVideoEditor.csproj') -Raw)
-$editorVersion = [string]$editorProject.Project.PropertyGroup.Version
+$editorVersion = Get-EditorVersion
 if ($editorVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'The application must have a three-part version.' }
 if ($ReleaseTag -and $ReleaseTag -cne "v$editorVersion") { throw "Release tag must match the application version: v$editorVersion" }
-$editorSdk = Get-Content -LiteralPath (Join-Path $editorWorkspace 'global.json') -Raw | ConvertFrom-Json
 $editorDependencies = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'dependencies.json') -Raw | ConvertFrom-Json
-if ($editorSdk.sdk.version -ne $editorDependencies.SdkVersion -or $editorSdk.sdk.rollForward -ne 'disable') { throw 'global.json must match the pinned SDK with rollForward disabled.' }
+$editorRustToolchain=Get-Content -LiteralPath (Join-Path $editorDevelopment 'rust/rust-toolchain.toml') -Raw
+$editorRustTools=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'rust-tools.json') -Raw | ConvertFrom-Json
+if($editorRustToolchain -notmatch '(?m)^channel = "\d+\.\d+\.\d+"$' -or $editorRustTools.Host -ne 'x86_64-pc-windows-gnu'){throw 'The Windows x64 Rust toolchain must be explicitly pinned.'}
 if ($editorDependencies.MediaMirrorTag -notmatch '^v\d+\.\d+\.\d+$') { throw 'The media mirror must name a versioned release tag.' }
 $editorRequired = @('README.md','LICENSE','THIRD-PARTY-NOTICES.md','CHANGELOG.md','CONTRIBUTING.md','SECURITY.md','.gitignore','.gitattributes','docs/user-guide.md','docs/development.md','docs/releasing.md','docs/images/editor.png',"release-notes/$editorVersion.md",'.github/workflows/check.yml','.github/workflows/release.yml')
 foreach ($editorRelative in $editorRequired) {
@@ -33,4 +33,4 @@ foreach ($editorScript in $editorScripts) {
     $null = [Management.Automation.Language.Parser]::ParseFile($editorScript.FullName, [ref]$editorParseTokens, [ref]$editorParseErrors)
     if ($editorParseErrors.Count) { throw "PowerShell syntax errors in $($editorScript.Name): $editorParseErrors" }
 }
-Write-Output "Repository documentation, scripts, SDK pin, and version $editorVersion are consistent."
+Write-Output "Repository documentation, scripts, Rust toolchain pin, and version $editorVersion are consistent."

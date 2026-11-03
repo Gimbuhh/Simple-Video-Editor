@@ -1,6 +1,8 @@
 # Releasing
 
-Version 1.0.0 is the initial release, dated 2026-10-09. The private repository is [Gimbuhh/simple-video-editor](https://github.com/Gimbuhh/simple-video-editor). Source versioning uses the `<Version>` in `Development/src/SimpleVideoEditor/SimpleVideoEditor.csproj`; version 1.0.4 corresponds to tag `v1.0.4` after its PR is approved and merged.
+The private repository is [Gimbuhh/simple-video-editor](https://github.com/Gimbuhh/simple-video-editor). The application version in `Development/rust/crates/desktop-ui/Cargo.toml` owns executable metadata, project application-version fields and package names. Preserve previous releases and original project files for rollback; projects saved by 1.1 cannot be opened by 1.0.x.
+
+Review the [release checklist](release-readiness.md) before publishing. It records verified configurations, known limitations and outstanding hardware/accessibility coverage. Merge approval, release tagging and publication are separate steps described below.
 
 ## Initial repository upload
 

@@ -1,0 +1,9 @@
+{
+  "Version": 1,
+  "Clips": [
+    { "Path": "C:/fixtures/a.mp4", "Start": 0.5, "End": 1.5, "TimelineStart": 1 },
+    { "Path": "C:/fixtures/A.mp4", "Start": 2, "End": 3, "TimelineStart": 4 }
+  ],
+  "Sources": ["C:/fixtures/unused.mp4", "C:/fixtures/a.mp4"],
+  "PlacementMode": "Free"
+}
